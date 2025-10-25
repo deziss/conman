@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    # Bind-mount source for hot-reload but use a fresh anonymous volume for
+    # node_modules so the image-bundled modules (and prebuilt esbuild binary)
+    # are available at runtime and are not masked by an existing broken volume.
+    volumes:
+      - ./frontend:/app
+      # Prevent node_modules from being overwritten
+      - frontend_node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    privileged: true
+    environment:
+      - DATABASE_URL=sqlite:///./app.db
+      - SECRET_KEY=your-secret-key-here
+      - CORS_ORIGINS=["http://localhost:5173", "http://127.0.0.1:5173"]
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - JAEGER_HOST=jaeger
+      - JAEGER_PORT=6831
+    networks:
+      - app-network
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.41
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "6831:6831/udp" # Jaeger agent (UDP)
+    networks:
+      - app-network
+
+
+volumes:
+  frontend_node_modules:
+
+networks:
+  app-network:
+    driver: bridge
