@@ -1,0 +1,4 @@
+# Configuration for Docker Container Monitor Tool
+monitor_interval: 60  # seconds
+log_level: INFO
+docker_socket: /var/run/docker.sock
