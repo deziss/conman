@@ -1,18 +1,17 @@
 version: '3.8'
 
 services:
+  # ---------------------------------------------------------------------------
+  # Application Services
+  # ---------------------------------------------------------------------------
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
       - "5173:5173"
-    # Bind-mount source for hot-reload but use a fresh anonymous volume for
-    # node_modules so the image-bundled modules (and prebuilt esbuild binary)
-    # are available at runtime and are not masked by an existing broken volume.
     volumes:
       - ./frontend:/app
-      # Prevent node_modules from being overwritten
       - frontend_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development
@@ -27,39 +26,132 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock:ro
     privileged: true
     environment:
-      - DATABASE_URL=sqlite:///./app.db
+      - DATABASE_URL=./data/app.db
       - SECRET_KEY=your-secret-key-here
-      - CORS_ORIGINS=["http://localhost:5173", "http://127.0.0.1:5173"]
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
       - DOCKER_HOST=unix:///var/run/docker.sock
-      - JAEGER_HOST=jaeger
-      - JAEGER_PORT=6831
     networks:
       - app-network
+
+  # ---------------------------------------------------------------------------
+  # ZITADEL (IAM)
+  # ---------------------------------------------------------------------------
+  zitadel-db:
+    image: postgres:16-alpine
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: zitadel_password
+      POSTGRES_DB: zitadel
+    volumes:
+      - zitadel_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zitadel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zitadel-init:
+    image: ghcr.io/zitadel/zitadel:latest
+    command: 'init --config /zitadel.yaml'
     depends_on:
-      - redis
-
-  redis:
-    image: redis:alpine
-    ports:
-      - "6379:6379"
+      zitadel-db:
+        condition: service_healthy
+    volumes:
+      - ./zitadel-config.yaml:/zitadel.yaml
+    environment:
+      ZITADEL_MASTERKEY: MasterkeyNeedsToBe32BytesLong
     networks:
       - app-network
 
-  jaeger:
-    image: jaegertracing/all-in-one:1.41
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:latest
+    command: 'start --config /zitadel.yaml'
+    depends_on:
+      zitadel-db:
+        condition: service_healthy
+      zitadel-init:
+        condition: service_completed_successfully
     ports:
-      - "16686:16686" # Jaeger UI
-      - "6831:6831/udp" # Jaeger agent (UDP)
+      - "8080:8080"
+    volumes:
+      - ./zitadel-config.yaml:/zitadel.yaml
+    environment:
+      ZITADEL_MASTERKEY: MasterkeyNeedsToBe32BytesLong
     networks:
       - app-network
 
+  # ---------------------------------------------------------------------------
+  # Kong (API Gateway)
+  # ---------------------------------------------------------------------------
+  kong-db:
+    image: postgres:13-alpine
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_DB: kong
+      POSTGRES_PASSWORD: kong_password
+    volumes:
+      - kong_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kong"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kong-migrations:
+    image: kong:3.5
+    command: kong migrations bootstrap
+    depends_on:
+      kong-db:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-db
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+    networks:
+      - app-network
+
+  kong:
+    image: kong:3.5
+    depends_on:
+      kong-migrations:
+        condition: service_completed_successfully
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-db
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
+    ports:
+      - "8001:8001" # Admin
+      - "8002:8002" # Portal
+      - "8003:8003" # Proxy (HTTP)
+      - "8004:8004" # Proxy (HTTPS)
+    networks:
+      - app-network
 
 volumes:
   frontend_node_modules:
+  zitadel_data:
+  kong_data:
+  crdb_data: # Can remove if sure not needed, but safe to keep for now
 
 networks:
   app-network:

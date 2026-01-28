@@ -49,3 +49,14 @@ venv/
 # Misc
 .cache/
 .temp/
+
+# Go
+backend/server
+backend/main
+backend/conman-backend
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+go.work

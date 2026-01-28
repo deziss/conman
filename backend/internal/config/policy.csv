@@ -1,0 +1,4 @@
+p, admin, /api/v1/*, (GET)|(POST)|(PUT)|(DELETE)
+p, operator, /api/v1/containers/*, (GET)|(POST)
+p, viewer, /api/v1/containers/*, GET
+p, viewer, /api/v1/docker/*, GET
