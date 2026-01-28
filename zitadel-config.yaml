@@ -1,0 +1,25 @@
+Log:
+  Level: info
+
+Database:
+  postgres:
+    Host: zitadel-db
+    Port: 5432
+    User: zitadel
+    Password: zitadel_password
+    Database: zitadel
+    Admin:
+      User: postgres
+      Password: zitadel_password
+      Database: postgres
+    SSL:
+      Mode: disable
+
+ExternalDomain: localhost
+ExternalPort: 8080
+ExternalSecure: false
+FirstInstance:
+  Org:
+    Human:
+      Username: admin
+      Password: Password123!
