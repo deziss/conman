@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y sqlite3 ca-certificates curl && rm -rf 
 
 COPY --from=builder /app/main .
 COPY --from=builder /app/internal/config ./config
+COPY --from=builder /app/internal/authz ./internal/authz
 # Create data directory for sqlite
 RUN mkdir -p /app/data
 

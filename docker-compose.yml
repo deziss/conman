@@ -27,6 +27,7 @@ services:
       - "8000:8000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - backend_data:/app/data
     privileged: true
     environment:
       - DATABASE_URL=./data/app.db
@@ -151,6 +152,7 @@ volumes:
   frontend_node_modules:
   zitadel_data:
   kong_data:
+  backend_data:
   crdb_data: # Can remove if sure not needed, but safe to keep for now
 
 networks:
