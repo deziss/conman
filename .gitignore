@@ -60,3 +60,6 @@ backend/conman-backend
 *.so
 *.dylib
 go.work
+backend/app.db
+backend/cookies.txt
+arcane-db-schema.md

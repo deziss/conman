@@ -17,8 +17,9 @@ export const Login = () => {
       const { data } = await api.post('/auth/login', { username: email, password });
       login(data.access_token);
       navigate('/');
-    } catch (err) {
-      setError('Invalid credentials');
+    } catch (err: any) {
+      // Use specific error if available (e.g. "Invalid credentials"), otherwise generic
+      setError(err.response?.data?.error || err.message || 'Login failed');
     }
   };
 

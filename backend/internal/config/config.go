@@ -12,6 +12,8 @@ type Config struct {
 	CorsOrigins  []string `mapstructure:"CORS_ORIGINS"`
 	DockerHost   string `mapstructure:"DOCKER_HOST"`
 	MasterAPIKey string `mapstructure:"MASTER_API_KEY"`
+    AdminEmail   string `mapstructure:"ADMIN_EMAIL"`
+    AdminPassword string `mapstructure:"ADMIN_PASSWORD"`
 }
 
 var AppConfig *Config
@@ -23,6 +25,8 @@ func LoadConfig() {
 	viper.SetDefault("CORS_ORIGINS", []string{"http://localhost:5173"})
 	viper.SetDefault("DOCKER_HOST", "unix:///var/run/docker.sock")
 	viper.SetDefault("MASTER_API_KEY", "conman-master-secret-key")
+    viper.SetDefault("ADMIN_EMAIL", "admin@example.com")
+    viper.SetDefault("ADMIN_PASSWORD", "admin")
 
 	viper.AutomaticEnv()
 
