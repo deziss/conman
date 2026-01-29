@@ -8,8 +8,10 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+    "strings"
 )
 
 type DockerHandler struct{}
@@ -26,13 +28,51 @@ func (h *DockerHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get running containers to check usage
+    containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
+    if err != nil {
+        ErrorJSON(w, http.StatusInternalServerError, err.Error())
+        return
+    }
+
+    usedImages := make(map[string]bool)
+    for _, c := range containers {
+        usedImages[c.ImageID] = true
+        // Also check against image names just in case
+        usedImages[c.Image] = true
+    }
+
 	var result []models.Image
 	for _, img := range images {
+        status := "unused"
+        if usedImages[img.ID] {
+            status = "used"
+        } else {
+             // Check repo tags
+             for _, tag := range img.RepoTags {
+                 if usedImages[tag] {
+                     status = "used"
+                     break
+                 }
+             }
+        }
+
+        repo := "<none>"
+        if len(img.RepoTags) > 0 {
+            parts := strings.Split(img.RepoTags[0], ":")
+            if len(parts) > 0 {
+                repo = parts[0]
+            }
+        }
+
 		result = append(result, models.Image{
-			ID:      img.ID,
-			Tags:    img.RepoTags,
-			Size:    img.Size,
-			Created: img.Created,
+			ID:              img.ID,
+            Repo:            repo,
+			Tags:            img.RepoTags,
+			Size:            img.Size,
+			Created:         img.Created,
+            Status:          status,
+            UpdateAvailable: false, // Not implemented yet
 		})
 	}
 	WriteJSON(w, http.StatusOK, result)

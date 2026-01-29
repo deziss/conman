@@ -9,6 +9,8 @@ import (
     "net/http"
     "strings"
 
+
+
     "github.com/docker/docker/api/types"
     "github.com/docker/docker/api/types/container"
     "github.com/docker/docker/pkg/stdcopy"
@@ -31,22 +33,65 @@ func (h *ContainerHandler) ListContainers(w http.ResponseWriter, r *http.Request
     }
 
     var result []models.Container
-    for _, cnt := range containers {
+    
+    // Using global stats collector source
+    statsCollector := service.GetStatsCollector()
+
+    for _, c := range containers {
         name := ""
-        if len(cnt.Names) > 0 {
-            name = cnt.Names[0]
+        if len(c.Names) > 0 {
+            name = c.Names[0]
+        }
+
+        // Get cached stats
+        cpuUsage := "0.00%"
+        memUsage := "0 B"
+        diskIO := "0 B / 0 B"
+
+        if stats := statsCollector.GetStats(c.ID); stats != nil {
+            cpuUsage = stats.CPUUsage
+            memUsage = stats.MemoryUsage
+            diskIO = stats.DiskIO
+        }
+        
+        // Format Ports
+        var ports []string
+        for _, p := range c.Ports {
+            ports = append(ports, service.FormatPort(p))
+        }
+
+        // Get IP Address
+        ip := ""
+        if c.NetworkSettings != nil {
+             for _, net := range c.NetworkSettings.Networks {
+                ip = net.IPAddress
+                break
+            }
         }
 
         result = append(result, models.Container{
-			ID:     cnt.ID,
-			Name:   name,
-			Status: cnt.Status,
-			State:  cnt.State,
-			Image:  cnt.Image,
+            ID:          c.ID,
+            Name:        name,
+            Status:      c.Status,
+            State:       c.State,
+            Image:       c.Image,
+            Created:     c.Created,
+            Ports:       ports,
+            IPAddress:   ip,
+            CPUUsage:    cpuUsage,
+            MemoryUsage: memUsage,
+            DiskIO:      diskIO,
         })
     }
+
     WriteJSON(w, http.StatusOK, result)
 }
+
+// Helper functions now moved to stats_collector or not needed here locally anymore since logic is centered there.
+// Removing local helpers to avoid conflict or just leaving them if reused elsewhere?
+// StreamStats uses io.Copy from docker stream, so it doesn't use calculate* functions.
+// StreamExec uses ...
+// So I can safely remove the calculate* functions from this file.
 
 func (h *ContainerHandler) StartContainer(w http.ResponseWriter, r *http.Request) {
     id := chi.URLParam(r, "id")
