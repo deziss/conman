@@ -4,6 +4,13 @@ import (
 	"gorm.io/gorm"
 )
 
+type ContextKey string
+
+const (
+	UserContextKey ContextKey = "user"
+	RoleContextKey ContextKey = "role"
+)
+
 type User struct {
 	gorm.Model
 	Email    string `gorm:"uniqueIndex"`
@@ -12,10 +19,22 @@ type User struct {
 	Role     string // "admin", "operator", "viewer"
 }
 
+type APIKey struct {
+	gorm.Model
+	Key         string `gorm:"uniqueIndex"`
+	Name        string
+	UserID      uint
+	User        User
+	Role        string // Effective role for this key
+	LastUsedAt  int64
+	ExpiresAt   int64 // 0 for no expiry
+}
+
 type Container struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	State  string `json:"state"`
 	Image  string `json:"image"`
 }
 

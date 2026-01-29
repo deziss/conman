@@ -7,6 +7,7 @@ import (
     "encoding/json"
     "io"
     "net/http"
+    "strings"
 
     "github.com/docker/docker/api/types"
     "github.com/docker/docker/api/types/container"
@@ -37,10 +38,11 @@ func (h *ContainerHandler) ListContainers(w http.ResponseWriter, r *http.Request
         }
 
         result = append(result, models.Container{
-            ID:     cnt.ID,
-            Name:   name,
-            Status: cnt.Status,
-            Image:  cnt.Image,
+			ID:     cnt.ID,
+			Name:   name,
+			Status: cnt.Status,
+			State:  cnt.State,
+			Image:  cnt.Image,
         })
     }
     WriteJSON(w, http.StatusOK, result)
@@ -78,6 +80,57 @@ func (h *ContainerHandler) RemoveContainer(w http.ResponseWriter, r *http.Reques
         return
     }
     WriteJSON(w, http.StatusOK, map[string]string{"message": "Container removed successfully"})
+}
+
+func (h *ContainerHandler) InspectContainer(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    cli := service.GetDockerClient()
+    
+    info, err := cli.ContainerInspect(context.Background(), id)
+    if err != nil {
+        ErrorJSON(w, http.StatusInternalServerError, err.Error())
+        return
+    }
+    
+    WriteJSON(w, http.StatusOK, info)
+}
+
+func (h *ContainerHandler) PauseContainer(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    cli := service.GetDockerClient()
+    
+    if err := cli.ContainerPause(context.Background(), id); err != nil {
+         if strings.Contains(err.Error(), "is not running") {
+              ErrorJSON(w, http.StatusBadRequest, "Container is not running")
+              return
+         }
+         ErrorJSON(w, http.StatusInternalServerError, err.Error())
+         return
+    }
+    WriteJSON(w, http.StatusOK, map[string]string{"message": "Container paused successfully"})
+}
+
+func (h *ContainerHandler) UnpauseContainer(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    cli := service.GetDockerClient()
+    
+    if err := cli.ContainerUnpause(context.Background(), id); err != nil {
+         ErrorJSON(w, http.StatusInternalServerError, err.Error())
+         return
+    }
+    WriteJSON(w, http.StatusOK, map[string]string{"message": "Container unpaused successfully"})
+}
+
+func (h *ContainerHandler) RestartContainer(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    cli := service.GetDockerClient()
+    
+    timeout := 10
+    if err := cli.ContainerRestart(context.Background(), id, container.StopOptions{Timeout: &timeout}); err != nil {
+         ErrorJSON(w, http.StatusInternalServerError, err.Error())
+         return
+    }
+    WriteJSON(w, http.StatusOK, map[string]string{"message": "Container restarted successfully"})
 }
 
 var upgrader = websocket.Upgrader{

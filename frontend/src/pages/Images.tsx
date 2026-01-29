@@ -1,154 +1,206 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dockerService } from '../services/api';
+import { useState, useEffect } from 'react';
+import { GlassCard } from '../components/ui/GlassCard';
+import { 
+    CloudArrowDownIcon, 
+    TrashIcon, 
+    Square3Stack3DIcon, 
+    ArrowPathIcon,
+    TagIcon,
+    ClockIcon,
+    EyeIcon
+} from '@heroicons/react/24/solid';
+import api from '../services/api';
+import { toast } from 'react-hot-toast';
+import { InspectModal } from '../components/InspectModal';
 
 interface Image {
   id: string;
-  repository: string;
-  tag: string;
-  size: string;
-  created: string;
+  tags: string[];
+  size: number;
+  created: number;
 }
 
-export default function Images() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const queryClient = useQueryClient();
+export const Images = () => {
+  const [images, setImages] = useState<Image[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pullImageName, setPullImageName] = useState('');
+  const [pulling, setPulling] = useState(false);
+  const [inspectData, setInspectData] = useState<any>(null);
+  const [inspectModalOpen, setInspectModalOpen] = useState(false);
 
-  const { data: images, isLoading } = useQuery<Image[]>({
-    queryKey: ['images'],
-    queryFn: () => dockerService.listImages(),
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: (imageId: string) => dockerService.removeImage(imageId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['images'] });
-    },
-  });
-
-  const pullMutation = useMutation({
-    mutationFn: (imageName: string) => dockerService.pullImage(imageName),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['images'] });
-    },
-  });
-
-  const handlePull = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (searchTerm) {
-      pullMutation.mutate(searchTerm);
-      setSearchTerm('');
+  const fetchImages = async () => {
+    try {
+      const { data } = await api.get('/docker/images');
+      setImages(data || []);
+    } catch (error) {
+      console.error("Failed to fetch images", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const filteredImages = images?.filter(
-    (image) =>
-      image.repository.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      image.tag.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    fetchImages();
+  }, []);
+
+  const handlePullImage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pullImageName) return;
+
+    setPulling(true);
+    const toastId = toast.loading(`Pulling image ${pullImageName}...`);
+
+    try {
+        await api.post('/docker/images/pull', { image: pullImageName });
+        toast.success(`Successfully pulled ${pullImageName}`, { id: toastId });
+        setPullImageName('');
+        fetchImages();
+    } catch (error) {
+        toast.error(`Failed to pull image ${pullImageName}`, { id: toastId });
+    } finally {
+        setPulling(false);
+    }
+  };
+
+  const handleRemoveImage = async (id: string) => {
+      if (!confirm('Are you sure you want to remove this image?')) return;
+      try {
+          await api.delete(`/docker/images/${id}`);
+          toast.success('Image removed');
+          fetchImages();
+      } catch (error) {
+          toast.error('Failed to remove image');
+      }
+  };
+
+  const handleInspect = async (id: string) => {
+      console.log('Inspecting image:', id);
+      try {
+          // Use /docker/inspect endpoint (Simplest)
+          const { data } = await api.get(`/docker/inspect?id=${encodeURIComponent(id)}`);
+          setInspectData(data);
+          setInspectModalOpen(true);
+      } catch (error) {
+          console.error("Inspect error:", error);
+          toast.error("Failed to inspect image");
+      }
+  }
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return '0 B';
+    const k = 1000;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatTime = (created: number) => {
+      return new Date(created * 1000).toLocaleDateString();
+  }
 
   return (
-    <div>
-      <div className="sm:flex sm:items-center">
-        <div className="sm:flex-auto">
-          <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">
-            Docker Images
-          </h2>
-          <p className="mt-2 text-sm text-gray-700">
-            A list of all Docker images on your system
-          </p>
-        </div>
-        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
-          <form onSubmit={handlePull} className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Enter image name to pull"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-            />
-            <button
-              type="submit"
-              disabled={pullMutation.status === 'pending'}
-              className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-            >
-              {pullMutation.status === 'pending' ? 'Pulling...' : 'Pull Image'}
-            </button>
-          </form>
-        </div>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
+          Images
+        </h2>
+        <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={fetchImages}>
+            <ArrowPathIcon className="w-4 h-4" />
+            <span>Refresh</span>
+        </GlassCard>
       </div>
 
-      {isLoading ? (
-        <div>Loading images...</div>
-      ) : (
-        <div className="mt-8 flow-root">
-          <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-            <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
-              <table className="min-w-full divide-y divide-gray-300">
-                <thead>
-                  <tr>
-                    <th
-                      scope="col"
-                      className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-0"
-                    >
-                      Repository
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                    >
-                      Tag
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                    >
-                      Size
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                    >
-                      Created
-                    </th>
-                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-0">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredImages?.map((image) => (
-                    <tr key={image.id}>
-                      <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0">
-                        {image.repository}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {image.tag}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {image.size}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        {image.created}
-                      </td>
-                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-0">
-                        <button
-                          onClick={() => removeMutation.mutate(image.id)}
-                          disabled={removeMutation.status === 'pending'}
-                          className="text-red-600 hover:text-red-900"
+        {/* Pull Image Section */}
+        <GlassCard className="p-6">
+            <h3 className="text-lg font-medium text-slate-900 dark:text-slate-200 mb-4 flex items-center">
+                <CloudArrowDownIcon className="w-5 h-5 mr-2 text-cyan-600 dark:text-cyan-400" />
+                Pull New Image
+            </h3>
+            <form onSubmit={handlePullImage} className="flex gap-4">
+                <input 
+                    type="text" 
+                    value={pullImageName}
+                    onChange={(e) => setPullImageName(e.target.value)}
+                    placeholder="e.g. alpine:latest, nginx:alpine"
+                    className="flex-1 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-lg px-4 py-2 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
+                />
+                <button 
+                    type="submit" 
+                    disabled={pulling || !pullImageName}
+                    className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-all shadow-lg shadow-cyan-500/20 flex items-center"
+                >
+                    {pulling ? 'Pulling...' : 'Pull Image'}
+                </button>
+            </form>
+        </GlassCard>
+
+      {/* Image List */}
+      <div className="space-y-4">
+        {loading ? (
+           <div className="text-slate-500 text-center py-10 animate-pulse">Loading images...</div>
+        ) : images.length === 0 ? (
+            <div className="text-slate-500 text-center py-10">No images found.</div>
+        ) : (
+            images.map((img) => (
+                <GlassCard key={img.id} className="p-4 flex items-center justify-between group hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                    <div className="flex items-center space-x-4 overflow-hidden">
+                        <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
+                            <Square3Stack3DIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex flex-col sm:flex-row sm:items-baseline gap-2">
+                                <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate" title={img.tags && img.tags[0]}>
+                                    {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[0] : '<none>'}
+                                </h4>
+                                <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
+                                    {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
+                                </span>
+                            </div>
+                             <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 font-mono">
+                                <span className="flex items-center">
+                                    <TagIcon className="w-3 h-3 mr-1" />
+                                    {img.id.substring(7, 19)}
+                                </span>
+                                <span className="flex items-center">
+                                    <ClockIcon className="w-3 h-3 mr-1" />
+                                    {formatTime(img.created)}
+                                </span>
+                                <span>
+                                    {formatSize(img.size)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="ml-4 flex items-center space-x-2">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
+                            className="p-2 text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
+                            title="Inspect Image"
                         >
-                          {removeMutation.status === 'pending' ? 'Removing...' : 'Remove'}
-                          <span className="sr-only">, {image.repository}</span>
+                            <EyeIcon className="w-5 h-5" />
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
+                            className="p-2 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
+                            title="Remove Image"
+                        >
+                            <TrashIcon className="w-5 h-5" />
+                        </button>
+                    </div>
+                </GlassCard>
+            ))
+        )}
+      </div>
+
+      <InspectModal 
+        isOpen={inspectModalOpen} 
+        onClose={() => setInspectModalOpen(false)} 
+        title="Image Details" 
+        data={inspectData} 
+      />
     </div>
   );
-}
+};
+
+export default Images;

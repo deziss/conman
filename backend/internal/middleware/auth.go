@@ -1,32 +1,77 @@
 package middleware
 
 import (
-	"context"
 	"conman-backend/internal/api"
+	"conman-backend/internal/authz"
 	"conman-backend/internal/config"
+	"conman-backend/internal/models"
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/gorm"
 )
 
-// AuthMiddleware validates JWT tokens and sets context
-func AuthMiddleware(next http.Handler) http.Handler {
+
+
+type Middleware struct {
+	DB *gorm.DB
+}
+
+func NewMiddleware(db *gorm.DB) *Middleware {
+	return &Middleware{DB: db}
+}
+
+// AuthMiddleware handles Master Key, API Key, and JWT authentication
+func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Check Master API Key
+		masterKey := r.Header.Get("X-Master-Key")
+		if masterKey != "" && masterKey == config.AppConfig.MasterAPIKey {
+			ctx := context.WithValue(r.Context(), models.RoleContextKey, "admin")
+			ctx = context.WithValue(ctx, models.UserContextKey, &models.User{Role: "admin", FullName: "System Admin"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// 2. Check User API Key
+		apiKey := r.Header.Get("X-API-Key")
+		if apiKey != "" {
+			var keyModel models.APIKey
+			if err := m.DB.Preload("User").Where("key = ?", apiKey).First(&keyModel).Error; err == nil {
+				// Access verified via API Key
+				ctx := context.WithValue(r.Context(), models.UserContextKey, &keyModel.User)
+				ctx = context.WithValue(ctx, models.RoleContextKey, keyModel.User.Role) // Inherit user role
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+		}
+
+		// 3. Fallback to JWT
+		tokenString := ""
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			api.ErrorJSON(w, http.StatusUnauthorized, "Authorization header required")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+
+		if tokenString == "" {
+			tokenString = r.URL.Query().Get("token")
+		}
+
+		if tokenString == "" {
+			api.ErrorJSON(w, http.StatusUnauthorized, "Authorization required")
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			api.ErrorJSON(w, http.StatusUnauthorized, "Invalid authorization header format")
-			return
-		}
-
-		tokenString := parts[1]
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
 			return []byte(config.AppConfig.SecretKey), nil
 		})
 
@@ -35,38 +80,49 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Set claims to context
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if ok {
-			ctx := context.WithValue(r.Context(), "user_id", claims["sub"])
-			ctx = context.WithValue(ctx, "role", claims["role"])
-			r = r.WithContext(ctx)
-		}
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			userIDFloat, ok := claims["sub"].(float64)
+			if !ok {
+				api.ErrorJSON(w, http.StatusUnauthorized, "Invalid token claims")
+				return
+			}
+			
+			var user models.User
+			if err := m.DB.First(&user, uint(userIDFloat)).Error; err != nil {
+				api.ErrorJSON(w, http.StatusUnauthorized, "User not found")
+				return
+			}
 
-		next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), models.UserContextKey, &user)
+			ctx = context.WithValue(ctx, models.RoleContextKey, user.Role)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		} else {
+			api.ErrorJSON(w, http.StatusUnauthorized, "Invalid token claims")
+		}
 	})
 }
 
-// RoleMiddleware checks if the user has the required role (Simple RBAC, superseded by Casbin generally but kept for reference)
-func RoleMiddleware(requiredRole string) func(next http.Handler) http.Handler {
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            role, ok := r.Context().Value("role").(string)
-            if !ok {
-                 api.ErrorJSON(w, http.StatusForbidden, "Role not found in context")
-                 return
-            }
-            
-            if !checkRoleAccess(role, requiredRole) {
-                 api.ErrorJSON(w, http.StatusForbidden, "Insufficient permissions")
-                 return
-            }
-            next.ServeHTTP(w, r)
-        })
-    }
-}
+// RequirePermission Middleware using Casbin
+func (m *Middleware) RequirePermission(obj, act string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role, ok := r.Context().Value(models.RoleContextKey).(string)
+			if !ok {
+                role = "anonymous"
+			}
 
-func checkRoleAccess(userRole, requiredRole string) bool {
-    roles := map[string]int{"viewer": 1, "operator": 2, "admin": 3}
-    return roles[userRole] >= roles[requiredRole]
+			allowed, err := authz.CheckPermission(role, obj, act)
+			if err != nil {
+				api.ErrorJSON(w, http.StatusInternalServerError, "Authorization error")
+				return
+			}
+
+			if !allowed {
+				api.ErrorJSON(w, http.StatusForbidden, "Forbidden")
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
