@@ -7,17 +7,23 @@ import {
     ArrowPathIcon,
     TagIcon,
     ClockIcon,
-    EyeIcon
+    EyeIcon,
+    TableCellsIcon,
+    ListBulletIcon
 } from '@heroicons/react/24/solid';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
+import { useSidebar } from '../layouts/DashboardLayout';
 
 interface Image {
   id: string;
+  repo: string;
   tags: string[];
   size: number;
   created: number;
+  status: string; // "used" | "unused"
+  update_available: boolean;
 }
 
 export const Images = () => {
@@ -27,6 +33,9 @@ export const Images = () => {
   const [pulling, setPulling] = useState(false);
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'name' | 'size' | 'created' | 'status'>('created');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const { isCollapsed } = useSidebar();
 
   const fetchImages = async () => {
     try {
@@ -98,6 +107,23 @@ export const Images = () => {
       return new Date(created * 1000).toLocaleDateString();
   }
 
+  const sortedImages = [...images].sort((a, b) => {
+      if (sortOrder === 'name') {
+          const nameA = a.tags && a.tags.length > 0 ? a.tags[0] : a.id;
+          const nameB = b.tags && b.tags.length > 0 ? b.tags[0] : b.id;
+          return nameA.localeCompare(nameB);
+      }
+      if (sortOrder === 'size') return b.size - a.size;
+      if (sortOrder === 'created') return b.created - a.created;
+      if (sortOrder === 'status') {
+          // Used first
+          if (a.status === 'used' && b.status !== 'used') return -1;
+          if (a.status !== 'used' && b.status === 'used') return 1;
+          return 0;
+      }
+      return 0;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -134,18 +160,66 @@ export const Images = () => {
             </form>
         </GlassCard>
 
+        {/* Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
+        <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-300">Image List</h3>
+        
+        <div className="flex items-center space-x-4">
+           {/* View Toggle */}
+           <div className="flex bg-white dark:bg-slate-800/50 rounded-lg p-1 border border-slate-200 dark:border-slate-700/50">
+                <button
+                    onClick={() => setViewMode('list')}
+                    className={`p-1.5 rounded-md transition-all ${
+                        viewMode === 'list'
+                        ? 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-700/50'
+                    }`}
+                    title="List View"
+                >
+                    <ListBulletIcon className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => setViewMode('grid')}
+                    className={`p-1.5 rounded-md transition-all ${
+                        viewMode === 'grid'
+                        ? 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-700/50'
+                    }`}
+                    title="Grid View"
+                >
+                    <TableCellsIcon className="w-4 h-4" />
+                </button>
+           </div>
+
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as any)}
+            className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block p-2 outline-none"
+          >
+            <option value="created">Sort by Created</option>
+            <option value="name">Sort by Name</option>
+            <option value="size">Sort by Size</option>
+            <option value="status">Sort by Status</option>
+          </select>
+        </div>
+      </div>
+
       {/* Image List */}
       <div className="space-y-4">
         {loading ? (
            <div className="text-slate-500 text-center py-10 animate-pulse">Loading images...</div>
-        ) : images.length === 0 ? (
-            <div className="text-slate-500 text-center py-10">No images found.</div>
-        ) : (
-            images.map((img) => (
+        ) : viewMode === 'list' ? (
+            sortedImages.map((img) => (
                 <GlassCard key={img.id} className="p-4 flex items-center justify-between group hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                     <div className="flex items-center space-x-4 overflow-hidden">
-                        <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
+                        <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg relative">
                             <Square3Stack3DIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                            {img.status === 'used' && (
+                                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                </span>
+                            )}
                         </div>
                         <div className="min-w-0">
                             <div className="flex flex-col sm:flex-row sm:items-baseline gap-2">
@@ -155,6 +229,9 @@ export const Images = () => {
                                 <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
                                     {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
                                 </span>
+                                {img.status === 'used' && (
+                                     <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 rounded">Used</span>
+                                )}
                             </div>
                              <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 font-mono">
                                 <span className="flex items-center">
@@ -190,6 +267,74 @@ export const Images = () => {
                     </div>
                 </GlassCard>
             ))
+        ) : (
+            <div className={`grid gap-6 ${
+                isCollapsed 
+                  ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' 
+                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5'
+              }`}>
+                {sortedImages.map((img) => (
+                    <GlassCard key={img.id} className="p-4 flex flex-col justify-between group h-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors relative overflow-hidden">
+                         <div className="flex justify-between items-start mb-4">
+                            <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg relative">
+                                <Square3Stack3DIcon className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+                                {img.status === 'used' && (
+                                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex space-x-1">
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
+                                    className="p-1.5 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
+                                    title="Inspect Image"
+                                >
+                                    <EyeIcon className="w-4 h-4" />
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
+                                    title="Remove Image"
+                                >
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                         </div>
+                        
+                         <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate mb-1" title={img.tags && img.tags[0]}>
+                                {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[0] : '<none>'}
+                            </h4>
+                            <div className="flex flex-wrap gap-2 mb-3">
+                                <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
+                                    {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
+                                </span>
+                                {img.status === 'used' && (
+                                     <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center">Used</span>
+                                )}
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-mono border-t border-slate-200 dark:border-slate-700/50 pt-3">
+                                <div>
+                                    <span className="block text-[10px] uppercase text-slate-400 dark:text-slate-600">ID</span>
+                                    <span className="truncate block">{img.id.substring(7, 15)}</span>
+                                </div>
+                                <div>
+                                    <span className="block text-[10px] uppercase text-slate-400 dark:text-slate-600">Size</span>
+                                    <span>{formatSize(img.size)}</span>
+                                </div>
+                                 <div className="col-span-2">
+                                    <span className="block text-[10px] uppercase text-slate-400 dark:text-slate-600">Created</span>
+                                    <span>{formatTime(img.created)}</span>
+                                </div>
+                            </div>
+                         </div>
+                    </GlassCard>
+                ))
+            }
+            </div>
         )}
       </div>
 

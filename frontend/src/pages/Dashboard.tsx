@@ -8,6 +8,7 @@ import {
     BoltIcon
 } from '@heroicons/react/24/solid';
 import api from '../services/api';
+import { useSidebar } from '../layouts/DashboardLayout';
 
 interface SystemInfo {
   containers: number;
@@ -20,6 +21,7 @@ interface SystemInfo {
 export const Dashboard = () => {
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isCollapsed } = useSidebar();
 
   const fetchSystemInfo = async () => {
     try {
@@ -63,7 +65,11 @@ export const Dashboard = () => {
       {loading ? (
          <div className="text-slate-500 text-center py-20 animate-pulse">Loading system metrics...</div>
       ) : info ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className={`grid gap-6 ${
+          isCollapsed 
+            ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' 
+            : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4'
+        }`}>
             
             {/* CPU / Cores */}
             <GlassCard className="p-6 relative overflow-hidden group">
@@ -106,7 +112,11 @@ export const Dashboard = () => {
             </GlassCard>
 
              {/* Docker Version - Full Width or Extra Card */}
-             <GlassCard className="p-6 md:col-span-2 lg:col-span-4 relative overflow-hidden flex items-center justify-between">
+             <GlassCard className={`p-6 relative overflow-hidden flex items-center justify-between ${
+                 isCollapsed
+                    ? 'md:col-span-2 lg:col-span-4'
+                    : 'md:col-span-2 lg:col-span-2 xl:col-span-4'
+             }`}>
                 <div>
                     <p className="text-slate-500 dark:text-slate-400 text-sm font-medium uppercase tracking-wider flex items-center gap-2">
                         <BoltIcon className="w-4 h-4 text-amber-500 dark:text-amber-400" />

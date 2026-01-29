@@ -31,6 +31,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug logs
+    // log.Printf("Login Attempt: %s", req.Username)
+
 	var user models.User
 	if err := h.DB.Where("email = ?", req.Username).First(&user).Error; err != nil {
 		ErrorJSON(w, http.StatusUnauthorized, "Invalid credentials")

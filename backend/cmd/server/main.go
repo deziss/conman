@@ -24,6 +24,7 @@ func main() {
 
 	// 2. Init Docker Client
 	service.InitDockerClient()
+    service.InitStatsCollector()
 
 	// 3. Init Database
 	db, err := gorm.Open(sqlite.Open(config.AppConfig.DatabaseURL), &gorm.Config{})
@@ -37,20 +38,32 @@ func main() {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
-	// Seed Admin User if not exists
-	var count int64
-	db.Model(&models.User{}).Count(&count)
-	if count == 0 {
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
-		admin := models.User{
-			Email:    "admin@example.com",
-			Password: string(hashedPassword),
-			FullName: "Admin User",
-			Role:     "admin",
-		}
-		db.Create(&admin)
-		log.Println("Seeded default admin user: admin@example.com / admin")
-	}
+	// Seed Admin User (Upsert based on email)
+    // This allows resetting password via ENV variables on restart
+    hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(config.AppConfig.AdminPassword), bcrypt.DefaultCost)
+    adminEmail := config.AppConfig.AdminEmail
+    
+    var existingUser models.User
+    if err := db.Where("email = ?", adminEmail).First(&existingUser).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            // Create new admin
+            admin := models.User{
+                Email:    adminEmail,
+                Password: string(hashedPassword),
+                FullName: "Admin User",
+                Role:     "admin",
+            }
+            db.Create(&admin)
+            log.Printf("Seeded initial admin user: %s", adminEmail)
+        }
+    } else {
+        // Update existing admin password to match ENV (Reset mechanism)
+        existingUser.Password = string(hashedPassword)
+        // Ensure role is admin
+        existingUser.Role = "admin" 
+        db.Save(&existingUser)
+        log.Printf("Updated admin user credentials for: %s", adminEmail)
+    }
 
     // 4. Init Casbin (Database Adapter)
     authz.InitCasbin(db)

@@ -2,6 +2,8 @@ import { CubeIcon, CommandLineIcon } from '@heroicons/react/24/outline';
 import { NavLink } from 'react-router-dom';
 import { HomeIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Cog6ToothIcon, SunIcon, MoonIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, KeyIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
+import { ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -10,6 +12,7 @@ interface SidebarProps {
 
 export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
   const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
 
   return (
     <div 
@@ -230,6 +233,13 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
             {theme === 'dark' ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+          </button>
+           <button 
+            onClick={logout}
+            className="p-2 rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 transition-colors"
+            title="Logout"
+          >
+            <ArrowLeftOnRectangleIcon className="w-5 h-5" />
           </button>
         </div>
       </div>
