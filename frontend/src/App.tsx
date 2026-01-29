@@ -1,65 +1,57 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import { DashboardLayout } from './layouts/DashboardLayout';
+import { Dashboard } from './pages/Dashboard';
+import { Containers } from './pages/Containers';
+import { ContainerDetails } from './pages/ContainerDetails';
+import { Images } from './pages/Images';
+import { Networks } from './pages/Networks';
+import { Volumes } from './pages/Volumes';
+import { Settings } from './pages/Settings';
+import { Users } from './pages/Users';
+import { Profile } from './pages/Profile';
+import { Login } from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import ErrorBoundary from './components/ErrorBoundary';
-import Login from './components/Login';
-import DashboardLayout from './layouts/DashboardLayout';
-import Dashboard from './pages/Dashboard';
-import ContainerList from './components/ContainerList';
-import Images from './pages/Images';
-import Settings from './pages/Settings';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { ReactNode } from 'react';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-  return <>{children}</>;
-}
+const ProtectedRoute = ({ children }: { children: ReactNode }) => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+};
 
 function App() {
-  const handleLoginSuccess = () => {
-    // On successful login, redirect to the dashboard
-    window.location.href = '/';
-  };
-
   return (
-    <BrowserRouter>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <Routes>
-              <Route path="/login" element={<Login onSuccess={handleLoginSuccess} />} />
-              
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <DashboardLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<Dashboard />} />
-                <Route path="containers" element={<ContainerList />} />
-                <Route path="images" element={<Images />} />
-                <Route path="settings" element={<Settings />} />
-              </Route>
-            </Routes>
-            <Toaster />
-          </AuthProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
-    </BrowserRouter>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/containers" element={<Containers />} />
+                      <Route path="/containers/:id" element={<ContainerDetails />} />
+                      <Route path="/images" element={<Images />} />
+                      <Route path="/networks" element={<Networks />} />
+                      <Route path="/volumes" element={<Volumes />} />
+                      <Route path="/users" element={<Users />} />
+                      <Route path="/profile" element={<Profile />} />
+                      <Route path="/settings" element={<Settings />} />
+                      <Route path="*" element={<div className="text-slate-500 text-center mt-20">Work in Progress</div>} />
+                    </Routes>
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

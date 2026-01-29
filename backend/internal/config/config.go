@@ -11,6 +11,7 @@ type Config struct {
 	SecretKey    string `mapstructure:"SECRET_KEY"`
 	CorsOrigins  []string `mapstructure:"CORS_ORIGINS"`
 	DockerHost   string `mapstructure:"DOCKER_HOST"`
+	MasterAPIKey string `mapstructure:"MASTER_API_KEY"`
 }
 
 var AppConfig *Config
@@ -21,6 +22,7 @@ func LoadConfig() {
 	viper.SetDefault("SECRET_KEY", "your-secret-key-here")
 	viper.SetDefault("CORS_ORIGINS", []string{"http://localhost:5173"})
 	viper.SetDefault("DOCKER_HOST", "unix:///var/run/docker.sock")
+	viper.SetDefault("MASTER_API_KEY", "conman-master-secret-key")
 
 	viper.AutomaticEnv()
 
