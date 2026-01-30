@@ -1,7 +1,8 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
+
+import React, { Component, ErrorInfo, ReactNode } from "react";
 
 interface Props {
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 interface State {
@@ -9,42 +10,28 @@ interface State {
   error: Error | null;
 }
 
-export default class ErrorBoundary extends Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  public static getDerivedStateFromError(_: Error): State {
+    return { hasError: true, error: _ };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error("Uncaught error:", error, errorInfo);
   }
 
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-md w-full space-y-8">
-            <div>
-              <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                Something went wrong
-              </h2>
-              <p className="mt-2 text-center text-sm text-gray-600">
-                {this.state.error?.message || 'An unexpected error occurred'}
-              </p>
-            </div>
-            <div className="flex justify-center">
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700"
-              >
-                Reload Page
-              </button>
-            </div>
-          </div>
+        <div style={{ padding: "20px", background: "#333", color: "#fff", height: "100vh" }}>
+          <h1>Something went wrong.</h1>
+          <pre style={{ whiteSpace: "pre-wrap", color: "#f88" }}>
+            {this.state.error?.toString()}
+          </pre>
         </div>
       );
     }

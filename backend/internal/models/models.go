@@ -30,6 +30,14 @@ type APIKey struct {
 	ExpiresAt   int64 // 0 for no expiry
 }
 
+type Environment struct {
+	gorm.Model
+	Name      string `gorm:"uniqueIndex"`
+	APIURL    string
+	AuthToken string // Encrypted ideally, plain for now
+	IsLocal   bool
+}
+
 type Container struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -59,9 +67,23 @@ type Image struct {
 }
 
 type SystemInfo struct {
-    Containers    int `json:"containers"`
-    Images        int `json:"images"`
-    DockerVersion string `json:"docker_version"`
-    MemoryTotal   int64 `json:"memory_total"`
-    CPUCount      int `json:"cpu_count"`
+	Containers      int    `json:"Containers"`
+	Images          int    `json:"Images"`
+	DockerVersion   string `json:"ServerVersion"`
+	MemoryTotal     int64  `json:"MemTotal"`
+	CPUCount        int    `json:"NCPU"`
+	Name            string `json:"Name"`
+	KernelVersion   string `json:"KernelVersion"`
+	OperatingSystem string `json:"OperatingSystem"`
+	Architecture    string `json:"Architecture"`
+}
+
+type SystemStats struct {
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryTotal   uint64  `json:"memory_total"`
+	MemoryUsed    uint64  `json:"memory_used"`
+	MemoryPercent float64 `json:"memory_percent"`
+	DiskTotal     uint64  `json:"disk_total"`
+	DiskUsed      uint64  `json:"disk_used"`
+	DiskPercent   float64 `json:"disk_percent"`
 }

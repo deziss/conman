@@ -1,0 +1,62 @@
+# Conman Agent Docker Compose Example
+# Deploy this on each Docker host you want to monitor
+
+version: '3.8'
+
+services:
+  conman-agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.agent
+    image: conman-agent:latest
+    container_name: conman-agent
+    restart: unless-stopped
+    environment:
+      # Identity - auto-generated if not set
+      - AGENT_ID=
+      - AGENT_NAME=${HOSTNAME:-docker-host}
+      
+      # Central server connection
+      - CONMAN_SERVER_URL=http://your-conman-server:8080
+      - CONMAN_SERVER_TOKEN=${AGENT_TOKEN:-}
+      
+      # Communication mode: push, scrape, or hybrid
+      - AGENT_MODE=hybrid
+      
+      # Collection intervals
+      - COLLECT_INTERVAL=10s
+      - METRICS_INTERVAL=5s
+      - HEARTBEAT_INTERVAL=30s
+      
+      # Scrape server (for hybrid/scrape mode)
+      - SCRAPE_ENABLED=true
+      - SCRAPE_PORT=9090
+      
+      # Push settings (for hybrid/push mode)
+      - PUSH_ENABLED=true
+      
+      # Docker socket
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      
+      # Feature toggles
+      - COLLECT_CONTAINERS=true
+      - COLLECT_IMAGES=true
+      - COLLECT_NETWORKS=true
+      - COLLECT_VOLUMES=true
+      - COLLECT_METRICS=true
+      - COLLECT_EVENTS=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9090:9090"  # Scrape endpoint
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

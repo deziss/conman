@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
-import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, CommandLineIcon } from '@heroicons/react/24/solid';
 import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
@@ -35,7 +35,7 @@ export const Containers = () => {
 
   const fetchContainers = async () => {
     try {
-      const { data } = await api.get('/containers');
+      const { data } = await api.get('/docker/containers');
       setContainers(data);
 
       // Update history
@@ -80,9 +80,9 @@ export const Containers = () => {
   const handleAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
     try {
         if (action === 'remove') {
-             await api.delete(`/containers/${id}`);
+             await api.delete(`/docker/containers/${id}`);
         } else {
-             await api.post(`/containers/${id}/${action}`);
+             await api.post(`/docker/containers/${id}/${action}`);
         }
       toast.success(`Container ${action}ed`);
       fetchContainers();
@@ -96,7 +96,7 @@ export const Containers = () => {
       e.stopPropagation();
       try {
           // Backend already has Get Container Details endpoint at /containers/:id which returns inspect JSON
-          const { data } = await api.get(`/containers/${id}`);
+          const { data } = await api.get(`/docker/containers/${id}`);
           setInspectData(data);
           setInspectModalOpen(true);
       } catch (error) {
@@ -304,7 +304,14 @@ export const Containers = () => {
                  >
                      <EyeIcon className="w-5 h-5" />
                  </button>
-                 <button 
+                  <Link 
+                     to={`/containers/${container.id}/logs`}
+                     className="p-2 hover:bg-violet-500/20 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 rounded-lg transition-colors"
+                     title="View Logs"
+                  >
+                      <CommandLineIcon className="w-5 h-5" />
+                  </Link>
+                  <button 
                     onClick={() => handleAction(container.id, 'start')}
                     disabled={container.state === 'running'}
                     className="p-2 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
