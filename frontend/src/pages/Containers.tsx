@@ -8,6 +8,9 @@ import { Link } from 'react-router-dom';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
+import { PageTransition } from '../components/ui/PageTransition';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { AnimatePresence, motion } from 'framer-motion';
 
 interface Container {
   id: string;
@@ -25,7 +28,6 @@ interface Container {
 
 export const Containers = () => {
   const [containers, setContainers] = useState<Container[]>([]);
-  // Store history for sparklines: { containerId: { cpu: [], mem: [] } }
   const [statsHistory, setStatsHistory] = useState<Record<string, { cpu: {value: number}[], mem: {value: number}[] }>>({});
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'running' | 'exited' | 'paused'>('all');
@@ -35,26 +37,29 @@ export const Containers = () => {
   const { isCollapsed } = useSidebar();
   const { currentHost, isLocalHost } = useHost();
 
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: async () => {}, // Async void
+    isDestructive: false,
+  });
+
   const fetchContainers = async () => {
     try {
-      // Fetch containers based on selected host
       const endpoint = isLocalHost 
         ? '/docker/containers' 
         : `/agents/${currentHost?.id}/containers`;
       const { data } = await api.get(endpoint);
       setContainers(data || []);
 
-      // Update history
       setStatsHistory(prev => {
         const newHistory = { ...prev };
         data.forEach((c: Container) => {
            if (!newHistory[c.id]) newHistory[c.id] = { cpu: [], mem: [] };
            
-           // Parse CPU string "12.34%" -> 12.34
            const cpuVal = parseFloat(c.cpu_usage.replace('%', '')) || 0;
-           // Parse Mem string "12.34 MB" -> bytes (simplified for sparkline, just use raw number if units consistent, 
-           // but units change. Let's just strip non-numeric and hope for scale consistency or parse properly.
-           // For simple sparkline, let's just use the numeric part assuming unit doesn't jump wildly in 5s)
            const memVal = parseFloat(c.memory_usage) || 0;
 
            const maxPoints = 20;
@@ -68,11 +73,10 @@ export const Containers = () => {
 
     } catch (error: any) {
       console.error("Failed to fetch containers", error);
-      if (loading) { // Only show toast on first load failure to avoid spamming
+      if (loading) { 
           toast.error("Failed to load containers: " + (error.response?.data?.error || error.message));
       }
     } finally {
-        // Keep loading false after first load to avoid flickering
       if (loading) setLoading(false);
     }
   };
@@ -81,28 +85,57 @@ export const Containers = () => {
     fetchContainers();
     const interval = setInterval(fetchContainers, 5000);
     return () => clearInterval(interval);
-  }, [currentHost]); // Re-fetch when host changes
+  }, [currentHost]);
 
-  const handleAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
-    try {
-        if (action === 'remove') {
-             await api.delete(`/docker/containers/${id}`);
-        } else {
-             await api.post(`/docker/containers/${id}/${action}`);
-        }
-      toast.success(`Container ${action}ed`);
-      fetchContainers();
-    } catch (error) {
-      toast.error(`Failed to ${action} container`);
-    }
+  const executeAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
+      let endpoint = '';
+      let method: 'post' | 'delete' = 'post';
+
+      if (isLocalHost) {
+          endpoint = `/docker/containers/${id}`;
+          if (action !== 'remove') endpoint += `/${action}`;
+          if (action === 'remove') method = 'delete';
+      } else {
+           // Fallback for agent: needs backend implementation. 
+           endpoint = `/agents/${currentHost?.id}/containers/${id}`;
+           if (action !== 'remove') endpoint += `/${action}`;
+           if (action === 'remove') method = 'delete';
+      }
+
+      const promise = method === 'delete' ? api.delete(endpoint) : api.post(endpoint);
+      
+      try {
+          await toast.promise(promise, {
+              loading: `${action.charAt(0).toUpperCase() + action.slice(1)}ing container...`,
+              success: `Container ${action}ed successfully`,
+              error: `Failed to ${action} container`
+          });
+          fetchContainers();
+      } catch (e) {
+          // Toast handles error display
+      }
+  };
+
+  const handleActionClick = (id: string, action: 'start' | 'stop' | 'remove') => {
+      if (action === 'remove' || action === 'stop') {
+          setConfirmModal({
+              isOpen: true,
+              title: `${action.charAt(0).toUpperCase() + action.slice(1)} Container`,
+              message: `Are you sure you want to ${action} this container? This action cannot be undone.`,
+              isDestructive: true,
+              onConfirm: async () => executeAction(id, action)
+          });
+      } else {
+          executeAction(id, action);
+      }
   };
 
   const handleInspect = async (id: string, e: React.MouseEvent) => {
-      e.preventDefault(); // Prevent Link navigation if inside link (but we put button outside)
+      e.preventDefault();
       e.stopPropagation();
       try {
-          // Backend already has Get Container Details endpoint at /containers/:id which returns inspect JSON
-          const { data } = await api.get(`/docker/containers/${id}`);
+          const endpoint = isLocalHost ? `/docker/containers/${id}` : `/agents/${currentHost?.id}/containers/${id}`;
+          const { data } = await api.get(endpoint);
           setInspectData(data);
           setInspectModalOpen(true);
       } catch (error) {
@@ -117,7 +150,6 @@ export const Containers = () => {
   };
 
   const formatTime = (created: number) => {
-      // created is in seconds, convert to ms
       return new Date(created * 1000).toLocaleString();
   }
 
@@ -131,26 +163,26 @@ export const Containers = () => {
     });
 
   return (
+    <PageTransition>
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
           Containers
         </h2>
         <div className="flex items-center space-x-3">
           {!isLocalHost && (
-            <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
-              <ServerStackIcon className="w-4 h-4" />
-              <span>{currentHost?.name}</span>
-            </GlassCard>
-          )}
-          <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400">
-           <span className="relative flex h-3 w-3">
+           <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400">
+            <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
             </span>
             <span>Live Connection</span>
-        </GlassCard>
-      </div>
+           </GlassCard>
+          )}
+          <button onClick={() => fetchContainers()} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+            <ArrowPathIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -163,200 +195,162 @@ export const Containers = () => {
         </GlassCard>
          <GlassCard className="p-6 relative overflow-hidden group">
             <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <PlayIcon className="w-16 h-16 text-emerald-600 dark:text-emerald-400" />
+                <PlayIcon className="w-16 h-16 text-emerald-500" />
             </div>
             <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Running</p>
-            <p className="text-4xl font-mono font-bold mt-2 text-emerald-600 dark:text-emerald-400">{containers.filter(c => c.state === 'running').length}</p>
+            <p className="text-4xl font-mono font-bold mt-2 text-emerald-500">{containers.filter(c => c.state === 'running').length}</p>
+        </GlassCard>
+        <GlassCard className="p-6 relative overflow-hidden group">
+            <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                <StopIcon className="w-16 h-16 text-amber-500" />
+            </div>
+             <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Stopped</p>
+            <p className="text-4xl font-mono font-bold mt-2 text-amber-500">{containers.filter(c => c.state !== 'running').length}</p>
         </GlassCard>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
-        <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-300">Container List</h3>
-        
-        <div className="flex items-center space-x-4">
-          <div className="flex bg-white dark:bg-slate-800/50 rounded-lg p-1 border border-slate-200 dark:border-slate-700/50">
-            {(['all', 'running', 'exited', 'paused'] as const).map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilterStatus(status)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize ${
-                  filterStatus === status 
-                    ? 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-400 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-700/50'
-                }`}
-              >
-                {status}
-              </button>
-            ))}
-          </div>
+      <div className="flex gap-4 mb-6">
+        <select 
+          value={filterStatus} 
+          onChange={(e) => setFilterStatus(e.target.value as any)}
+          className="bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          <option value="all">All Status</option>
+          <option value="running">Running</option>
+          <option value="exited">Exited</option>
+          <option value="paused">Paused</option>
+        </select>
+         <select 
+          value={sortOrder} 
+          onChange={(e) => setSortOrder(e.target.value as any)}
+          className="bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        >
+          <option value="state">Sort by State</option>
+          <option value="name">Sort by Name</option>
+          <option value="status">Sort by Status</option>
+        </select>
+      </div>
 
-          <select
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value as any)}
-            className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block p-2 outline-none"
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <AnimatePresence mode="popLayout">
+        {filteredContainers.map(container => (
+          <motion.div
+            key={container.id}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            layout
           >
-            <option value="state">Sort by State</option>
-            <option value="name">Sort by Name</option>
-            <option value="status">Sort by Status</option>
-          </select>
-        </div>
-      </div>
-      
-      {loading ? (
-          <div className="text-slate-500 text-center py-10 animate-pulse">Loading containers...</div>
-      ) : (
-      <div className={`grid gap-6 ${
-          isCollapsed 
-            ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' 
-            : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4'
-        }`}>
-        {filteredContainers.map((container) => (
-          <GlassCard key={container.id} hover className="flex flex-col justify-between group">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex items-center space-x-3">
-                  <div className={`w-2 h-2 rounded-full ${getStatusColor(container.state)}`} />
-                  <Link to={`/containers/${container.id}`} className="block">
-                    <h4 className="font-semibold text-lg text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors truncate max-w-[200px] cursor-pointer hover:underline">
-                      {container.name || container.id.substring(0, 12)}
-                    </h4>
-                  </Link>
-                </div>
-                <p className="text-xs text-slate-500 font-mono mt-1 ml-5 truncate max-w-[250px]">{container.image}</p>
-                
-                {/* Enhanced Info Grid */}
-                <div className="mt-4 ml-5 grid grid-cols-2 gap-x-8 gap-y-2 text-xs font-mono text-slate-500 dark:text-slate-400">
+          <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group">
+             <div className="p-5 border-b border-slate-200 dark:border-slate-700/50 flex justify-between items-start bg-slate-50/30 dark:bg-slate-800/30">
+                <div className="flex items-start space-x-3">
+                    <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500`}></div>
                     <div>
-                        <span className="text-slate-400 dark:text-slate-600 block text-[10px] uppercase">IP Address</span>
-                        <span>{container.ip_address || '-'}</span>
-                    </div>
-                     <div>
-                        <span className="text-slate-400 dark:text-slate-600 block text-[10px] uppercase">Created</span>
-                        <span>{formatTime(container.created)}</span>
-                    </div>
-                    {container.ports && container.ports.length > 0 && (
-                        <div className="col-span-2">
-                             <span className="text-slate-400 dark:text-slate-600 block text-[10px] uppercase">Ports</span>
-                             <span className="break-all">{container.ports.join(', ')}</span>
+                        <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                            {container.name.replace(/^\//, '')}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-1">
+                             <p className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-700/50 px-1.5 py-0.5 rounded">{container.image.substring(0, 25)}{container.image.length > 25 ? '...' : ''}</p>
+                             <p className="text-xs text-slate-400">{container.status}</p>
                         </div>
-                    )}
+                    </div>
                 </div>
-                
-                 {/* Resource Usage Stats */}
-                 <div className="mt-3 ml-5 pt-3 border-t border-slate-200 dark:border-slate-700/50 grid grid-cols-2 gap-4 text-xs font-mono text-slate-500 dark:text-slate-400">
-                    <div>
-                         <div className="flex justify-between items-end mb-1">
-                             <span className="text-slate-400 dark:text-slate-600 block text-[10px] uppercase">CPU</span>
-                             <span className={(container.cpu_usage && container.cpu_usage !== "0.00%") ? "text-emerald-500 font-bold" : ""}>{container.cpu_usage || '0.00%'}</span>
-                         </div>
-                         <div className="h-8 w-full bg-slate-100 dark:bg-slate-800/50 rounded overflow-hidden">
-                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={statsHistory[container.id]?.cpu || []}>
-                                    <defs>
-                                        <linearGradient id={`colorCpu-${container.id}`} x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                        </linearGradient>
-                                    </defs>
-                                    <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={1} fill={`url(#colorCpu-${container.id})`} isAnimationActive={false} />
-                                    <YAxis domain={[0, 100]} hide />
-                                </AreaChart>
-                             </ResponsiveContainer>
-                         </div>
+                <div className="flex space-x-1 opacity-80">
+                   <button 
+                        onClick={() => handleActionClick(container.id, container.state === 'running' ? 'stop' : 'start')}
+                        className={`p-1.5 rounded-lg transition-colors ${container.state === 'running' ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-emerald-500/10 text-emerald-500'}`}
+                        title={container.state === 'running' ? 'Stop' : 'Start'}
+                    >
+                        {container.state === 'running' ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                    </button>
+                    <button 
+                        onClick={() => handleActionClick(container.id, 'remove')}
+                        className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
+                        title="Remove"
+                    >
+                        <TrashIcon className="w-5 h-5" />
+                    </button>
+                     <button 
+                        onClick={(e) => handleInspect(container.id, e)}
+                        className="p-1.5 rounded-lg hover:bg-cyan-500/10 text-cyan-500 transition-colors"
+                        title="Inspect"
+                    >
+                        <EyeIcon className="w-5 h-5" />
+                    </button>
+                     <Link to={`/containers/${container.id}/logs`} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Logs">
+                        <CommandLineIcon className="w-5 h-5" />
+                    </Link>
+                </div>
+             </div>
+             
+             <div className="p-5 grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">CPU Usage</p>
+                    <div className="flex items-end space-x-2">
+                        <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.cpu_usage}</span>
+                         <div className="h-8 w-24">
+                           {statsHistory[container.id]?.cpu.length > 0 && (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={statsHistory[container.id].cpu}>
+                                <Area type="monotone" dataKey="value" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                           )}
+                        </div>
                     </div>
-                     <div>
-                         <div className="flex justify-between items-end mb-1">
-                             <span className="text-slate-400 dark:text-slate-600 block text-[10px] uppercase">Mem</span>
-                             <span>{container.memory_usage || '0 B'}</span>
-                         </div>
-                          <div className="h-8 w-full bg-slate-100 dark:bg-slate-800/50 rounded overflow-hidden">
-                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={statsHistory[container.id]?.mem || []}>
-                                    <defs>
-                                        <linearGradient id={`colorMem-${container.id}`} x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                                        </linearGradient>
-                                    </defs>
-                                    <Area type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={1} fill={`url(#colorMem-${container.id})`} isAnimationActive={false} />
-                                </AreaChart>
-                             </ResponsiveContainer>
-                         </div>
+                </div>
+                 <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Memory</p>
+                     <div className="flex items-end space-x-2">
+                        <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.memory_usage}</span>
+                        <div className="h-8 w-24">
+                           {statsHistory[container.id]?.mem.length > 0 && (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={statsHistory[container.id].mem}>
+                                <Area type="monotone" dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                           )}
+                        </div>
                     </div>
-                     <div className="col-span-2">
-                         <div className="flex justify-between items-end mb-1">
-                            <span className="text-slate-400 dark:text-slate-600 block text-[10px] uppercase">Disk I/O</span>
-                            <span>{container.disk_io || '0 B / 0 B'}</span>
-                         </div>
-                         {/* Simple visual bar for I/O activity if non-zero */}
-                         <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800/50 rounded-full overflow-hidden">
-                             <div 
-                                className="h-full bg-amber-400 rounded-full transition-all duration-500" 
-                                style={{ width: container.disk_io && container.disk_io !== "0 B / 0 B" ? '100%' : '0%' }} // Animated "active" indicator
-                             />
-                         </div>
-                    </div>
-                 </div>
-
-              </div>
-              <div className="p-2 glass rounded-lg opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0" onClick={fetchContainers}>
-                <ArrowPathIcon className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-700/50">
-              <div className="flex space-x-4 text-xs font-mono text-slate-500 dark:text-slate-400">
-                <span className="uppercase">{container.status}</span>
-              </div>
-              
-              <div className="flex space-x-2">
-                 <button 
-                    onClick={(e) => handleInspect(container.id, e)}
-                    className="p-2 hover:bg-cyan-500/20 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 rounded-lg transition-colors"
-                    title="Inspect Container"
-                 >
-                     <EyeIcon className="w-5 h-5" />
-                 </button>
-                  <Link 
-                     to={`/containers/${container.id}/logs`}
-                     className="p-2 hover:bg-violet-500/20 text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 rounded-lg transition-colors"
-                     title="View Logs"
-                  >
-                      <CommandLineIcon className="w-5 h-5" />
-                  </Link>
-                  <button 
-                    onClick={() => handleAction(container.id, 'start')}
-                    disabled={container.state === 'running'}
-                    className="p-2 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    <PlayIcon className="w-5 h-5" />
-                 </button>
-                 <button 
-                    onClick={() => handleAction(container.id, 'stop')}
-                    disabled={container.state !== 'running'}
-                    className="p-2 hover:bg-rose-500/20 text-rose-600 dark:text-rose-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    <StopIcon className="w-5 h-5" />
-                 </button>
-                  <button 
-                    onClick={() => handleAction(container.id, 'remove')}
-                    className="p-2 hover:bg-slate-500/20 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-lg transition-colors">
-                    <TrashIcon className="w-5 h-5" />
-                 </button>
-              </div>
-            </div>
-            
-            <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500/0 via-cyan-500/50 to-purple-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+                 <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net I/O</p>
+                    <p className="text-sm font-mono text-slate-400">Rx/Tx -- / --</p>
+                </div>
+                 <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Block I/O</p>
+                    <p className="text-sm font-mono text-slate-400">{container.disk_io}</p>
+                </div>
+             </div>
           </GlassCard>
+          </motion.div>
         ))}
+        {filteredContainers.length === 0 && (
+            <div className="col-span-full py-12 text-center text-slate-500">
+                <p>No containers found matching filters.</p>
+            </div>
+        )}
+      </AnimatePresence>
       </div>
-      )}
 
       <InspectModal 
         isOpen={inspectModalOpen} 
         onClose={() => setInspectModalOpen(false)} 
-        title="Container Details" 
         data={inspectData} 
       />
+
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({...prev, isOpen: false}))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        isDestructive={confirmModal.isDestructive}
+        confirmText={confirmModal.title.split(' ')[0]} // "Remove", "Stop"
+      />
     </div>
+    </PageTransition>
   );
 };
