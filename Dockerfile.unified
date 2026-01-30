@@ -1,6 +1,7 @@
 # =============================================================================
-# UNIFIED CONMAN IMAGE
-# Combines frontend + backend into a single container
+# UNIFIED CONMAN IMAGE - OPTIMIZED
+# Combines frontend + backend into a single lightweight container
+# Target size: ~50-80MB (down from ~700MB)
 # =============================================================================
 
 # Stage 1: Build Frontend
@@ -15,7 +16,7 @@ RUN apk add --no-cache python3 make g++
 COPY frontend/package*.json ./
 
 # Clean install (fixes native binding issues)
-RUN rm -rf node_modules package-lock.json && npm install
+RUN rm -rf node_modules package-lock.json && npm install --legacy-peer-deps
 
 # Copy source and build
 COPY frontend/ ./
@@ -26,7 +27,7 @@ FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app
 
-# Install git, ca-certificates AND build tools for CGO/SQLite
+# Install build tools for CGO/SQLite
 RUN apk add --no-cache git ca-certificates gcc musl-dev sqlite-dev
 
 # Copy go mod files
@@ -37,20 +38,24 @@ RUN go mod download
 COPY backend/ .
 
 # Build with CGO enabled for SQLite (static linking)
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w -extldflags '-static'" -o conman-server ./cmd/server
+# Use -ldflags to strip debug info and reduce binary size
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -extldflags '-static'" \
+    -trimpath \
+    -o conman-server ./cmd/server
 
-# Stage 3: Final minimal image
-FROM debian:bookworm-slim
+# Stage 3: Final minimal image using Alpine
+FROM alpine:3.21
 
 WORKDIR /app
 
-# Install Docker CLI for container management
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install only docker-cli (not full docker), ca-certs, and curl for healthcheck
+# docker-cli is ~60MB vs ~400MB for full docker install
+RUN apk add --no-cache \
     ca-certificates \
     curl \
-    && curl -fsSL https://get.docker.com | sh \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    docker-cli \
+    && rm -rf /var/cache/apk/*
 
 # Copy backend binary
 COPY --from=backend-builder /app/conman-server /app/conman-server
@@ -61,8 +66,8 @@ COPY --from=frontend-builder /frontend/dist /app/static
 # Copy authz files for casbin
 COPY --from=backend-builder /app/internal/authz /app/internal/authz
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directory with proper permissions
+RUN mkdir -p /app/data && chown -R nobody:nogroup /app/data
 
 # Environment variables with defaults
 ENV PORT=5173

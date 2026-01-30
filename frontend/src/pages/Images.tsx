@@ -14,12 +14,15 @@ import {
     ArrowUpCircleIcon,
     CheckCircleIcon,
     ExclamationCircleIcon,
-    MagnifyingGlassIcon
+
+    MagnifyingGlassIcon,
+    ServerStackIcon
 } from '@heroicons/react/24/solid';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
+import { useHost } from '../contexts/HostContext';
 import { clsx } from 'clsx';
 
 interface Image {
@@ -51,11 +54,13 @@ export const Images = () => {
   const [updateStatuses, setUpdateStatuses] = useState<Record<string, UpdateStatus>>({});
   const [checkingAll, setCheckingAll] = useState(false);
   const { isCollapsed } = useSidebar();
+  const { currentHost, isLocalHost } = useHost();
   const navigate = useNavigate();
 
   const fetchImages = async () => {
     try {
-      const { data } = await api.get('/docker/images');
+      const endpoint = isLocalHost ? '/docker/images' : `/agents/${currentHost?.id}/images`;
+      const { data } = await api.get(endpoint);
       setImages(data || []);
     } catch (error) {
       console.error("Failed to fetch images", error);
@@ -66,7 +71,7 @@ export const Images = () => {
 
   useEffect(() => {
     fetchImages();
-  }, []);
+  }, [currentHost]);
 
   const handlePullImage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -293,10 +298,17 @@ export const Images = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
+
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
           Images
         </h2>
         <div className="flex items-center space-x-2">
+          {!isLocalHost && (
+            <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
+              <ServerStackIcon className="w-4 h-4" />
+              <span>{currentHost?.name}</span>
+            </GlassCard>
+          )}
           <GlassCard 
             className={clsx(
               "px-4 py-2 flex items-center space-x-2 text-sm cursor-pointer transition-colors",
