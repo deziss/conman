@@ -1,0 +1,65 @@
+# =============================================================================
+# CONMAN - Simplified Docker Compose
+# Single unified image (frontend + backend) + optional agent
+# =============================================================================
+
+services:
+  # Unified Conman Server (Frontend + Backend in one container)
+  conman-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.unified
+    image: conman-server:latest
+    container_name: conman-server
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - conman_data:/app/data
+    environment:
+      - PORT=5173
+      - DATABASE_URL=/app/data/app.db
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - STATIC_DIR=/app/static
+      - CORS_ORIGINS=http://localhost:5173
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Agent for this host (connects back to server)
+  agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.agent
+    image: conman-agent:latest
+    container_name: conman-agent
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9090:9090"
+    environment:
+      - AGENT_NAME=local-host
+      - CONMAN_SERVER_URL=http://conman-server:5173
+      - AGENT_MODE=hybrid
+      - COLLECT_INTERVAL=10s
+      - SCRAPE_PORT=9090
+    depends_on:
+      conman-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+    profiles:
+      - agent  # Only starts if you run: docker compose --profile agent up
+
+volumes:
+  conman_data:

@@ -15,7 +15,7 @@ services:
       - frontend_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+      - VITE_API_URL=http://backend:8000
     networks:
       - app-network
 
@@ -37,6 +37,35 @@ services:
     networks:
       - app-network
 
+  # Local Agent (for testing multi-host architecture)
+  agent:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9090:9090"
+    environment:
+      - AGENT_NAME=local-host
+      - CONMAN_SERVER_URL=http://backend:8000
+      - AGENT_MODE=hybrid
+      - COLLECT_INTERVAL=10s
+      - METRICS_INTERVAL=5s
+      - HEARTBEAT_INTERVAL=30s
+      - SCRAPE_ENABLED=true
+      - SCRAPE_PORT=9090
+      - PUSH_ENABLED=true
+    networks:
+      - app-network
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+
   # ---------------------------------------------------------------------------
   # ZITADEL (IAM)
   # ---------------------------------------------------------------------------
@@ -47,14 +76,13 @@ services:
       - apparmor=unconfined
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: zitadel_password
-      POSTGRES_DB: zitadel
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - zitadel_data:/var/lib/postgresql/data
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d zitadel"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -68,13 +96,13 @@ services:
     volumes:
       - ./zitadel-config.yaml:/zitadel.yaml
     environment:
-      ZITADEL_MASTERKEY: MasterkeyNeedsToBe32BytesLong
+      ZITADEL_MASTERKEY: MasterkeyNeedsToBe32BytesLong123
     networks:
       - app-network
 
   zitadel:
     image: ghcr.io/zitadel/zitadel:latest
-    command: 'start --config /zitadel.yaml'
+    command: 'start --config /zitadel.yaml --masterkeyFromEnv --tlsMode disabled'
     depends_on:
       zitadel-db:
         condition: service_healthy
@@ -85,7 +113,8 @@ services:
     volumes:
       - ./zitadel-config.yaml:/zitadel.yaml
     environment:
-      ZITADEL_MASTERKEY: MasterkeyNeedsToBe32BytesLong
+      ZITADEL_MASTERKEY: MasterkeyNeedsToBe32BytesLong123
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "false"
     networks:
       - app-network
 

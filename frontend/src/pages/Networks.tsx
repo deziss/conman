@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { 
     SignalIcon, 
@@ -36,6 +37,7 @@ export const Networks = () => {
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const navigate = useNavigate();
   
   // Sort State
   const [sortField, setSortField] = useState<SortField>('Name');
@@ -91,13 +93,7 @@ export const Networks = () => {
   };
 
   const handleInspect = async (id: string) => {
-      try {
-          const { data } = await api.get(`/docker/networks/inspect?id=${encodeURIComponent(id)}`);
-          setInspectData(data);
-          setInspectModalOpen(true);
-      } catch (error) {
-          toast.error("Failed to inspect network");
-      }
+      navigate(`/networks/${encodeURIComponent(id)}`);
   }
 
   const handleSort = (field: SortField) => {

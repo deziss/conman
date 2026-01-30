@@ -2,13 +2,16 @@ package main
 
 import (
 	"conman-backend/internal/api"
-    "conman-backend/internal/authz"
+	"conman-backend/internal/authz"
 	"conman-backend/internal/config"
 	"conman-backend/internal/middleware"
 	"conman-backend/internal/models"
 	"conman-backend/internal/service"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
@@ -33,7 +36,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -94,6 +97,8 @@ func main() {
         dockerHandler := api.NewDockerHandler()
         networkHandler := api.NewNetworkHandler()
         volumeHandler := api.NewVolumeHandler()
+        environmentHandler := api.NewEnvironmentHandler(db)
+        agentHandler := api.NewAgentHandler()
         
         // Middleware Instance
         mw := middleware.NewMiddleware(db)
@@ -111,6 +116,15 @@ func main() {
                 r.Use(mw.RequirePermission("users", "write"))
                 r.Get("/", userHandler.ListUsers)
                 r.Post("/", userHandler.CreateUser)
+                r.Post("/", userHandler.CreateUser)
+            })
+
+            // Environments
+            r.Route("/environments", func(r chi.Router) {
+                // TODO: Add permissions later, for now admin/write?
+                r.Get("/", environmentHandler.ListEnvironments)
+                r.Post("/", environmentHandler.CreateEnvironment)
+                r.Delete("/{id}", environmentHandler.DeleteEnvironment)
             })
 
             // Profile / API Keys (Self Service)
@@ -122,47 +136,56 @@ func main() {
                  r.Delete("/keys/{id}", userHandler.RevokeAPIKey)
             })
 
-            // Containers
-            // Generic policy: obj=containers, act=read/write
-            r.Get("/containers", containerHandler.ListContainers) // Check perm inside?
-            
-            // Or better: Route specific permissions
-            r.Route("/containers", func(r chi.Router) {
-                 r.Get("/", mw.RequirePermission("containers", "read")(http.HandlerFunc(containerHandler.ListContainers)).ServeHTTP)
-            })
 
-            r.Route("/containers/{id}", func(r chi.Router) {
-                r.Use(mw.RequirePermission("containers", "read"))
-                r.Get("/", containerHandler.InspectContainer)
-                r.Get("/logs", containerHandler.StreamLogs)
-                r.Get("/stats", containerHandler.StreamStats)
 
-                r.Group(func(r chi.Router) {
-                    r.Use(mw.RequirePermission("containers", "write"))
-                    r.Get("/exec", containerHandler.StreamExec) 
-                    r.Post("/start", containerHandler.StartContainer)
-                    r.Post("/stop", containerHandler.StopContainer)
-                    r.Post("/pause", containerHandler.PauseContainer)
-                    r.Post("/unpause", containerHandler.UnpauseContainer)
-                    r.Post("/restart", containerHandler.RestartContainer)
-                    r.Delete("/", containerHandler.RemoveContainer)
-                })
-            })
+            // Docker System
+            // Docker System
+            // Docker System
+
 
             // Docker System
             r.Route("/docker", func(r chi.Router) {
-                r.Use(mw.RequirePermission("images", "read"))
-                r.Get("/images", dockerHandler.ListImages) 
-                r.Get("/images/{id}", dockerHandler.InspectImage)
-                r.Get("/system/info", dockerHandler.GetSystemInfo)
-
+                // Images Subgroup
                 r.Group(func(r chi.Router) {
-                    r.Use(mw.RequirePermission("images", "write"))
-                    r.Delete("/images/{id}", dockerHandler.RemoveImage)
-                    r.Post("/images/pull", dockerHandler.PullImage)
-                    r.Post("/prune/containers", dockerHandler.PruneContainers)
-                    r.Post("/prune/images", dockerHandler.PruneImages)
+                    r.Use(mw.RequirePermission("images", "read"))
+                    r.Get("/images", dockerHandler.ListImages) 
+                    r.Get("/images/{id}", dockerHandler.InspectImage)
+                    r.Get("/system/info", dockerHandler.GetSystemInfo)
+                    r.Get("/system/df", dockerHandler.GetSystemDF)
+                    r.Get("/system/stats", dockerHandler.GetSystemStats)
+                    r.Get("/images/{id}/check-update", dockerHandler.CheckUpdate)
+
+                    r.Group(func(r chi.Router) {
+                        r.Use(mw.RequirePermission("images", "write"))
+                        r.Delete("/images/{id}", dockerHandler.RemoveImage)
+                        r.Post("/images/pull", dockerHandler.PullImage)
+                        r.Post("/prune/containers", dockerHandler.PruneContainers)
+                        r.Post("/prune/images", dockerHandler.PruneImages)
+                    })
                 })
+
+                // Containers Subgroup (Re-integrated correctly)
+                r.Get("/containers", mw.RequirePermission("containers", "read")(http.HandlerFunc(containerHandler.ListContainers)).ServeHTTP)
+                
+                r.Route("/containers/{id}", func(r chi.Router) {
+                     r.Use(mw.RequirePermission("containers", "read"))
+                     r.Get("/", containerHandler.InspectContainer)
+                     r.Get("/logs", containerHandler.StreamLogs)
+                     r.Get("/stats", containerHandler.StreamStats)
+
+                     r.Group(func(r chi.Router) {
+                         r.Use(mw.RequirePermission("containers", "write"))
+                         r.Get("/exec", containerHandler.StreamExec) 
+                         r.Post("/start", containerHandler.StartContainer)
+                         r.Post("/stop", containerHandler.StopContainer)
+                         r.Post("/pause", containerHandler.PauseContainer)
+                         r.Post("/unpause", containerHandler.UnpauseContainer)
+                         r.Post("/restart", containerHandler.RestartContainer)
+                         r.Delete("/", containerHandler.RemoveContainer)
+                     })
+                })
+
+
             })
 
             // Docker Networks
@@ -189,8 +212,47 @@ func main() {
                      r.Post("/prune", volumeHandler.PruneVolumes)
                  })
             })
+
+            // Agent Management (Multi-Host)
+            agentHandler.RegisterRoutes(r)
         })
 	})
+
+	// Health Check endpoint (public)
+	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"healthy"}`))
+	})
+
+	// Serve static frontend files if STATIC_DIR is set
+	if config.AppConfig.StaticDir != "" {
+		staticDir := config.AppConfig.StaticDir
+		log.Printf("Serving static files from: %s", staticDir)
+
+		// Serve static assets
+		fileServer := http.FileServer(http.Dir(staticDir))
+		
+		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+			
+			// Check if file exists
+			fullPath := filepath.Join(staticDir, path)
+			if _, err := os.Stat(fullPath); err == nil {
+				// File exists, serve it
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			
+			// For SPA routing: if path doesn't start with /api, serve index.html
+			if !strings.HasPrefix(path, "/api") {
+				http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+				return
+			}
+			
+			// API route not found
+			http.NotFound(w, r)
+		})
+	}
 
 	// Start Server
 	log.Printf("Server running on port %s", config.AppConfig.Port)

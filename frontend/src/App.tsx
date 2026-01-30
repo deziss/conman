@@ -4,15 +4,19 @@ import { Dashboard } from './pages/Dashboard';
 import { Containers } from './pages/Containers';
 import { ContainerDetails } from './pages/ContainerDetails';
 import { Images } from './pages/Images';
+import { ImageDetailsPage } from './pages/ImageDetailsPage';
+import { NetworkDetailsPage } from './pages/NetworkDetailsPage';
+import { ContainerLogsPage } from './pages/ContainerLogsPage';
 import { Networks } from './pages/Networks';
 import { Volumes } from './pages/Volumes';
+import { Environments } from './pages/Environments';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
 import { Profile } from './pages/Profile';
 import { Login } from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -36,9 +40,13 @@ function App() {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/containers" element={<Containers />} />
                       <Route path="/containers/:id" element={<ContainerDetails />} />
+                      <Route path="/containers/:id/logs" element={<ContainerLogsPage />} />
                       <Route path="/images" element={<Images />} />
+                      <Route path="/images/:id" element={<ImageDetailsPage />} />
                       <Route path="/networks" element={<Networks />} />
+                      <Route path="/networks/:id" element={<NetworkDetailsPage />} />
                       <Route path="/volumes" element={<Volumes />} />
+                      <Route path="/environments" element={<Environments />} />
                       <Route path="/users" element={<Users />} />
                       <Route path="/profile" element={<Profile />} />
                       <Route path="/settings" element={<Settings />} />

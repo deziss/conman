@@ -22,9 +22,10 @@ interface Volume {
   Mountpoint: string;
   CreatedAt: string;
   Scope: string;
+  Size?: number; // Added from System DF
 }
 
-type SortField = 'Name' | 'Driver' | 'Mountpoint' | 'CreatedAt';
+type SortField = 'Name' | 'Driver' | 'Mountpoint' | 'CreatedAt' | 'Size';
 type SortDirection = 'asc' | 'desc';
 
 export const Volumes = () => {
@@ -44,10 +45,35 @@ export const Volumes = () => {
 
   const fetchVolumes = async () => {
     try {
-      const { data } = await api.get('/docker/volumes');
-      setVolumes(data || []);
+      // Parallel fetch for speed
+      const [volRes, dfRes] = await Promise.all([
+          api.get('/docker/volumes'),
+          api.get('/docker/system/df').catch(e => ({ data: null })) // Soft fail for DF
+      ]);
+
+      const volumesData: Volume[] = volRes.data || [];
+      const dfData = dfRes.data;
+
+      // Map usage if available
+      // Docker system df returns { Volumes: [ { Name, UsageData: { Size, RefCount } } ] }
+      const usageMap = new Map<string, number>();
+      if (dfData && dfData.Volumes) {
+          dfData.Volumes.forEach((v: any) => {
+              if (v.UsageData && v.UsageData.Size !== undefined) {
+                  usageMap.set(v.Name, v.UsageData.Size);
+              }
+          });
+      }
+
+      const merged = volumesData.map(v => ({
+          ...v,
+          Size: usageMap.get(v.Name) // Undefined if not found
+      }));
+
+      setVolumes(merged);
     } catch (error) {
       console.error("Failed to fetch volumes", error);
+      toast.error("Failed to load volume data");
     } finally {
       setLoading(false);
     }
@@ -107,8 +133,15 @@ export const Volumes = () => {
 
   const sortedVolumes = useMemo(() => {
       return [...volumes].sort((a, b) => {
-          let aValue = a[sortField];
-          let bValue = b[sortField];
+          let aValue: any = a[sortField];
+          let bValue: any = b[sortField];
+          
+          if (sortField === 'Size') {
+             // Treat undefined as -1 for sorting
+             aValue = a.Size ?? -1;
+             bValue = b.Size ?? -1;
+             return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+          }
 
           // Handle dates or strings
           if (sortField === 'CreatedAt') {
@@ -130,6 +163,15 @@ export const Volumes = () => {
       return sortDirection === 'asc' ? 
         <ChevronUpIcon className="w-4 h-4 ml-1 text-amber-400" /> : 
         <ChevronDownIcon className="w-4 h-4 ml-1 text-amber-400" />;
+  };
+
+  const formatSize = (bytes?: number) => {
+      if (bytes === undefined || bytes === null) return 'N/A';
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   return (
@@ -168,6 +210,9 @@ export const Volumes = () => {
                          <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('Mountpoint')}>
                              <div className="flex items-center">Mountpoint <SortIcon field="Mountpoint" /></div>
                         </th>
+                        <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('Size')}>
+                             <div className="flex items-center">Size <SortIcon field="Size" /></div>
+                        </th>
                          <th className="px-6 py-4 hidden md:table-cell cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('CreatedAt')}>
                              <div className="flex items-center">Created <SortIcon field="CreatedAt" /></div>
                         </th>
@@ -176,9 +221,9 @@ export const Volumes = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-white/5">
                     {loading ? (
-                        <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500 animate-pulse">Loading volumes...</td></tr>
+                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 animate-pulse">Loading volumes...</td></tr>
                     ) : sortedVolumes.length === 0 ? (
-                        <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No volumes found.</td></tr>
+                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">No volumes found.</td></tr>
                     ) : (
                         sortedVolumes.map((vol) => (
                             <tr key={vol.Name} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
@@ -198,6 +243,9 @@ export const Volumes = () => {
                                         <ServerIcon className="w-3 h-3 text-slate-500 dark:text-slate-600" />
                                         <span className="truncate max-w-[250px]" title={vol.Mountpoint}>{vol.Mountpoint}</span>
                                     </div>
+                                </td>
+                                <td className="px-6 py-4 font-mono text-xs text-slate-600 dark:text-slate-500">
+                                    {formatSize(vol.Size)}
                                 </td>
                                 <td className="px-6 py-4 hidden md:table-cell text-xs text-slate-500">
                                     {vol.CreatedAt ? new Date(vol.CreatedAt).toLocaleDateString() : 'N/A'}

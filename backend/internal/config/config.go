@@ -6,14 +6,15 @@ import (
 )
 
 type Config struct {
-	Port         string `mapstructure:"PORT"`
-	DatabaseURL  string `mapstructure:"DATABASE_URL"`
-	SecretKey    string `mapstructure:"SECRET_KEY"`
-	CorsOrigins  []string `mapstructure:"CORS_ORIGINS"`
-	DockerHost   string `mapstructure:"DOCKER_HOST"`
-	MasterAPIKey string `mapstructure:"MASTER_API_KEY"`
-    AdminEmail   string `mapstructure:"ADMIN_EMAIL"`
-    AdminPassword string `mapstructure:"ADMIN_PASSWORD"`
+	Port          string   `mapstructure:"PORT"`
+	DatabaseURL   string   `mapstructure:"DATABASE_URL"`
+	SecretKey     string   `mapstructure:"SECRET_KEY"`
+	CorsOrigins   []string `mapstructure:"CORS_ORIGINS"`
+	DockerHost    string   `mapstructure:"DOCKER_HOST"`
+	MasterAPIKey  string   `mapstructure:"MASTER_API_KEY"`
+	AdminEmail    string   `mapstructure:"ADMIN_EMAIL"`
+	AdminPassword string   `mapstructure:"ADMIN_PASSWORD"`
+	StaticDir     string   `mapstructure:"STATIC_DIR"` // Path to frontend build
 }
 
 var AppConfig *Config
@@ -27,6 +28,7 @@ func LoadConfig() {
 	viper.SetDefault("MASTER_API_KEY", "conman-master-secret-key")
     viper.SetDefault("ADMIN_EMAIL", "admin@example.com")
     viper.SetDefault("ADMIN_PASSWORD", "admin")
+	viper.SetDefault("STATIC_DIR", "") // Empty means static serving disabled
 
 	viper.AutomaticEnv()
 

@@ -8,10 +8,14 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-    "strings"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
+	"strings"
 )
 
 type DockerHandler struct{}
@@ -112,6 +116,10 @@ func (h *DockerHandler) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 		DockerVersion: info.ServerVersion,
 		MemoryTotal:   info.MemTotal,
 		CPUCount:      info.NCPU,
+        Name:          info.Name,
+        KernelVersion: info.KernelVersion,
+        OperatingSystem: info.OperatingSystem,
+        Architecture:  info.Architecture,
 	})
 }
 
@@ -165,4 +173,63 @@ func (h *DockerHandler) InspectImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, info)
+}
+
+func (h *DockerHandler) GetSystemDF(w http.ResponseWriter, r *http.Request) {
+	cli := service.GetDockerClient()
+	
+	// DiskUsage returns (types.DiskUsage, error)
+    // Pass types.DiskUsageOptions instead of filters.Args
+	usage, err := cli.DiskUsage(context.Background(), types.DiskUsageOptions{})
+	if err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, usage)
+}
+
+func (h *DockerHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+	cli := service.GetDockerClient()
+	
+	// We need image info to get repo:tag
+	info, _, err := cli.ImageInspectWithRaw(context.Background(), id)
+	if err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	
+	if len(info.RepoTags) == 0 {
+		WriteJSON(w, http.StatusOK, map[string]interface{}{"update_available": false, "reason": "no_tag"})
+		return
+	}
+	
+	// Check first tag
+	updateAvailable, err := service.CheckForUpdate(info.RepoTags[0], info.ID)
+	if err != nil {
+		 // Don't fail the request, just report error in JSON
+		 WriteJSON(w, http.StatusOK, map[string]interface{}{"update_available": false, "error": err.Error()})
+		 return
+	}
+	
+	WriteJSON(w, http.StatusOK, map[string]interface{}{"update_available": updateAvailable})
+}
+
+func (h *DockerHandler) GetSystemStats(w http.ResponseWriter, r *http.Request) {
+	v, _ := mem.VirtualMemory()
+	c, _ := cpu.Percent(0, false)
+	d, _ := disk.Usage("/")
+
+	stats := models.SystemStats{
+		CPUPercent:    c[0],
+		MemoryTotal:   v.Total,
+		MemoryUsed:    v.Used,
+		MemoryPercent: v.UsedPercent,
+		DiskTotal:     d.Total,
+		DiskUsed:      d.Used,
+		DiskPercent:   d.UsedPercent,
+	}
+
+	WriteJSON(w, http.StatusOK, stats)
 }
