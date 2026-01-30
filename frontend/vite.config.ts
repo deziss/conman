@@ -14,6 +14,7 @@ export default defineConfig({
         target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
         ws: true,
+        secure: false, // Often needed for local dev
       }
     }
   },
@@ -22,5 +23,17 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['framer-motion', '@headlessui/react', '@heroicons/react'],
+          'vendor-charts': ['recharts'],
+          'vendor-utils': ['axios', 'clsx', 'tailwind-merge', 'react-hot-toast']
+        }
+      }
+    }
+  }
 })
-
