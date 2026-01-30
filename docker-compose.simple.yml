@@ -40,16 +40,15 @@ services:
     image: conman-agent:latest
     container_name: conman-agent
     restart: unless-stopped
+    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    ports:
-      - "9090:9090"
     environment:
       - AGENT_NAME=local-host
-      - CONMAN_SERVER_URL=http://conman-server:5173
+      - CONMAN_SERVER_URL=http://localhost:5173
       - AGENT_MODE=hybrid
       - COLLECT_INTERVAL=10s
-      - SCRAPE_PORT=9090
+      - SCRAPE_PORT=5073
     depends_on:
       conman-server:
         condition: service_healthy

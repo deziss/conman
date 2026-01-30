@@ -9,12 +9,13 @@ import { NetworkDetailsPage } from './pages/NetworkDetailsPage';
 import { ContainerLogsPage } from './pages/ContainerLogsPage';
 import { Networks } from './pages/Networks';
 import { Volumes } from './pages/Volumes';
-import { Environments } from './pages/Environments';
+import { Hosts } from './pages/Hosts';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
 import { Profile } from './pages/Profile';
 import { Login } from './pages/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { HostProvider } from './contexts/HostContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import type { ReactNode } from 'react';
 
@@ -35,6 +36,7 @@ function App() {
               path="/*"
               element={
                 <ProtectedRoute>
+                  <HostProvider>
                   <DashboardLayout>
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
@@ -46,13 +48,14 @@ function App() {
                       <Route path="/networks" element={<Networks />} />
                       <Route path="/networks/:id" element={<NetworkDetailsPage />} />
                       <Route path="/volumes" element={<Volumes />} />
-                      <Route path="/environments" element={<Environments />} />
+                      <Route path="/hosts" element={<Hosts />} />
                       <Route path="/users" element={<Users />} />
                       <Route path="/profile" element={<Profile />} />
                       <Route path="/settings" element={<Settings />} />
                       <Route path="*" element={<div className="text-slate-500 text-center mt-20">Work in Progress</div>} />
                     </Routes>
                   </DashboardLayout>
+                  </HostProvider>
                 </ProtectedRoute>
               }
             />

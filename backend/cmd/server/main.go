@@ -105,6 +105,9 @@ func main() {
 
         // Public Routes
 		r.Post("/auth/login", authHandler.Login)
+        
+        // Public Agent Routes (registration, heartbeat, report - no auth required)
+        agentHandler.RegisterPublicRoutes(r)
 
         // Protected Routes
         r.Group(func(r chi.Router) {

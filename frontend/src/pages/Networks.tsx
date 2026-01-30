@@ -11,9 +11,11 @@ import {
     ChevronUpIcon,
     ChevronDownIcon
 } from '@heroicons/react/24/solid';
+import { ServerStackIcon } from '@heroicons/react/24/outline';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
+import { useHost } from '../contexts/HostContext';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
@@ -37,7 +39,9 @@ export const Networks = () => {
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
   const navigate = useNavigate();
+  const { currentHost, isLocalHost } = useHost();
   
   // Sort State
   const [sortField, setSortField] = useState<SortField>('Name');
@@ -49,7 +53,8 @@ export const Networks = () => {
 
   const fetchNetworks = async () => {
     try {
-      const { data } = await api.get('/docker/networks');
+      const endpoint = isLocalHost ? '/docker/networks' : `/agents/${currentHost?.id}/networks`;
+      const { data } = await api.get(endpoint);
       setNetworks(data || []);
     } catch (error) {
       console.error("Failed to fetch networks", error);
@@ -59,8 +64,9 @@ export const Networks = () => {
   };
 
   useEffect(() => {
+
     fetchNetworks();
-  }, []);
+  }, [currentHost]);
 
   const handleCreateNetwork = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -139,6 +145,12 @@ export const Networks = () => {
           Networks
         </h2>
         <div className="flex items-center space-x-3">
+             {!isLocalHost && (
+                <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
+                    <ServerStackIcon className="w-4 h-4" />
+                    <span>{currentHost?.name}</span>
+                </GlassCard>
+            )}
              <button 
                 onClick={() => setCreateModalOpen(true)}
                 className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-purple-500/20"

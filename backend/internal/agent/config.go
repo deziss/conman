@@ -68,7 +68,7 @@ func LoadConfig() (*Config, error) {
 		MetricsInterval:   parseDuration(getEnv("METRICS_INTERVAL", "5s")),
 		HeartbeatInterval: parseDuration(getEnv("HEARTBEAT_INTERVAL", "30s")),
 		ScrapeEnabled:     parseBool(getEnv("SCRAPE_ENABLED", "true")),
-		ScrapePort:        parseInt(getEnv("SCRAPE_PORT", "9090")),
+		ScrapePort:        parseInt(getEnv("SCRAPE_PORT", "5073")),
 		PushEnabled:       parseBool(getEnv("PUSH_ENABLED", "true")),
 		PushBatchSize:     parseInt(getEnv("PUSH_BATCH_SIZE", "100")),
 		DockerHost:        getEnv("DOCKER_HOST", "unix:///var/run/docker.sock"),

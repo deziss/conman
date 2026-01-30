@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
-import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, CommandLineIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, CommandLineIcon, ServerStackIcon } from '@heroicons/react/24/solid';
 import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
+import { useHost } from '../contexts/HostContext';
 
 interface Container {
   id: string;
@@ -32,11 +33,16 @@ export const Containers = () => {
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const { isCollapsed } = useSidebar();
+  const { currentHost, isLocalHost } = useHost();
 
   const fetchContainers = async () => {
     try {
-      const { data } = await api.get('/docker/containers');
-      setContainers(data);
+      // Fetch containers based on selected host
+      const endpoint = isLocalHost 
+        ? '/docker/containers' 
+        : `/agents/${currentHost?.id}/containers`;
+      const { data } = await api.get(endpoint);
+      setContainers(data || []);
 
       // Update history
       setStatsHistory(prev => {
@@ -75,7 +81,7 @@ export const Containers = () => {
     fetchContainers();
     const interval = setInterval(fetchContainers, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentHost]); // Re-fetch when host changes
 
   const handleAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
     try {
@@ -130,13 +136,21 @@ export const Containers = () => {
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
           Containers
         </h2>
-        <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400">
+        <div className="flex items-center space-x-3">
+          {!isLocalHost && (
+            <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
+              <ServerStackIcon className="w-4 h-4" />
+              <span>{currentHost?.name}</span>
+            </GlassCard>
+          )}
+          <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400">
            <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
             </span>
             <span>Live Connection</span>
         </GlassCard>
+      </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
