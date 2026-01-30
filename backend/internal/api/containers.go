@@ -200,11 +200,30 @@ func (h *ContainerHandler) StreamLogs(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Parse query parameters
+    query := r.URL.Query()
+    
+    // Tail: default to 1000 lines, support "all" for unlimited
+    tail := query.Get("tail")
+    if tail == "" {
+        tail = "1000"
+    } else if tail == "all" {
+        tail = "" // Empty string means all logs for Docker API
+    }
+
+    // Since: e.g., "1h" or RFC3339 timestamp
+    since := query.Get("since")
+
+    // Follow: default true for streaming
+    follow := query.Get("follow") != "false"
+
     options := container.LogsOptions{
         ShowStdout: true,
         ShowStderr: true,
-        Follow:     true,
-        Tail:       "100",
+        Follow:     follow,
+        Tail:       tail,
+        Timestamps: true,
+        Since:      since,
     }
 
     reader, err := cli.ContainerLogs(context.Background(), id, options)

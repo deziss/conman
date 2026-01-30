@@ -36,7 +36,7 @@ export const Terminal = ({ containerId }: TerminalProps) => {
     // Connect to WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem('token');
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/containers/${containerId}/exec?token=${token}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${containerId}/exec?token=${token}`;
     
     const socket = new WebSocket(wsUrl);
 
