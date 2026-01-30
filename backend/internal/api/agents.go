@@ -42,26 +42,30 @@ func NewAgentHandler() *AgentHandler {
 	}
 }
 
-// RegisterRoutes registers agent API routes
+// RegisterRoutes registers agent API routes (protected - requires auth)
 func (h *AgentHandler) RegisterRoutes(r chi.Router) {
-	r.Route("/agents", func(r chi.Router) {
-		r.Post("/register", h.Register)
-		r.Get("/", h.ListAgents)
-		r.Get("/{id}", h.GetAgent)
-		r.Delete("/{id}", h.DeleteAgent)
-		r.Post("/{id}/heartbeat", h.Heartbeat)
-		r.Post("/{id}/report", h.ReceiveReport)
-		r.Post("/{id}/events", h.ReceiveEvent)
-		r.Get("/{id}/containers", h.GetAgentContainers)
-		r.Get("/{id}/images", h.GetAgentImages)
-	})
+	// Agent endpoints (protected)
+	r.Get("/agents", h.ListAgents)
+	r.Get("/agents/{id}", h.GetAgent)
+	r.Delete("/agents/{id}", h.DeleteAgent)
+	r.Get("/agents/{id}/containers", h.GetAgentContainers)
+	r.Get("/agents/{id}/containers", h.GetAgentContainers)
+	r.Get("/agents/{id}/images", h.GetAgentImages)
+	r.Get("/agents/{id}/networks", h.GetAgentNetworks)
+	r.Get("/agents/{id}/volumes", h.GetAgentVolumes)
 	
 	// Host-centric endpoints (aggregate from all agents)
-	r.Route("/hosts", func(r chi.Router) {
-		r.Get("/", h.ListHosts)
-		r.Get("/{id}/containers", h.GetHostContainers)
-		r.Get("/{id}/images", h.GetHostImages)
-	})
+	r.Get("/hosts", h.ListHosts)
+	r.Get("/hosts/{id}/containers", h.GetHostContainers)
+	r.Get("/hosts/{id}/images", h.GetHostImages)
+}
+
+// RegisterPublicRoutes registers agent API routes that don't require auth (for agent self-registration)
+func (h *AgentHandler) RegisterPublicRoutes(r chi.Router) {
+	r.Post("/agents/register", h.Register)
+	r.Post("/agents/{id}/heartbeat", h.Heartbeat)
+	r.Post("/agents/{id}/report", h.ReceiveReport)
+	r.Post("/agents/{id}/events", h.ReceiveEvent)
 }
 
 // Register handles agent registration
@@ -242,6 +246,39 @@ func (h *AgentHandler) GetAgentImages(w http.ResponseWriter, r *http.Request) {
 
 	WriteJSON(w, http.StatusOK, agent.Images)
 }
+
+// GetAgentNetworks returns networks from a specific agent
+func (h *AgentHandler) GetAgentNetworks(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	h.mu.RLock()
+	agent, exists := h.agents[id]
+	h.mu.RUnlock()
+
+	if !exists {
+		ErrorJSON(w, http.StatusNotFound, "Agent not found")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, agent.Networks)
+}
+
+// GetAgentVolumes returns volumes from a specific agent
+func (h *AgentHandler) GetAgentVolumes(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	h.mu.RLock()
+	agent, exists := h.agents[id]
+	h.mu.RUnlock()
+
+	if !exists {
+		ErrorJSON(w, http.StatusNotFound, "Agent not found")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, agent.Volumes)
+}
+
 
 // ListHosts returns all hosts (same as agents for now)
 func (h *AgentHandler) ListHosts(w http.ResponseWriter, r *http.Request) {

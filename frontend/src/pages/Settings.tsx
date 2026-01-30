@@ -26,7 +26,7 @@ const CATEGORIES: SettingCategory[] = [
     {
         id: 'jobs',
         title: 'Job Schedule',
-        description: 'Configure how often Arcane background jobs run',
+        description: 'Configure how often CONMAN background jobs run',
         icon: ClockIcon,
         color: 'text-indigo-500',
         href: '#jobs'
@@ -102,7 +102,7 @@ export const Settings = () => {
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Settings</h1>
-                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Configure and customize your Arcane experience</p>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Configure and customize your CONMAN experience</p>
                         </div>
                     </div>
 

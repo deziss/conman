@@ -103,8 +103,8 @@ const EnvironmentCard = ({ env, stats, systemInfo, isActive, onClick }: any) => 
                         <GlobeAltIcon className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-slate-900 dark:text-white">{env.name}</h3>
-                        <p className="text-xs text-slate-500 font-mono">{env.host || 'localhost'}</p>
+                        <h3 className="font-semibold text-slate-900 dark:text-white">{typeof env.name === 'string' ? env.name : 'Host'}</h3>
+                        <p className="text-xs text-slate-500 font-mono">{typeof env.host === 'string' ? env.host : (env.host_info?.hostname || 'localhost')}</p>
                     </div>
                 </div>
                 <span className={`px-2 py-1 rounded text-xs font-bold ${
@@ -154,7 +154,7 @@ const EnvironmentCard = ({ env, stats, systemInfo, isActive, onClick }: any) => 
                         <span className="text-slate-700 dark:text-slate-300 font-bold">{env.total_containers || 0}</span> total
                     </span>
                 </div>
-                <span className="text-slate-500">{env.images || 0} images</span>
+                <span className="text-slate-500">{typeof env.images === 'number' ? env.images : (Array.isArray(env.images) ? env.images.length : 0)} images</span>
             </div>
         </GlassCard>
     );
@@ -187,7 +187,7 @@ export const Dashboard = () => {
                     api.get('/docker/containers').catch(() => ({ data: [] })),
                     api.get('/docker/images').catch(() => ({ data: [] })),
                     api.get('/docker/system/stats').catch(() => ({ data: null })),
-                    api.get('/environments').catch(() => ({ data: [] }))
+                    api.get('/agents').catch(() => ({ data: [] }))
                 ]);
                 
                 setSystemInfo(sysRes.data);
@@ -278,7 +278,7 @@ export const Dashboard = () => {
                     title="Environments" 
                     subTitle="Docker hosts with real-time resource monitoring"
                     actions={
-                        <button onClick={() => navigate('/environments')} className="text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-medium flex items-center">
+                        <button onClick={() => navigate('/hosts')} className="text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-medium flex items-center">
                             Manage <span className="ml-1">→</span>
                         </button>
                     }
@@ -302,14 +302,14 @@ export const Dashboard = () => {
                             stats={null}
                             systemInfo={null}
                             isActive={false}
-                            onClick={() => navigate(`/environments/${env.id}`)}
+                            onClick={() => navigate(`/hosts/${env.id}`)}
                         />
                     ))}
                     
                     {/* Add Environment Card */}
                     <GlassCard 
                         className="p-5 cursor-pointer transition-all hover:scale-[1.02] border-dashed border-2 border-slate-300 dark:border-white/10 hover:border-cyan-500/50 dark:hover:border-cyan-500/30 flex items-center justify-center min-h-[200px]"
-                        onClick={() => navigate('/environments/new')}
+                        onClick={() => navigate('/hosts')}
                     >
                         <div className="text-center">
                             <div className="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">

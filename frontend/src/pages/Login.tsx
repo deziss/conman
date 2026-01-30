@@ -15,7 +15,7 @@ export const Login = () => {
     e.preventDefault();
     try {
       const { data } = await api.post('/auth/login', { username: email, password });
-      login(data.access_token);
+      login(data.access_token, { email });
       navigate('/');
     } catch (err: any) {
       // Use specific error if available (e.g. "Invalid credentials"), otherwise generic
