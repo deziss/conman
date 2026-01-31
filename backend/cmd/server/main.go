@@ -58,6 +58,10 @@ func main() {
             }
             db.Create(&admin)
             log.Printf("Seeded initial admin user: %s", adminEmail)
+        } else {
+             // Force update for recovery
+             existingUser.Password = string(hashedPassword)
+             db.Save(&existingUser)
         }
     } else {
         // Update existing admin password to match ENV (Reset mechanism)

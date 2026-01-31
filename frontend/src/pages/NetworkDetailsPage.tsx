@@ -13,45 +13,14 @@ import {
     InformationCircleIcon
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import clsx from 'clsx';
+import { useHost } from '../contexts/HostContext';
 
-// Reusable Glass Card
-const GlassCard = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-    <div className={clsx(
-        "bg-white/5 backdrop-blur-lg border border-white/10 rounded-xl overflow-hidden shadow-xl",
-        className
-    )}>
-        {children}
-    </div>
-);
-
-// Info Item
-const InfoItem = ({ icon: Icon, label, value, subValue }: { icon: any, label: string, value: string, subValue?: string }) => (
-    <div className="flex items-start space-x-3 p-4 rounded-lg bg-black/20 border border-white/5">
-        <div className="p-2 rounded-full bg-indigo-500/10 text-indigo-500">
-            <Icon className="w-5 h-5" />
-        </div>
-        <div>
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{label}</p>
-            <p className="text-sm font-semibold text-slate-200 mt-0.5 truncate max-w-[200px]" title={value}>{value}</p>
-            {subValue && <p className="text-xs text-slate-500 mt-1">{subValue}</p>}
-        </div>
-    </div>
-);
-
-// Badge
-const Badge = ({ children, className }: { children: React.ReactNode, className?: string }) => (
-    <span className={clsx(
-        "px-2.5 py-0.5 rounded-full text-xs font-medium border",
-        className || "bg-slate-800 text-slate-300 border-slate-700"
-    )}>
-        {children}
-    </span>
-);
+// ... (existing imports, GlassCard, InfoItem, Badge components are fine)
 
 export const NetworkDetailsPage = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { currentHost, isLocalHost } = useHost();
     const [network, setNetwork] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -59,25 +28,9 @@ export const NetworkDetailsPage = () => {
         const fetchNetwork = async () => {
             if (!id) return;
             try {
-                // We'll use the generic inspect endpoint for now if routed
-                // Or list and find. Best to assume inspect endpoint works or filter from list
-                // Since we don't have a specific GET /networks/:id in backend yet (only list),
-                // we might need to rely on the generic Docker inspect proxy if we added it, 
-                // OR fetch all networks and find.
-                // Let's try to fetch all and filter first as a fallback, 
-                // but ideally we should have an endpoint. 
-                // Actually, backend has `networkHandler.ListNetworks` but no direct inspect.
-                // However, `api.ts` might have a generic inspect proxy?
-                // Let's check `backend/internal/api/api.go`.
-                // Looking at previous context, we have `containerHandler.InspectContainer`.
-                // Network handler layout:
-                // r.Get("/", networkHandler.ListNetworks)
-                // r.Post("/", networkHandler.CreateNetwork)
-                // r.Delete("/{id}", networkHandler.RemoveNetwork)
-                // So NO direct inspect.
-                
-                // Workaround: Fetch list and find.
-                const { data } = await api.get('/docker/networks');
+                // Fetch list and find fallback logic
+                const endpoint = isLocalHost ? '/docker/networks' : `/agents/${currentHost?.id}/networks`;
+                const { data } = await api.get(endpoint);
                 const found = data.find((n: any) => n.ID === id || n.Id === id || n.Name === id);
                 
                 if (found) {
@@ -95,7 +48,7 @@ export const NetworkDetailsPage = () => {
             }
         };
         fetchNetwork();
-    }, [id, navigate]);
+    }, [id, navigate, currentHost, isLocalHost]);
 
     const handleRemove = async () => {
         if (!confirm('Are you sure you want to remove this network?')) return;
@@ -137,6 +90,7 @@ export const NetworkDetailsPage = () => {
                 </button>
                 <div className="flex items-center space-x-3">
                      <span className="text-xs text-slate-500 font-mono">{network.Id}</span>
+                     {isLocalHost && (
                      <button 
                         onClick={handleRemove}
                         className="flex items-center space-x-2 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-rose-500/20"
@@ -144,6 +98,7 @@ export const NetworkDetailsPage = () => {
                         <TrashIcon className="w-4 h-4" />
                         <span>Remove</span>
                     </button>
+                    )}
                 </div>
             </div>
 
