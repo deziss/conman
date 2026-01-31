@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -98,7 +98,7 @@ func main() {
         networkHandler := api.NewNetworkHandler()
         volumeHandler := api.NewVolumeHandler()
         environmentHandler := api.NewEnvironmentHandler(db)
-        agentHandler := api.NewAgentHandler()
+        agentHandler := api.NewAgentHandler(db)
         
         // Middleware Instance
         mw := middleware.NewMiddleware(db)
