@@ -17,6 +17,7 @@ import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
+import { useHost } from '../contexts/HostContext';
 
 // -- Linear Progress Bar Component --
 const LinearProgress = ({ percent, color }: { percent: number, color: string }) => {
@@ -89,7 +90,7 @@ const EnvironmentCard = ({ env, stats, systemInfo, isActive, onClick }: any) => 
     };
 
     const cpuPercent = stats?.cpu_percent ? Math.round(stats.cpu_percent) : 0;
-    const totalCores = systemInfo?.NCPU || 0;
+    const totalCores = systemInfo?.NCPU || (env.host_info?.cpus) || 0;
     const usedCores = Math.round((cpuPercent / 100) * totalCores * 10) / 10; // Estimated used cores
 
     return (
@@ -104,8 +105,10 @@ const EnvironmentCard = ({ env, stats, systemInfo, isActive, onClick }: any) => 
                         <GlobeAltIcon className="w-5 h-5" />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-slate-900 dark:text-white">{typeof env.name === 'string' ? env.name : 'Host'}</h3>
-                        <p className="text-xs text-slate-500 font-mono">{typeof env.host === 'string' ? env.host : (env.host_info?.hostname || 'localhost')}</p>
+                        <h3 className="font-semibold text-slate-900 dark:text-white">{env.name}</h3>
+                        <p className="text-xs text-slate-500 font-mono">
+                            {env.host_info?.hostname || env.host || 'localhost'}
+                        </p>
                     </div>
                 </div>
                 <span className={`px-2 py-1 rounded text-xs font-bold ${
@@ -149,13 +152,13 @@ const EnvironmentCard = ({ env, stats, systemInfo, isActive, onClick }: any) => 
             <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5 flex items-center justify-between text-xs">
                 <div className="flex space-x-4">
                     <span className="text-slate-500 dark:text-slate-400">
-                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">{env.running_containers || 0}</span> running
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">{env.running_containers || (env.containers?.filter((c:any) => c.state === 'running').length) || 0}</span> running
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">
-                        <span className="text-slate-700 dark:text-slate-300 font-bold">{env.total_containers || 0}</span> total
+                        <span className="text-slate-700 dark:text-slate-300 font-bold">{env.total_containers || (env.containers?.length) || 0}</span> total
                     </span>
                 </div>
-                <span className="text-slate-500">{typeof env.images === 'number' ? env.images : (Array.isArray(env.images) ? env.images.length : 0)} images</span>
+                <span className="text-slate-500">{env.images?.length || env.image_count || 0} images</span>
             </div>
         </GlassCard>
     );
@@ -174,29 +177,53 @@ const SectionHeader = ({ title, subTitle, actions }: any) => (
 export const Dashboard = () => {
     const navigate = useNavigate();
     const { refreshInterval } = useSettings();
+    const { currentHost, isLocalHost } = useHost();
     const [loading, setLoading] = useState(true);
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [systemStats, setSystemStats] = useState<any>(null);
+    
+    // View state
     const [containers, setContainers] = useState<any[]>([]);
     const [images, setImages] = useState<any[]>([]);
-    const [environments, setEnvironments] = useState<any[]>([]);
+    const [remoteEnvs, setRemoteEnvs] = useState<any[]>([]); // For 'Environments' section
 
     useEffect(() => {
         const fetchData = async () => {
+             setLoading(true);
              try {
-                const [sysRes, contRes, imgRes, statsRes, envRes] = await Promise.all([
-                    api.get('/docker/system/info').catch(() => ({ data: {} })),
-                    api.get('/docker/containers').catch(() => ({ data: [] })),
-                    api.get('/docker/images').catch(() => ({ data: [] })),
-                    api.get('/docker/system/stats').catch(() => ({ data: null })),
-                    api.get('/agents').catch(() => ({ data: [] }))
-                ]);
-                
-                setSystemInfo(sysRes.data);
-                setContainers(contRes.data || []);
-                setImages(imgRes.data || []);
-                setSystemStats(statsRes.data);
-                setEnvironments(envRes.data || []);
+                if (isLocalHost) {
+                    // Local Mode: Use /docker/ endpoints
+                    const [sysRes, contRes, imgRes, statsRes, envRes] = await Promise.all([
+                        api.get('/docker/system/info').catch(() => ({ data: {} })),
+                        api.get('/docker/containers').catch(() => ({ data: [] })),
+                        api.get('/docker/images').catch(() => ({ data: [] })),
+                        api.get('/docker/system/stats').catch(() => ({ data: null })),
+                        api.get('/agents').catch(() => ({ data: [] }))
+                    ]);
+                    
+                    setSystemInfo(sysRes.data);
+                    setContainers(contRes.data || []);
+                    setImages(imgRes.data || []);
+                    setSystemStats(statsRes.data);
+                    setRemoteEnvs(envRes.data || []);
+                } else {
+                    // Agent Mode: Use currentHost data or fetch specific agent data
+                    if (currentHost?.id) {
+                         const { data } = await api.get(`/agents/${currentHost.id}`);
+                         // Map agent data to dashboard format
+                         setSystemInfo({
+                             Name: data.name,
+                             NCPU: data.host_info?.cpus,
+                             ...data.host_info
+                         });
+                         setSystemStats(data.stats);
+                         setContainers(data.containers || []);
+                         setImages(data.images || []);
+                         
+                         const envRes = await api.get('/agents');
+                         setRemoteEnvs(envRes.data || []);
+                    }
+                }
              } catch (e) {
                  console.error("Dashboard data load error", e);
              } finally {
@@ -205,24 +232,12 @@ export const Dashboard = () => {
         };
         fetchData();
 
-        // Poll stats based on interval
-        const interval = setInterval(async () => {
-            try {
-                const statsRes = await api.get('/docker/system/stats');
-                setSystemStats(statsRes.data);
-                // Also optionally refresh containers/envs to keep dashboard live
-                 const [contRes, envRes] = await Promise.all([
-                    api.get('/docker/containers').catch(() => ({ data: [] })),
-                    api.get('/agents').catch(() => ({ data: [] }))
-                ]);
-                setContainers(contRes.data || []);
-                setEnvironments(envRes.data || []);
-
-            } catch (e) { /* ignore silent updates */ }
+        const interval = setInterval(() => {
+            fetchData();
         }, refreshInterval);
 
         return () => clearInterval(interval);
-    }, [refreshInterval]);
+    }, [refreshInterval, currentHost, isLocalHost]);
 
     // Derived States
     const runningContainers = containers.filter(c => c.state === 'running');
@@ -239,17 +254,21 @@ export const Dashboard = () => {
     };
 
     const handleAction = (action: string) => {
+        if (!isLocalHost) {
+            toast('Bulk actions not yet supported for remote agents', { icon: '🚧' });
+            return;
+        }
         toast('Action triggered: ' + action, { icon: '🚧' });
     };
 
-    // Create a "local" environment for current host
     const localEnvironment = {
         id: 'local',
-        name: systemInfo?.Name || 'Local Docker',
+        name: 'Local Docker',
         host: 'localhost',
-        running_containers: runningContainers.length,
-        total_containers: containers.length,
-        images: images.length
+        running_containers: isLocalHost ? runningContainers.length : 0, 
+        total_containers: isLocalHost ? containers.length : 0,
+        images: isLocalHost ? images.length : 0,
+        host_info: systemInfo
     };
 
     return (
@@ -260,29 +279,33 @@ export const Dashboard = () => {
                      <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white mb-1">
                         Dashboard
                     </h1>
-                     <p className="text-slate-500 dark:text-slate-400">Overview of your Container Environments</p>
+                     <p className="text-slate-500 dark:text-slate-400">
+                        {isLocalHost ? 'Overview of your Container Environments' : `Managing ${currentHost?.name}`}
+                     </p>
                 </div>
-                <div className="flex space-x-3">
-                    <button onClick={() => handleAction('Start All')} className="flex items-center px-4 py-2 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-lg hover:bg-emerald-500 hover:text-white transition-colors text-sm font-medium">
-                        <PlayIcon className="w-4 h-4 mr-2" />
-                        Start All ({stoppedContainers.length})
-                    </button>
-                    <button onClick={() => handleAction('Stop All')} className="flex items-center px-4 py-2 bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-500 hover:text-white transition-colors text-sm font-medium">
-                        <StopIcon className="w-4 h-4 mr-2" />
-                        Stop All ({runningContainers.length})
-                    </button>
-                    <button onClick={() => handleAction('Prune')} className="flex items-center px-4 py-2 bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 rounded-lg hover:bg-amber-500 hover:text-white transition-colors text-sm font-medium">
-                        <TrashIcon className="w-4 h-4 mr-2" />
-                        Prune
-                    </button>
-                    <button onClick={() => window.location.reload()} className="flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 transition-colors text-sm font-medium">
-                        <ArrowPathIcon className="w-4 h-4 mr-2" />
-                        Refresh
-                    </button>
-                </div>
+                {isLocalHost && (
+                    <div className="flex space-x-3">
+                        <button onClick={() => handleAction('Start All')} className="flex items-center px-4 py-2 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-lg hover:bg-emerald-500 hover:text-white transition-colors text-sm font-medium">
+                            <PlayIcon className="w-4 h-4 mr-2" />
+                            Start All ({stoppedContainers.length})
+                        </button>
+                        <button onClick={() => handleAction('Stop All')} className="flex items-center px-4 py-2 bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-500 hover:text-white transition-colors text-sm font-medium">
+                            <StopIcon className="w-4 h-4 mr-2" />
+                            Stop All ({runningContainers.length})
+                        </button>
+                        <button onClick={() => handleAction('Prune')} className="flex items-center px-4 py-2 bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 rounded-lg hover:bg-amber-500 hover:text-white transition-colors text-sm font-medium">
+                            <TrashIcon className="w-4 h-4 mr-2" />
+                            Prune
+                        </button>
+                        <button onClick={() => window.location.reload()} className="flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 transition-colors text-sm font-medium">
+                            <ArrowPathIcon className="w-4 h-4 mr-2" />
+                            Refresh
+                        </button>
+                    </div>
+                )}
             </div>
 
-            {/* Environments Section with Stats */}
+            {/* Environments Section */}
             <div>
                 <SectionHeader 
                     title="Environments" 
@@ -298,21 +321,23 @@ export const Dashboard = () => {
                     {/* Local Environment Card */}
                     <EnvironmentCard 
                         env={localEnvironment}
-                        stats={systemStats}
-                        systemInfo={systemInfo}
-                        isActive={true}
-                        onClick={() => {}}
+                        stats={isLocalHost ? systemStats : null}
+                        systemInfo={isLocalHost ? systemInfo : null}
+                        isActive={isLocalHost}
+                        onClick={() => { /* Handled by sidebar usually */ }}
                     />
                     
                     {/* Remote Environments */}
-                    {environments.map((env: any) => (
+                    {remoteEnvs.map((env: any) => (
                         <EnvironmentCard 
                             key={env.id}
                             env={env}
-                            stats={null}
+                            stats={env.stats}
                             systemInfo={null}
-                            isActive={false}
-                            onClick={() => navigate(`/hosts/${env.id}`)}
+                            isActive={currentHost?.id === env.id}
+                            onClick={() => navigate(`/hosts/${env.id}`)} // This might conflict with Sidebar context? 
+                            // Actually navigate to host details is fine, but context switching happens in sidebar.
+                            // But usually selecting an env here should probably switch context?
                         />
                     ))}
                     
@@ -414,10 +439,10 @@ export const Dashboard = () => {
                                     <tr key={img.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer" onClick={() => navigate(`/images/${img.id}`)}>
                                         <td className="px-6 py-4 font-medium text-slate-900 dark:text-white flex items-center space-x-3">
                                             <PhotoIcon className="w-4 h-4 text-slate-500" />
-                                            <span className="truncate max-w-[140px]" title={img.repo}>{img.repo || '<none>'}</span>
+                                            <span className="truncate max-w-[140px]" title={img.repo}>{img.repo || (img.repo_tags && img.repo_tags[0]?.split(':')[0]) || (img.RepoTags && img.RepoTags[0]?.split(':')[0]) || '<none>'}</span>
                                         </td>
                                          <td className="px-6 py-4 font-mono text-xs text-slate-500">
-                                            {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
+                                            {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : (img.repo_tags && img.repo_tags[0]?.split(':')[1]) || (img.RepoTags && img.RepoTags[0]?.split(':')[1]) || 'latest'}
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${

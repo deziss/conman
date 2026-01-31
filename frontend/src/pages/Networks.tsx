@@ -20,14 +20,15 @@ import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
 interface Network {
-  Id: string;
-  Name: string;
-  Driver: string;
-  Scope: string;
-  Created: string;
-  Internal: boolean;
-  Attachable: boolean;
-  Ingress: boolean;
+  id: string; // Lowercase
+  name: string; // Lowercase
+  driver: string;
+  scope: string;
+  created: string; // Note: specific field might vary, checking logic
+  internal: boolean;
+  attachable: boolean;
+  ingress: boolean;
+  // mapped for sort compatibility if needed, but better to just use lowercase
 }
 
 type SortField = 'Name' | 'Driver' | 'Scope' | 'Created' | 'Id';
@@ -113,16 +114,19 @@ export const Networks = () => {
 
   const sortedNetworks = useMemo(() => {
       return [...networks].sort((a, b) => {
-          let aValue = a[sortField];
-          let bValue = b[sortField];
+          // @ts-ignore
+          let aValue = a[sortField.toLowerCase()]; // Crude map since backend uses lowercase
+          // @ts-ignore
+          let bValue = b[sortField.toLowerCase()];
 
           // Handle dates or strings
           if (sortField === 'Created') {
-             aValue = new Date(a.Created).getTime();
-             bValue = new Date(b.Created).getTime();
+             // Created is likely missing for remote, so handle graceful
+             aValue = 0;
+             bValue = 0;
           } else {
-             aValue = String(aValue).toLowerCase();
-             bValue = String(bValue).toLowerCase();
+             aValue = String(aValue || '').toLowerCase();
+             bValue = String(bValue || '').toLowerCase();
           }
 
           if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
@@ -151,6 +155,7 @@ export const Networks = () => {
                     <span>{currentHost?.name}</span>
                 </GlassCard>
             )}
+             {isLocalHost && (
              <button 
                 onClick={() => setCreateModalOpen(true)}
                 className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-purple-500/20"
@@ -158,6 +163,7 @@ export const Networks = () => {
                 <PlusIcon className="w-5 h-5" />
                 <span>Create Network</span>
             </button>
+            )}
             <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-purple-600 dark:text-purple-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={fetchNetworks}>
                 <ArrowPathIcon className="w-4 h-4" />
                 <span>Refresh</span>
@@ -196,45 +202,47 @@ export const Networks = () => {
                         <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">No networks found.</td></tr>
                     ) : (
                         sortedNetworks.map((net) => (
-                            <tr key={net.Id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                            <tr key={net.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                 <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-200">
                                     <div className="flex items-center space-x-3">
                                         <SignalIcon className="w-5 h-5 text-purple-600 dark:text-purple-500/50" />
-                                        <span title={net.Name} className="truncate max-w-[200px]">{net.Name}</span>
+                                        <span title={net.name} className="truncate max-w-[200px]">{net.name}</span>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 font-mono text-xs text-slate-500">
-                                    {net.Id.substring(0, 12)}
+                                    {net.id?.substring(0, 12) || '-'}
                                 </td>
                                 <td className="px-6 py-4">
                                     <span className="px-2 py-1 rounded-md bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-white/5 text-xs">
-                                        {net.Driver}
+                                        {net.driver}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4">
                                      <span className={`px-2 py-1 rounded-md text-xs border ${
-                                         net.Scope === 'local' 
+                                         net.scope === 'local' 
                                             ? 'bg-slate-200 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-white/5' 
                                             : 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20'
                                      }`}>
-                                        {net.Scope}
+                                        {net.scope}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 hidden md:table-cell text-xs text-slate-500">
-                                    {new Date(net.Created).toLocaleDateString()}
+                                    <span title={net.created || ''}>
+                                        {net.created ? new Date(net.created).toLocaleString() : '-'}
+                                    </span>
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex items-center justify-end space-x-2">
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleInspect(net.Id); }}
+                                            onClick={(e) => { e.stopPropagation(); handleInspect(net.id); }}
                                             className="p-1.5 text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
                                             title="Inspect"
                                         >
                                             <EyeIcon className="w-4 h-4" />
                                         </button>
-                                        {!['bridge', 'host', 'none'].includes(net.Name) && (
+                                        {isLocalHost && !['bridge', 'host', 'none'].includes(net.name) && (
                                             <button 
-                                                onClick={(e) => { e.stopPropagation(); handleRemoveNetwork(net.Id); }}
+                                                onClick={(e) => { e.stopPropagation(); handleRemoveNetwork(net.id); }}
                                                 className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
                                                 title="Remove"
                                             >

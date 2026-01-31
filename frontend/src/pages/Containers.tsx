@@ -52,12 +52,17 @@ export const Containers = () => {
     try {
       const endpoint = isLocalHost ? '/docker/containers' : '/agents/' + (currentHost ? currentHost.id : '') + '/containers';
       const { data } = await api.get(endpoint);
-      setContainers(data || []);
+      setContainers((data || []).map((c: any) => ({
+        ...c,
+        name: c.name || (c.names && c.names.length > 0 ? c.names[0].replace(/^\//, '') : 'Unnamed'),
+        ports: c.ports || [] // Ensure ports is array
+      })));
 
       setStatsHistory(prev => {
         const newHistory = { ...prev };
-        data.forEach((c: Container) => {
-           if (!newHistory[c.id]) newHistory[c.id] = { cpu: [], mem: [] };
+        (data || []).forEach((c: Container) => {
+           const id = c.id;
+           if (!newHistory[id]) newHistory[id] = { cpu: [], mem: [] };
            
            const cpuVal = c.cpu_usage ? parseFloat(c.cpu_usage.replace('%', '')) : 0;
            // Heuristic parsing for memory

@@ -24,8 +24,7 @@ import { clsx } from 'clsx';
 
 interface Image {
   id: string;
-  repo: string;
-  tags: string[];
+  repo_tags: string[]; // Updated from tags
   size: number;
   created: number;
   status: string; // "used" | "unused"
@@ -184,7 +183,7 @@ export const Images = () => {
     let errors = 0;
     
     for (const img of images) {
-      if (!img.tags || img.tags.length === 0) continue;
+      if (!img.repo_tags || img.repo_tags.length === 0) continue;
       
       setUpdateStatuses(prev => ({
         ...prev,
@@ -232,12 +231,12 @@ export const Images = () => {
   };
 
   const handleUpdateImage = async (img: Image) => {
-    if (!img.tags || img.tags.length === 0) {
+    if (!img.repo_tags || img.repo_tags.length === 0) {
       toast.error('Cannot update: image has no tag');
       return;
     }
     
-    const imageName = img.tags[0];
+    const imageName = img.repo_tags[0];
     const toastId = toast.loading(`Pulling latest ${imageName}...`);
     
     try {
@@ -327,8 +326,8 @@ export const Images = () => {
 
   const sortedImages = [...images].sort((a, b) => {
       if (sortOrder === 'name') {
-          const nameA = a.tags && a.tags.length > 0 ? a.tags[0] : a.id;
-          const nameB = b.tags && b.tags.length > 0 ? b.tags[0] : b.id;
+          const nameA = a.repo_tags && a.repo_tags.length > 0 ? a.repo_tags[0] : a.id;
+          const nameB = b.repo_tags && b.repo_tags.length > 0 ? b.repo_tags[0] : b.id;
           return nameA.localeCompare(nameB);
       }
       if (sortOrder === 'size') return b.size - a.size;
@@ -376,7 +375,8 @@ export const Images = () => {
         </div>
       </div>
 
-        {/* Pull Image Section */}
+        {/* Pull Image Section - Local Only */}
+        {isLocalHost && (
         <GlassCard className="p-6">
             <h3 className="text-lg font-medium text-slate-900 dark:text-slate-200 mb-4 flex items-center">
                 <CloudArrowDownIcon className="w-5 h-5 mr-2 text-cyan-600 dark:text-cyan-400" />
@@ -402,6 +402,7 @@ export const Images = () => {
               Supports Docker Hub, GitHub Container Registry (ghcr.io), and private registries
             </p>
         </GlassCard>
+        )}
 
         {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
@@ -451,6 +452,8 @@ export const Images = () => {
                                 )}
                             </div>
                             <div className="flex space-x-1">
+                                {isLocalHost && (
+                                <>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
                                     disabled={updateStatuses[img.id]?.checking}
@@ -473,6 +476,8 @@ export const Images = () => {
                                       <ArrowUpCircleIcon className="w-4 h-4" />
                                   </button>
                                 )}
+                                </>
+                                )}
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
                                     className="p-1.5 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
@@ -480,6 +485,7 @@ export const Images = () => {
                                 >
                                     <EyeIcon className="w-4 h-4" />
                                 </button>
+                                {isLocalHost && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
                                     className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
@@ -487,16 +493,17 @@ export const Images = () => {
                                 >
                                     <TrashIcon className="w-4 h-4" />
                                 </button>
+                                )}
                             </div>
                          </div>
                         
                          <div>
-                            <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate mb-1" title={img.tags && img.tags[0]}>
-                                {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[0] : '<none>'}
+                            <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate mb-1" title={img.repo_tags && img.repo_tags[0]}>
+                                {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
                             </h4>
                             <div className="flex flex-wrap items-center gap-2 mb-3">
                                 <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
-                                    {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
+                                    {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[1] || 'latest' : '<none>'}
                                 </span>
                                 {img.status === 'used' && (
                                      <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center">Used</span>

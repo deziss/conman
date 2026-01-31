@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"runtime"
 	"strings"
 	"time"
@@ -14,6 +15,9 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/volume"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 // collectHostInfo gathers host and Docker daemon information
@@ -121,7 +125,7 @@ func (a *Agent) collectImages(ctx context.Context) error {
 		imageUsage[c.ImageID]++
 	}
 
-	var result []protocol.Image
+	result := make([]protocol.Image, 0)
 	for _, img := range images {
 		result = append(result, protocol.Image{
 			ID:          img.ID,
@@ -138,6 +142,8 @@ func (a *Agent) collectImages(ctx context.Context) error {
 	a.mu.Lock()
 	a.images = result
 	a.mu.Unlock()
+	
+	log.Printf("Collected %d images", len(result)) // Debug log
 
 	return nil
 }
@@ -149,7 +155,7 @@ func (a *Agent) collectNetworks(ctx context.Context) error {
 		return err
 	}
 
-	var result []protocol.Network
+	result := make([]protocol.Network, 0)
 	for _, n := range networks {
 		var ipamConfig []protocol.IPAMConfig
 		for _, cfg := range n.IPAM.Config {
@@ -172,12 +178,15 @@ func (a *Agent) collectNetworks(ctx context.Context) error {
 			},
 			Labels:     n.Labels,
 			Containers: len(n.Containers),
+			Created:    n.Created,
 		})
 	}
 
 	a.mu.Lock()
 	a.networks = result
 	a.mu.Unlock()
+	
+	log.Printf("Collected %d networks", len(result))
 
 	return nil
 }
@@ -189,7 +198,7 @@ func (a *Agent) collectVolumes(ctx context.Context) error {
 		return err
 	}
 
-	var result []protocol.Volume
+	result := make([]protocol.Volume, 0)
 	for _, v := range volumes.Volumes {
 		vol := protocol.Volume{
 			Name:       v.Name,
@@ -214,6 +223,8 @@ func (a *Agent) collectVolumes(ctx context.Context) error {
 	a.mu.Lock()
 	a.volumes = result
 	a.mu.Unlock()
+	
+	log.Printf("Collected %d volumes", len(result))
 
 	return nil
 }
@@ -316,4 +327,42 @@ func calculateCPUPercent(stats *types.StatsJSON) float64 {
 		return cpuPercent
 	}
 	return 0.0
+}
+
+// collectSystemStats collects host system metrics using gopsutil
+func (a *Agent) collectSystemStats(ctx context.Context) error {
+	v, err := mem.VirtualMemory()
+	if err != nil {
+		return err
+	}
+
+	c, err := cpu.Percent(0, false)
+	if err != nil {
+		return err
+	}
+	cpuPercent := 0.0
+	if len(c) > 0 {
+		cpuPercent = c[0]
+	}
+
+	d, err := disk.Usage("/")
+	if err != nil {
+		return err
+	}
+
+	stats := &protocol.SystemStats{
+		CPUPercent:    cpuPercent,
+		MemoryTotal:   v.Total,
+		MemoryUsed:    v.Used,
+		MemoryPercent: v.UsedPercent,
+		DiskTotal:     d.Total,
+		DiskUsed:      d.Used,
+		DiskPercent:   d.UsedPercent,
+	}
+
+	a.mu.Lock()
+	a.stats = stats
+	a.mu.Unlock()
+
+	return nil
 }
