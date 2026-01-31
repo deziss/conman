@@ -11,6 +11,10 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+    "github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
+    "conman-backend/internal/models"
 )
 
 type ContainerStats struct {
@@ -23,6 +27,7 @@ type ContainerStats struct {
 type StatsCollector struct {
 	mu           sync.RWMutex
 	stats        map[string]*ContainerStats
+    systemStats  *models.SystemStats
 	prevRawStats map[string]*types.StatsJSON // Keep previous raw stats for delta calculation
 	client       FuncDockerClient
 }
@@ -52,7 +57,49 @@ func (sc *StatsCollector) Start() {
 	ticker := time.NewTicker(3 * time.Second) // Poll every 3 seconds
 	for range ticker.C {
 		sc.collect()
+        sc.collectSystemStats()
 	}
+}
+
+func (sc *StatsCollector) collectSystemStats() {
+    v, err := mem.VirtualMemory()
+    if err != nil {
+        log.Printf("Error collecting memory stats: %v", err)
+        return
+    }
+    
+    // CPU percent since last call (maintained by gopsutil internal state if interval 0? No, we need interval for accuracy usually, 
+    // but in a loop 0 should give diff since last call if it works that way. 
+    // Safest is to rely on the ticker interval effectively providing the gap.)
+    // Actually cpu.Percent(0, false) returns 0 on first call. Subsequent calls work.
+    c, err := cpu.Percent(0, false) 
+    if err != nil {
+         log.Printf("Error collecting cpu stats: %v", err)
+         return
+    }
+
+    d, err := disk.Usage("/")
+    if err != nil {
+         log.Printf("Error collecting disk stats: %v", err)
+         return
+    }
+    
+    cpuVal := 0.0
+    if len(c) > 0 {
+        cpuVal = c[0]
+    }
+
+    sc.mu.Lock()
+    sc.systemStats = &models.SystemStats{
+		CPUPercent:    cpuVal,
+		MemoryTotal:   v.Total,
+		MemoryUsed:    v.Used,
+		MemoryPercent: v.UsedPercent,
+		DiskTotal:     d.Total,
+		DiskUsed:      d.Used,
+		DiskPercent:   d.UsedPercent,
+    }
+    sc.mu.Unlock()
 }
 
 func (sc *StatsCollector) collect() {
@@ -154,6 +201,12 @@ func (sc *StatsCollector) GetStats(containerID string) *ContainerStats {
 		return s
 	}
 	return nil
+}
+
+func (sc *StatsCollector) GetSystemStats() *models.SystemStats {
+    sc.mu.RLock()
+    defer sc.mu.RUnlock()
+    return sc.systemStats
 }
 
 
