@@ -8,10 +8,12 @@ type AgentReport struct {
 	AgentName  string      `json:"agent_name"`
 	Timestamp  time.Time   `json:"timestamp"`
 	HostInfo   *HostInfo   `json:"host_info,omitempty"`
-	Containers []Container `json:"containers,omitempty"`
-	Images     []Image     `json:"images,omitempty"`
-	Networks   []Network   `json:"networks,omitempty"`
-	Volumes    []Volume    `json:"volumes,omitempty"`
+	Stats      *SystemStats      `json:"stats,omitempty"`
+	Containers []Container       `json:"containers,omitempty"`
+	Metrics    []ContainerMetrics `json:"metrics,omitempty"` // Added field
+	Images     []Image           `json:"images,omitempty"`
+	Networks   []Network         `json:"networks,omitempty"`
+	Volumes    []Volume          `json:"volumes,omitempty"`
 }
 
 // HostInfo contains information about the Docker host
@@ -87,6 +89,7 @@ type Network struct {
 	IPAM       IPAM              `json:"ipam"`
 	Labels     map[string]string `json:"labels,omitempty"`
 	Containers int               `json:"containers"` // Number of connected containers
+	Created    time.Time         `json:"created"`
 }
 
 // IPAM represents IP Address Management configuration
@@ -188,4 +191,15 @@ type AgentRegistrationResponse struct {
 	Success       bool   `json:"success"`
 	Message       string `json:"message,omitempty"`
 	ServerVersion string `json:"server_version,omitempty"`
+}
+
+// SystemStats represents real-time system resource usage
+type SystemStats struct {
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryTotal   uint64  `json:"memory_total"`
+	MemoryUsed    uint64  `json:"memory_used"`
+	MemoryPercent float64 `json:"memory_percent"`
+	DiskTotal     uint64  `json:"disk_total"`
+	DiskUsed      uint64  `json:"disk_used"`
+	DiskPercent   float64 `json:"disk_percent"`
 }

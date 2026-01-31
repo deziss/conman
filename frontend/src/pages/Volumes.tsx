@@ -196,6 +196,7 @@ export const Volumes = () => {
                     <span>{currentHost?.name}</span>
                 </GlassCard>
             )}
+             {isLocalHost && (
              <button 
                 onClick={() => setCreateModalOpen(true)}
                 className="flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-amber-500/20"
@@ -203,6 +204,7 @@ export const Volumes = () => {
                 <PlusIcon className="w-5 h-5" />
                 <span>Create Volume</span>
             </button>
+            )}
             <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={fetchVolumes}>
                 <ArrowPathIcon className="w-4 h-4" />
                 <span>Refresh</span>
@@ -268,12 +270,21 @@ export const Volumes = () => {
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex items-center justify-end space-x-2">
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleInspect(vol.Name); }}
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                if (isLocalHost) {
+                                                    handleInspect(vol.Name); 
+                                                } else {
+                                                    setInspectData(vol);
+                                                    setInspectModalOpen(true);
+                                                }
+                                            }}
                                             className="p-1.5 text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
                                             title="Inspect"
                                         >
                                             <EyeIcon className="w-4 h-4" />
                                         </button>
+                                        {isLocalHost && (
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleRemoveVolume(vol.Name); }}
                                             className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
@@ -281,6 +292,7 @@ export const Volumes = () => {
                                         >
                                             <TrashIcon className="w-4 h-4" />
                                         </button>
+                                        )}
                                     </div>
                                 </td>
                             </tr>

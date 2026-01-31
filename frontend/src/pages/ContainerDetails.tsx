@@ -31,6 +31,8 @@ import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
+import { useHost } from '../contexts/HostContext';
+import { mapAgentContainerToDetails } from '../utils/containerMapper';
 
 interface ContainerDetails {
     Id: string;
@@ -314,13 +316,29 @@ export const ContainerDetails = () => {
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const wsRef = useRef<WebSocket | null>(null);
 
+    const { currentHost, isLocalHost } = useHost();
+
     const fetchDetails = async () => {
+        if (!id) return;
+        setLoading(true);
+
         try {
-            const { data } = await api.get(`/docker/containers/${id}`);
-            if (data.Name && data.Name.startsWith('/')) {
-                data.Name = data.Name.substring(1);
+            if (isLocalHost) {
+                const { data } = await api.get(`/docker/containers/${id}`);
+                if (data.Name && data.Name.startsWith('/')) {
+                    data.Name = data.Name.substring(1);
+                }
+                setContainer(data);
+            } else {
+                // Agent Context
+                if (currentHost?.containers) {
+                    const found = currentHost.containers.find((c: any) => c.id === id);
+                    if (found) {
+                        const mapped = mapAgentContainerToDetails(found);
+                        setContainer(mapped as any);
+                    }
+                }
             }
-            setContainer(data);
         } catch (error) {
             console.error("Failed to fetch container details", error);
             toast.error("Failed to load container details");
@@ -334,49 +352,55 @@ export const ContainerDetails = () => {
         
         if (!id) return;
         
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const token = localStorage.getItem('token');
-        const wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${id}/stats?token=${token}`;
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        if (isLocalHost) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const token = localStorage.getItem('token');
+            const wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${id}/stats?token=${token}`;
+            
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
 
-        ws.onmessage = (event) => {
-            try {
-                const stats = JSON.parse(event.data);
-                const now = new Date().toLocaleTimeString();
-                
-                if (stats.memory_stats && stats.memory_stats.usage) {
-                    const memMb = stats.memory_stats.usage / 1024 / 1024;
-                    setMemData(prev => [...prev.slice(-29), { time: now, value: memMb }]);
-                }
+            ws.onmessage = (event) => {
+                try {
+                    const stats = JSON.parse(event.data);
+                    const now = new Date().toLocaleTimeString();
+                    
+                    if (stats.memory_stats && stats.memory_stats.usage) {
+                        const memMb = stats.memory_stats.usage / 1024 / 1024;
+                        setMemData(prev => [...prev.slice(-29), { time: now, value: memMb }]);
+                    }
 
-                if (stats.cpu_stats && stats.cpu_stats.cpu_usage && stats.cpu_stats.system_cpu_usage) {
-                     if (window.lastCpu && window.lastSys) {
-                        const deltaCpu = stats.cpu_stats.cpu_usage.total_usage - window.lastCpu;
-                        const deltaSys = stats.cpu_stats.system_cpu_usage - window.lastSys;
-                         if (deltaSys > 0) {
-                             const perc = (deltaCpu / deltaSys) * (stats.cpu_stats.online_cpus || 1) * 100;
-                             setCpuData(prev => [...prev.slice(-29), { time: now, value: perc }]);
+                    if (stats.cpu_stats && stats.cpu_stats.cpu_usage && stats.cpu_stats.system_cpu_usage) {
+                         if (window.lastCpu && window.lastSys) {
+                            const deltaCpu = stats.cpu_stats.cpu_usage.total_usage - window.lastCpu;
+                            const deltaSys = stats.cpu_stats.system_cpu_usage - window.lastSys;
+                             if (deltaSys > 0) {
+                                 const perc = (deltaCpu / deltaSys) * (stats.cpu_stats.online_cpus || 1) * 100;
+                                 setCpuData(prev => [...prev.slice(-29), { time: now, value: perc }]);
+                             }
                          }
-                     }
-                     window.lastCpu = stats.cpu_stats.cpu_usage.total_usage;
-                     window.lastSys = stats.cpu_stats.system_cpu_usage;
-                }
-            } catch (e) {}
-        };
+                         window.lastCpu = stats.cpu_stats.cpu_usage.total_usage;
+                         window.lastSys = stats.cpu_stats.system_cpu_usage;
+                    }
+                } catch (e) {}
+            };
 
-        return () => {
-            if (wsRef.current) wsRef.current.close();
-        };
-    }, [id]);
+            return () => {
+                if (wsRef.current) wsRef.current.close();
+            };
+        }
+    }, [id, isLocalHost, currentHost]);
 
     const handleAction = async (action: string) => {
         if (!container) return;
         try {
-            await api.post(`/docker/containers/${container.Id}/${action}`);
+            const endpoint = isLocalHost 
+                ? `/docker/containers/${container.Id}/${action}`
+                : `/agents/${currentHost?.id}/containers/${container.Id}/${action}`;
+
+            await api.post(endpoint);
             toast.success(`Container ${action}ed`);
-            fetchDetails();
+            setTimeout(fetchDetails, 1000);
         } catch (error) {
              toast.error(`Failed to ${action} container`);
         }
@@ -418,8 +442,10 @@ export const ContainerDetails = () => {
     const tabs = [
         { id: 'overview' as TabType, label: 'Overview', icon: InformationCircleIcon },
         { id: 'metrics' as TabType, label: 'Metrics', icon: ChartBarIcon },
-        { id: 'logs' as TabType, label: 'Logs', icon: DocumentTextIcon },
-        { id: 'shell' as TabType, label: 'Shell', icon: CommandLineIcon },
+        ...(isLocalHost ? [
+            { id: 'logs' as TabType, label: 'Logs', icon: DocumentTextIcon },
+            { id: 'shell' as TabType, label: 'Shell', icon: CommandLineIcon },
+        ] : []),
         { id: 'config' as TabType, label: 'Configuration', icon: Cog6ToothIcon },
         { id: 'networks' as TabType, label: 'Networks', icon: GlobeAltIcon },
         { id: 'resources' as TabType, label: 'Resources & Security', icon: ShieldCheckIcon },

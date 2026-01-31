@@ -20,6 +20,7 @@ const Networks = lazy(() => import('./pages/Networks').then(m => ({ default: m.N
 const NetworkDetailsPage = lazy(() => import('./pages/NetworkDetailsPage').then(m => ({ default: m.NetworkDetailsPage })));
 const Volumes = lazy(() => import('./pages/Volumes').then(m => ({ default: m.Volumes })));
 const Hosts = lazy(() => import('./pages/Hosts').then(m => ({ default: m.Hosts })));
+const HostDetails = lazy(() => import('./pages/HostDetails').then(m => ({ default: m.HostDetails }))); // Added import
 const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users })));
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
@@ -57,6 +58,7 @@ function App() {
                           <Route path="/networks/:id" element={<NetworkDetailsPage />} />
                           <Route path="/volumes" element={<Volumes />} />
                           <Route path="/hosts" element={<Hosts />} />
+                          <Route path="/hosts/:id" element={<HostDetails />} /> // Added route
                           <Route path="/users" element={<Users />} />
                           <Route path="/profile" element={<Profile />} />
                           <Route path="/settings" element={<Settings />} />

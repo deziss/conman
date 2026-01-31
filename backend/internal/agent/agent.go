@@ -23,6 +23,7 @@ type Agent struct {
 	// State
 	mu           sync.RWMutex
 	hostInfo     *protocol.HostInfo
+	stats        *protocol.SystemStats
 	containers   []protocol.Container
 	images       []protocol.Image
 	networks     []protocol.Network
@@ -172,6 +173,11 @@ func (a *Agent) runCollector(ctx context.Context) {
 }
 
 func (a *Agent) collect(ctx context.Context) {
+	// Always collect system stats
+	if err := a.collectSystemStats(ctx); err != nil {
+		log.Printf("Error collecting system stats: %v", err)
+	}
+
 	if a.cfg.CollectContainers {
 		if err := a.collectContainers(ctx); err != nil {
 			log.Printf("Error collecting containers: %v", err)
@@ -327,7 +333,9 @@ func (a *Agent) buildReport() *protocol.AgentReport {
 		AgentName:  a.cfg.AgentName,
 		Timestamp:  time.Now(),
 		HostInfo:   a.hostInfo,
+		Stats:      a.stats,
 		Containers: a.containers,
+		Metrics:    a.metrics, // Added field
 		Images:     a.images,
 		Networks:   a.networks,
 		Volumes:    a.volumes,

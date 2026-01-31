@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -26,16 +29,18 @@ type AgentState struct {
 	ID            string                 `json:"id"`
 	Name          string                 `json:"name"`
 	HostInfo      *protocol.HostInfo     `json:"host_info"`
+	Stats         *protocol.SystemStats  `json:"stats,omitempty"`
 	LastHeartbeat time.Time              `json:"last_heartbeat"`
 	LastReport    time.Time              `json:"last_report"`
 	Status        string                 `json:"status"`
 	Mode          string                 `json:"mode"`
-	ScrapeURL     string                 `json:"scrape_url,omitempty"`
-	Containers    []protocol.Container   `json:"containers,omitempty"`
-	Images        []protocol.Image       `json:"images,omitempty"`
-	Networks      []protocol.Network     `json:"networks,omitempty"`
-	Volumes       []protocol.Volume      `json:"volumes,omitempty"`
-	Events        []protocol.ContainerEvent `json:"events,omitempty"`
+	ScrapeURL     string                         `json:"scrape_url,omitempty"`
+	Containers    []protocol.Container           `json:"containers,omitempty"`
+	Metrics       map[string]protocol.ContainerMetrics `json:"metrics,omitempty"` // Added field
+	Images        []protocol.Image               `json:"images,omitempty"`
+	Networks      []protocol.Network             `json:"networks,omitempty"`
+	Volumes       []protocol.Volume              `json:"volumes,omitempty"`
+	Events        []protocol.ContainerEvent      `json:"events,omitempty"`
 }
 
 // NewAgentHandler creates a new agent handler
@@ -272,8 +277,20 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
+	var bodyBytes []byte
+	if r.Body != nil {
+		bodyBytes, _ = io.ReadAll(r.Body)
+	}
+	// Restore the io.ReadCloser to its original state
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	// Write to file for debug
+	if err := os.WriteFile("agent_report_dump.json", bodyBytes, 0644); err != nil {
+		log.Printf("Failed to write report dump: %v", err)
+	}
+
 	var report protocol.AgentReport
-	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+	if err := json.NewDecoder(bytes.NewBuffer(bodyBytes)).Decode(&report); err != nil {
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -312,6 +329,19 @@ func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 		agent.Volumes = report.Volumes
 		if report.HostInfo != nil {
 			agent.HostInfo = report.HostInfo
+		}
+		if report.Stats != nil {
+			agent.Stats = report.Stats
+		}
+		
+		// Map metrics by container ID
+		if len(report.Metrics) > 0 {
+			if agent.Metrics == nil {
+				agent.Metrics = make(map[string]protocol.ContainerMetrics)
+			}
+			for _, m := range report.Metrics {
+				agent.Metrics[m.ContainerID] = m
+			}
 		}
 	}
 	h.mu.Unlock()
