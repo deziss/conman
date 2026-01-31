@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 )
 
@@ -86,4 +88,17 @@ type SystemStats struct {
 	DiskTotal     uint64  `json:"disk_total"`
 	DiskUsed      uint64  `json:"disk_used"`
 	DiskPercent   float64 `json:"disk_percent"`
+}
+
+type Agent struct {
+	gorm.Model
+	AgentID       string `gorm:"uniqueIndex"`
+	Name          string
+	Status        string // "healthy", "offline"
+	LastHeartbeat time.Time
+	LastReport    time.Time
+	Mode          string
+	Approved      bool   // For potential approval workflow
+	HostInfo      []byte // JSON encoded host info
+	ScrapeURL     string
 }

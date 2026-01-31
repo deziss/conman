@@ -7,15 +7,18 @@ import (
 	"sync"
 	"time"
 
+	"conman-backend/internal/models"
 	"conman-backend/pkg/protocol"
 
 	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
 // AgentHandler handles agent-related API endpoints
 type AgentHandler struct {
 	mu     sync.RWMutex
 	agents map[string]*AgentState
+	DB     *gorm.DB
 }
 
 // AgentState holds the current state of a registered agent
@@ -36,9 +39,43 @@ type AgentState struct {
 }
 
 // NewAgentHandler creates a new agent handler
-func NewAgentHandler() *AgentHandler {
-	return &AgentHandler{
+func NewAgentHandler(db *gorm.DB) *AgentHandler {
+	h := &AgentHandler{
 		agents: make(map[string]*AgentState),
+		DB:     db,
+	}
+	h.loadAgents()
+	return h
+}
+
+func (h *AgentHandler) loadAgents() {
+	var dbAgents []models.Agent
+	if err := h.DB.Find(&dbAgents).Error; err != nil {
+		log.Printf("Error loading agents from DB: %v", err)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for _, a := range dbAgents {
+		var hostInfo *protocol.HostInfo
+		if len(a.HostInfo) > 0 {
+			json.Unmarshal(a.HostInfo, &hostInfo)
+		}
+
+		h.agents[a.AgentID] = &AgentState{
+			ID:            a.AgentID,
+			Name:          a.Name,
+			HostInfo:      hostInfo,
+			LastHeartbeat: a.LastHeartbeat,
+			LastReport:    a.LastReport,
+			Status:        "offline", // Assume offline on startup until heartbeat
+			Mode:          a.Mode,
+			ScrapeURL:     a.ScrapeURL,
+			Events:        make([]protocol.ContainerEvent, 0),
+		}
+		log.Printf("Loaded agent from DB: %s (%s)", a.Name, a.AgentID)
 	}
 }
 
@@ -76,6 +113,33 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Persist to DB
+	hostInfoJSON, _ := json.Marshal(reg.HostInfo)
+	dbAgent := models.Agent{
+		AgentID:       reg.AgentID,
+		Name:          reg.AgentName,
+		Status:        "healthy",
+		LastHeartbeat: time.Now(),
+		Mode:          reg.Mode,
+		HostInfo:      hostInfoJSON,
+		ScrapeURL:     reg.ScrapeURL,
+		Approved:      true, // Auto-approve for now
+	}
+
+	var existing models.Agent
+	if err := h.DB.Where("agent_id = ?", reg.AgentID).First(&existing).Error; err == nil {
+		// Update existing
+		existing.Name = dbAgent.Name
+		existing.LastHeartbeat = dbAgent.LastHeartbeat
+		existing.HostInfo = dbAgent.HostInfo
+		existing.Status = "healthy"
+		existing.ScrapeURL = dbAgent.ScrapeURL
+		h.DB.Save(&existing)
+	} else {
+		// Create new
+		h.DB.Create(&dbAgent)
+	}
+
 	h.mu.Lock()
 	h.agents[reg.AgentID] = &AgentState{
 		ID:            reg.AgentID,
@@ -89,7 +153,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 
-	log.Printf("Agent registered: %s (%s)", reg.AgentName, reg.AgentID)
+	log.Printf("Agent registered and persisted: %s (%s)", reg.AgentName, reg.AgentID)
 
 	WriteJSON(w, http.StatusOK, protocol.AgentRegistrationResponse{
 		Success:       true,
@@ -141,6 +205,8 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	delete(h.agents, id)
 	h.mu.Unlock()
 
+	h.DB.Where("agent_id = ?", id).Delete(&models.Agent{})
+
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "Agent removed"})
 }
 
@@ -155,11 +221,49 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.mu.Lock()
-	if agent, exists := h.agents[id]; exists {
+	agent, exists := h.agents[id]
+	if !exists {
+		// Try to load from DB (lazy load/recovery)
+		var dbAgent models.Agent
+		if err := h.DB.Where("agent_id = ?", id).First(&dbAgent).Error; err == nil {
+			var hostInfo *protocol.HostInfo
+			if len(dbAgent.HostInfo) > 0 {
+				json.Unmarshal(dbAgent.HostInfo, &hostInfo)
+			}
+			agent = &AgentState{
+				ID:            dbAgent.AgentID,
+				Name:          dbAgent.Name,
+				HostInfo:      hostInfo,
+				LastHeartbeat: dbAgent.LastHeartbeat,
+				LastReport:    dbAgent.LastReport,
+				Status:        dbAgent.Status,
+				Mode:          dbAgent.Mode,
+				ScrapeURL:     dbAgent.ScrapeURL,
+				Events:        make([]protocol.ContainerEvent, 0),
+			}
+			h.agents[id] = agent
+			exists = true
+		}
+	}
+
+	if exists {
 		agent.LastHeartbeat = time.Now()
 		agent.Status = heartbeat.Status
 	}
 	h.mu.Unlock()
+
+	if !exists {
+		ErrorJSON(w, http.StatusNotFound, "Agent not registered")
+		return
+	}
+
+	// Persist
+	go func() {
+		h.DB.Model(&models.Agent{}).Where("agent_id = ?", id).Updates(map[string]interface{}{
+			"last_heartbeat": time.Now(),
+			"status":         heartbeat.Status,
+		})
+	}()
 
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -175,7 +279,32 @@ func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.mu.Lock()
-	if agent, exists := h.agents[id]; exists {
+	agent, exists := h.agents[id]
+	if !exists {
+		// Try to load from DB (lazy load/recovery)
+		var dbAgent models.Agent
+		if err := h.DB.Where("agent_id = ?", id).First(&dbAgent).Error; err == nil {
+			var hostInfo *protocol.HostInfo
+			if len(dbAgent.HostInfo) > 0 {
+				json.Unmarshal(dbAgent.HostInfo, &hostInfo)
+			}
+			agent = &AgentState{
+				ID:            dbAgent.AgentID,
+				Name:          dbAgent.Name,
+				HostInfo:      hostInfo,
+				LastHeartbeat: dbAgent.LastHeartbeat,
+				LastReport:    dbAgent.LastReport,
+				Status:        dbAgent.Status,
+				Mode:          dbAgent.Mode,
+				ScrapeURL:     dbAgent.ScrapeURL,
+				Events:        make([]protocol.ContainerEvent, 0),
+			}
+			h.agents[id] = agent
+			exists = true
+		}
+	}
+
+	if exists {
 		agent.LastReport = time.Now()
 		agent.Containers = report.Containers
 		agent.Images = report.Images
@@ -186,6 +315,16 @@ func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	h.mu.Unlock()
+
+	if !exists {
+		ErrorJSON(w, http.StatusNotFound, "Agent not registered")
+		return
+	}
+
+	// Persist LastReport timestamp
+	go func() {
+		h.DB.Model(&models.Agent{}).Where("agent_id = ?", id).Update("last_report", time.Now())
+	}()
 
 	WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }

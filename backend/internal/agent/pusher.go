@@ -185,6 +185,14 @@ func (a *Agent) pushReport(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized {
+		log.Printf("Server returned %d, attempting to re-register...", resp.StatusCode)
+		if err := a.registerWithServer(ctx); err != nil {
+			return fmt.Errorf("re-registration failed: %v", err)
+		}
+		return fmt.Errorf("server session lost, re-registered")
+	}
+
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("push report failed with status: %d", resp.StatusCode)
 	}
@@ -238,6 +246,14 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusUnauthorized {
+		log.Printf("Server returned %d, attempting to re-register...", resp.StatusCode)
+		if err := a.registerWithServer(ctx); err != nil {
+			return fmt.Errorf("re-registration failed: %v", err)
+		}
+		return fmt.Errorf("server session lost, re-registered")
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("heartbeat failed with status: %d", resp.StatusCode)
