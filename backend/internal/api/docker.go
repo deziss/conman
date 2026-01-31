@@ -13,9 +13,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
 	"strings"
 )
 
@@ -232,19 +229,18 @@ func (h *DockerHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DockerHandler) GetSystemStats(w http.ResponseWriter, r *http.Request) {
-	v, _ := mem.VirtualMemory()
-	c, _ := cpu.Percent(0, false)
-	d, _ := disk.Usage("/")
+    collector := service.GetStatsCollector()
+    if collector == nil {
+        ErrorJSON(w, http.StatusServiceUnavailable, "Stats collector not initialized")
+        return
+    }
 
-	stats := models.SystemStats{
-		CPUPercent:    c[0],
-		MemoryTotal:   v.Total,
-		MemoryUsed:    v.Used,
-		MemoryPercent: v.UsedPercent,
-		DiskTotal:     d.Total,
-		DiskUsed:      d.Used,
-		DiskPercent:   d.UsedPercent,
-	}
+    stats := collector.GetSystemStats()
+    if stats == nil {
+        // Fallback or return empty if not yet collected
+        WriteJSON(w, http.StatusOK, models.SystemStats{})
+        return
+    }
 
 	WriteJSON(w, http.StatusOK, stats)
 }
