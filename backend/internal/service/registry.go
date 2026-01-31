@@ -16,21 +16,21 @@ type RegistryInfo struct {
 	Tag        string // e.g., "latest", "v1.0"
 }
 
-// CheckForUpdate checks if a newer version of the image is available
-// Supports Docker Hub, GHCR, Quay.io, and generic registries
-func CheckForUpdate(imageName string, currentID string) (bool, error) {
+// CheckForUpdate returns (updateAvailable bool, latestVersion string, err error)
+func CheckForUpdate(imageName string, currentID string) (bool, string, error) {
 	info := parseFullImageName(imageName)
 	
 	// Skip local/untagged images
 	if info.Repository == "" || info.Tag == "" {
-		return false, fmt.Errorf("cannot check update for untagged image")
+		return false, "", fmt.Errorf("cannot check update for untagged image")
 	}
 	
 	// Skip images with digest tags (sha256:...)
 	if strings.HasPrefix(info.Tag, "sha256:") {
-		return false, fmt.Errorf("image uses digest tag, not a mutable tag")
+		return false, "", fmt.Errorf("image uses digest tag, not a mutable tag")
 	}
 
+	// 1. Check for digest mismatch (re-pushed tag)
 	var remoteDigest string
 	var err error
 
@@ -47,24 +47,39 @@ func CheckForUpdate(imageName string, currentID string) (bool, error) {
 	}
 
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 
-	// Compare digests
+	digestChanged := false
 	if remoteDigest != "" && currentID != "" {
-		// Normalize currentID (remove "sha256:" prefix if comparing)
+		// Normalize currentID
 		localDigest := currentID
 		if !strings.HasPrefix(localDigest, "sha256:") {
 			localDigest = "sha256:" + localDigest
 		}
-		
 		if remoteDigest != localDigest {
-			return true, nil // Different digest = update available
+			digestChanged = true
 		}
-		return false, nil // Same digest
 	}
 
-	return false, nil
+	// 2. Check for newer SemVer tag (only for Docker Hub for now)
+	latestTag := info.Tag
+	tagChanged := false
+	
+	if info.Registry == "docker.io" || info.Registry == "" {
+		newer, err := checkDockerHubNewerTag(info)
+		if err == nil && newer != "" {
+			latestTag = newer
+			tagChanged = true
+		}
+	}
+
+	// If either digest changed or we found a newer tag
+	if digestChanged || tagChanged {
+		return true, latestTag, nil
+	}
+
+	return false, info.Tag, nil
 }
 
 // parseFullImageName parses a full image reference into components

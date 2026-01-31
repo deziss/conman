@@ -51,11 +51,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
             </h1>
          </div>
          
-         {!isCollapsed && (
-            <p className="fixed left-6 top-14 text-xs text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-widest font-semibold whitespace-nowrap opacity-100 transition-opacity duration-300 delay-100">
-              {APP_CONFIG.TAGLINE}
-            </p>
-         )}
+
 
         <button
           onClick={toggle}
@@ -287,72 +283,70 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
               </NavLink>
       </nav>
 
-      <div className="p-4 border-t border-slate-200 dark:border-white/5">
-        {/* User Profile Section */}
-        <div className={`flex items-center ${isCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'} p-3 rounded-xl bg-white/50 dark:bg-slate-900/50 transition-all duration-300`}>
-          <div className="flex items-center">
-            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-cyan-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+      <div className="p-4 border-t border-slate-200 dark:border-white/5 space-y-4 bg-slate-50/50 dark:bg-black/20">
+        
+        {/* User Profile */}
+        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} transition-all duration-300`}>
+          <div className="relative group cursor-pointer">
+            <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-cyan-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-purple-500/20 ring-2 ring-white dark:ring-slate-800">
               {user ? getInitials(user.name) : 'U'}
             </div>
-            <div className={`ml-3 overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
-              <p className="text-sm font-medium text-slate-900 dark:text-slate-200 whitespace-nowrap truncate max-w-[140px]">{user?.name || 'User'}</p>
-              <p className="text-xs text-slate-500 whitespace-nowrap truncate max-w-[140px]">{user?.email || ''}</p>
-            </div>
+            <div className="absolute inset-0 rounded-full bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
+          
+          <div className={`overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100 flex-1'}`}>
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate leading-tight" title={user?.name || 'User'}>
+              {user?.name || 'Data Admin'}
+            </p>
+            <p className="text-[11px] text-slate-400 font-medium truncate leading-tight mt-0.5" title={user?.email}>
+              {user?.email || 'admin@example.com'}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions (Theme & Logout) */}
+        <div className={`grid ${isCollapsed ? 'grid-cols-1 gap-3' : 'grid-cols-2 gap-2'}`}>
           <button 
             onClick={toggleTheme}
-            className="p-2 rounded-lg text-slate-500 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-colors"
+            className={`flex items-center justify-center gap-2 p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-cyan-500/50 dark:hover:border-cyan-500/50 hover:text-cyan-600 dark:hover:text-cyan-400 transition-all text-slate-500 dark:text-slate-400 shadow-sm`}
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
-            {theme === 'dark' ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+            {theme === 'dark' ? <SunIcon className="w-4 h-4" /> : <MoonIcon className="w-4 h-4" />}
+            {!isCollapsed && <span className="text-xs font-medium">Theme</span>}
           </button>
-           <button 
+          
+          <button 
             onClick={logout}
-            className="p-2 rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 transition-colors"
+            className={`flex items-center justify-center gap-2 p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-rose-500/50 hover:bg-rose-50 dark:hover:bg-rose-900/10 hover:text-rose-600 text-slate-500 dark:text-slate-400 shadow-sm transition-all`}
             title="Logout"
           >
-            <ArrowLeftOnRectangleIcon className="w-5 h-5" />
+            <ArrowLeftOnRectangleIcon className="w-4 h-4" />
+            {!isCollapsed && <span className="text-xs font-medium">Logout</span>}
           </button>
         </div>
-        
-        {/* Help, Contact & Support Links */}
-        <div className={`mt-3 flex ${isCollapsed ? 'flex-col items-center gap-2' : 'items-center justify-center gap-4'} transition-all duration-300`}>
-          <a 
-            href={APP_CONFIG.HELP_URL}
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
-            title="Help"
-          >
-            <QuestionMarkCircleIcon className="w-4 h-4" />
-            <span className={`${isCollapsed ? 'hidden' : ''}`}>Help</span>
-          </a>
-          <a 
-            href={`mailto:${APP_CONFIG.CONTACT_EMAIL}`}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
-            title="Contact"
-          >
-            <EnvelopeIcon className="w-4 h-4" />
-            <span className={`${isCollapsed ? 'hidden' : ''}`}>Contact</span>
-          </a>
-          <a 
-            href={APP_CONFIG.SUPPORT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 transition-colors"
-            title="Support"
-          >
-            <LifebuoyIcon className="w-4 h-4" />
-            <span className={`${isCollapsed ? 'hidden' : ''}`}>Support</span>
-          </a>
-        </div>
-        
-        {/* Version Info */}
-        <div className={`mt-3 text-center transition-all duration-300 ${isCollapsed ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
-          <p className="text-[10px] text-slate-400 dark:text-slate-600 font-mono">
-            {APP_CONFIG.FULL_VERSION}
-          </p>
-        </div>
+
+        {/* Support Links & Version */}
+        {!isCollapsed && (
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between px-1">
+               <a href={APP_CONFIG.HELP_URL} target="_blank" rel="noopener" className="text-xs text-slate-500 hover:text-cyan-500 transition-colors flex items-center gap-1" title="Help">
+                 <QuestionMarkCircleIcon className="w-3 h-3" /> Help
+               </a>
+               <a href={APP_CONFIG.SUPPORT_URL} target="_blank" rel="noopener" className="text-xs text-slate-500 hover:text-purple-500 transition-colors flex items-center gap-1" title="Support">
+                 <LifebuoyIcon className="w-3 h-3" /> Support
+               </a>
+               <a href={`mailto:${APP_CONFIG.CONTACT_EMAIL}`} className="text-xs text-slate-500 hover:text-amber-500 transition-colors flex items-center gap-1" title="Contact">
+                 <EnvelopeIcon className="w-3 h-3" /> Contact
+               </a>
+            </div>
+            
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-700 tracking-wider">
+                {APP_CONFIG.FULL_VERSION}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

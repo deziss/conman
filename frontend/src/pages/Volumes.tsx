@@ -7,7 +7,8 @@ import {
     ArrowPathIcon,
     EyeIcon,
     ServerIcon,
-    ChevronDownIcon
+    ChevronDownIcon,
+    ChevronUpIcon
 } from '@heroicons/react/24/solid';
 import { ServerStackIcon } from '@heroicons/react/24/outline';
 import api from '../services/api';

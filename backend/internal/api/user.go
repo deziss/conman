@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -21,6 +23,13 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 type CreateUserRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	FullName string `json:"full_name"`
+	Role     string `json:"role"`
+}
+
+type UpdateUserRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"` // Optional, if empty don't update
 	FullName string `json:"full_name"`
 	Role     string `json:"role"`
 }
@@ -55,6 +64,53 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusCreated, user)
+}
+
+func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ErrorJSON(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	var req UpdateUserRequest
+	if err := ReadJSON(r, &req); err != nil {
+		ErrorJSON(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	var user models.User
+	if err := h.DB.First(&user, id).Error; err != nil {
+		ErrorJSON(w, http.StatusNotFound, "User not found")
+		return
+	}
+
+	// Update fields
+	if req.Email != "" {
+		user.Email = req.Email
+	}
+	if req.FullName != "" {
+		user.FullName = req.FullName
+	}
+	if req.Role != "" {
+		user.Role = req.Role
+	}
+	if req.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, "Error hashing password")
+			return
+		}
+		user.Password = string(hashedPassword)
+	}
+
+	if err := h.DB.Save(&user).Error; err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Error updating user")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, user)
 }
 
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
