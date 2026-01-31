@@ -11,6 +11,7 @@ import { useHost } from '../contexts/HostContext';
 import { PageTransition } from '../components/ui/PageTransition';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface Container {
   id: string;
@@ -28,6 +29,7 @@ interface Container {
 
 export const Containers = () => {
   const [containers, setContainers] = useState<Container[]>([]);
+  const { refreshInterval } = useSettings();
   const [statsHistory, setStatsHistory] = useState<Record<string, { cpu: {value: number}[], mem: {value: number}[] }>>({});
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'running' | 'exited' | 'paused'>('all');
@@ -59,8 +61,13 @@ export const Containers = () => {
         data.forEach((c: Container) => {
            if (!newHistory[c.id]) newHistory[c.id] = { cpu: [], mem: [] };
            
-           const cpuVal = parseFloat(c.cpu_usage.replace('%', '')) || 0;
-           const memVal = parseFloat(c.memory_usage) || 0;
+           const cpuVal = c.cpu_usage ? parseFloat(c.cpu_usage.replace('%', '')) : 0;
+           // Heuristic parsing for memory
+           let memVal = 0;
+           if (c.memory_usage) {
+               memVal = parseFloat(c.memory_usage);
+               if (c.memory_usage.includes('GB')) memVal *= 1024;
+           }
 
            const maxPoints = 20;
            const newCpu = [...newHistory[c.id].cpu, { value: cpuVal }].slice(-maxPoints);
@@ -83,9 +90,9 @@ export const Containers = () => {
 
   useEffect(() => {
     fetchContainers();
-    const interval = setInterval(fetchContainers, 5000);
+    const interval = setInterval(fetchContainers, refreshInterval);
     return () => clearInterval(interval);
-  }, [currentHost]);
+  }, [currentHost, isLocalHost, refreshInterval]);
 
   const executeAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
       let endpoint = '';

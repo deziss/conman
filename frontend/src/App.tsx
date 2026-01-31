@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { HostProvider } from './contexts/HostContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Loading } from './components/ui/Loading';
 import type { ReactNode } from 'react';
@@ -32,7 +33,8 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
 function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
+      <SettingsProvider>
+        <AuthProvider>
         <BrowserRouter>
           <Suspense fallback={<Loading />}>
             <Routes>
@@ -70,6 +72,7 @@ function App() {
           </Suspense>
         </BrowserRouter>
       </AuthProvider>
+      </SettingsProvider>
     </ThemeProvider>
   );
 }
