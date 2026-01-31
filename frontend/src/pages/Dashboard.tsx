@@ -16,6 +16,7 @@ import {
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { useSettings } from '../contexts/SettingsContext';
 
 // -- Linear Progress Bar Component --
 const LinearProgress = ({ percent, color }: { percent: number, color: string }) => {
@@ -172,6 +173,7 @@ const SectionHeader = ({ title, subTitle, actions }: any) => (
 
 export const Dashboard = () => {
     const navigate = useNavigate();
+    const { refreshInterval } = useSettings();
     const [loading, setLoading] = useState(true);
     const [systemInfo, setSystemInfo] = useState<any>(null);
     const [systemStats, setSystemStats] = useState<any>(null);
@@ -203,16 +205,24 @@ export const Dashboard = () => {
         };
         fetchData();
 
-        // Poll stats every 5 seconds
+        // Poll stats based on interval
         const interval = setInterval(async () => {
             try {
                 const statsRes = await api.get('/docker/system/stats');
                 setSystemStats(statsRes.data);
+                // Also optionally refresh containers/envs to keep dashboard live
+                 const [contRes, envRes] = await Promise.all([
+                    api.get('/docker/containers').catch(() => ({ data: [] })),
+                    api.get('/agents').catch(() => ({ data: [] }))
+                ]);
+                setContainers(contRes.data || []);
+                setEnvironments(envRes.data || []);
+
             } catch (e) { /* ignore silent updates */ }
-        }, 5000);
+        }, refreshInterval);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [refreshInterval]);
 
     // Derived States
     const runningContainers = containers.filter(c => c.state === 'running');
