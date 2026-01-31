@@ -119,7 +119,7 @@ func main() {
                 r.Use(mw.RequirePermission("users", "write"))
                 r.Get("/", userHandler.ListUsers)
                 r.Post("/", userHandler.CreateUser)
-                r.Post("/", userHandler.CreateUser)
+                r.Put("/{id}", userHandler.UpdateUser)
             })
 
             // Environments
@@ -139,11 +139,6 @@ func main() {
                  r.Delete("/keys/{id}", userHandler.RevokeAPIKey)
             })
 
-
-
-            // Docker System
-            // Docker System
-            // Docker System
 
 
             // Docker System

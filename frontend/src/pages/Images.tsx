@@ -9,12 +9,9 @@ import {
     TagIcon,
     ClockIcon,
     EyeIcon,
-    TableCellsIcon,
-    ListBulletIcon,
     ArrowUpCircleIcon,
     CheckCircleIcon,
     ExclamationCircleIcon,
-
     MagnifyingGlassIcon,
     ServerStackIcon
 } from '@heroicons/react/24/solid';
@@ -40,6 +37,8 @@ interface UpdateStatus {
   available: boolean | null;
   error: string | null;
   lastChecked: Date | null;
+  currentTag: string | null;
+  availableTag?: string | null;
 }
 
 export const Images = () => {
@@ -50,8 +49,36 @@ export const Images = () => {
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'name' | 'size' | 'created' | 'status'>('created');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
-  const [updateStatuses, setUpdateStatuses] = useState<Record<string, UpdateStatus>>({});
+  
+  // Initialize from localStorage
+  const [updateStatuses, setUpdateStatuses] = useState<Record<string, UpdateStatus>>(() => {
+    try {
+      const saved = localStorage.getItem('conman_image_updates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Restore Date objects and reset checking state
+        Object.keys(parsed).forEach(key => {
+          parsed[key].checking = false;
+          if (parsed[key].lastChecked) {
+            parsed[key].lastChecked = new Date(parsed[key].lastChecked);
+          }
+        });
+        return parsed;
+      }
+    } catch (e) {
+      console.warn("Failed to load image updates from storage", e);
+    }
+    return {};
+  });
+
+  // Persist to localStorage
+  useEffect(() => {
+    const dataToSave = { ...updateStatuses };
+    // We don't need to manually convert dates, JSON.stringify handles it.
+    // We might want to ensure 'checking' is false in saved data, but resolving it on load is easier.
+    localStorage.setItem('conman_image_updates', JSON.stringify(dataToSave));
+  }, [updateStatuses]);
+
   const [checkingAll, setCheckingAll] = useState(false);
   const { isCollapsed } = useSidebar();
   const { currentHost, isLocalHost } = useHost();
@@ -110,7 +137,7 @@ export const Images = () => {
   const checkImageUpdate = async (imageId: string) => {
     setUpdateStatuses(prev => ({
       ...prev,
-      [imageId]: { checking: true, available: null, error: null, lastChecked: null }
+      [imageId]: { checking: true, available: null, error: null, lastChecked: null, currentTag: null }
     }));
 
     try {
@@ -121,7 +148,9 @@ export const Images = () => {
           checking: false, 
           available: data.update_available, 
           error: data.error || null,
-          lastChecked: new Date()
+          lastChecked: new Date(),
+          currentTag: data.current_tag || null,
+          availableTag: data.available_tag || null
         }
       }));
       
@@ -139,7 +168,8 @@ export const Images = () => {
           checking: false, 
           available: null, 
           error: error.message || 'Failed to check',
-          lastChecked: new Date()
+          lastChecked: new Date(),
+          currentTag: null
         }
       }));
       toast.error('Failed to check for updates');
@@ -158,7 +188,7 @@ export const Images = () => {
       
       setUpdateStatuses(prev => ({
         ...prev,
-        [img.id]: { checking: true, available: null, error: null, lastChecked: null }
+        [img.id]: { checking: true, available: null, error: null, lastChecked: null, currentTag: null }
       }));
 
       try {
@@ -169,7 +199,9 @@ export const Images = () => {
             checking: false, 
             available: data.update_available, 
             error: data.error || null,
-            lastChecked: new Date()
+            lastChecked: new Date(),
+            currentTag: data.current_tag || null,
+            availableTag: data.available_tag || null
           }
         }));
         if (data.update_available) updatesFound++;
@@ -181,7 +213,8 @@ export const Images = () => {
             checking: false, 
             available: null, 
             error: error.message || 'Failed',
-            lastChecked: new Date()
+            lastChecked: new Date(),
+            currentTag: null
           }
         }));
         errors++;
@@ -249,6 +282,20 @@ export const Images = () => {
     }
     
     if (status.error) {
+      // Check for common non-critical errors (local images, auth required)
+      const isSkipped = status.error.toLowerCase().includes('authentication') || 
+                        status.error.toLowerCase().includes('not found') || 
+                        status.error.toLowerCase().includes('manifest');
+      
+      if (isSkipped) {
+        return (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-500/10 text-slate-500 border border-slate-500/20" title={status.error}>
+              <ExclamationCircleIcon className="w-3 h-3 mr-1" />
+              Local / Private
+            </span>
+        );
+      }
+
       return (
         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30" title={status.error}>
           <ExclamationCircleIcon className="w-3 h-3 mr-1" />
@@ -259,9 +306,9 @@ export const Images = () => {
     
     if (status.available === true) {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse">
+        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse" title="A newer version is available on the registry">
           <ArrowUpCircleIcon className="w-3 h-3 mr-1" />
-          Update Available
+          {status.availableTag ? status.availableTag : 'Update Available'}
         </span>
       );
     }
@@ -361,31 +408,6 @@ export const Images = () => {
         <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-300">Image List</h3>
         
         <div className="flex items-center space-x-4">
-           {/* View Toggle */}
-           <div className="flex bg-white dark:bg-slate-800/50 rounded-lg p-1 border border-slate-200 dark:border-slate-700/50">
-                <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-1.5 rounded-md transition-all ${
-                        viewMode === 'list'
-                        ? 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-700/50'
-                    }`}
-                    title="List View"
-                >
-                    <ListBulletIcon className="w-4 h-4" />
-                </button>
-                <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-1.5 rounded-md transition-all ${
-                        viewMode === 'grid'
-                        ? 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-400 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-700/50'
-                    }`}
-                    title="Grid View"
-                >
-                    <TableCellsIcon className="w-4 h-4" />
-                </button>
-           </div>
 
           <select
             value={sortOrder}
@@ -400,102 +422,10 @@ export const Images = () => {
         </div>
       </div>
 
-      {/* Image List */}
+      {/* Image Grid */}
       <div className="space-y-4">
         {loading ? (
            <div className="text-slate-500 text-center py-10 animate-pulse">Loading images...</div>
-        ) : viewMode === 'list' ? (
-            sortedImages.map((img) => (
-                <GlassCard key={img.id} className="p-4 flex items-center justify-between group hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                    <div className="flex items-center space-x-4 overflow-hidden">
-                        <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg relative">
-                            <Square3Stack3DIcon className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                            {img.status === 'used' && (
-                                <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                                </span>
-                            )}
-                            {updateStatuses[img.id]?.available && (
-                                <span className="absolute -top-1 -left-1 flex h-3 w-3">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                                  <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-                                </span>
-                            )}
-                        </div>
-                        <div className="min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-baseline gap-2">
-                                <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate" title={img.tags && img.tags[0]}>
-                                    {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[0] : '<none>'}
-                                </h4>
-                                <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
-                                    {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
-                                </span>
-                                {img.status === 'used' && (
-                                     <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 rounded">Used</span>
-                                )}
-                                {getUpdateStatusBadge(img.id)}
-                            </div>
-                             <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 font-mono">
-                                <span className="flex items-center">
-                                    <TagIcon className="w-3 h-3 mr-1" />
-                                    {img.id.substring(7, 19)}
-                                </span>
-                                <span className="flex items-center">
-                                    <ClockIcon className="w-3 h-3 mr-1" />
-                                    {formatTime(img.created)}
-                                </span>
-                                <span>
-                                    {formatSize(img.size)}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="ml-4 flex items-center space-x-2">
-                        {/* Check Update Button */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
-                            disabled={updateStatuses[img.id]?.checking}
-                            className={clsx(
-                              "p-2 rounded-lg transition-colors",
-                              updateStatuses[img.id]?.checking 
-                                ? "text-blue-400 bg-blue-500/10" 
-                                : "text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/10"
-                            )}
-                            title="Check for Updates"
-                        >
-                            <MagnifyingGlassIcon className={clsx("w-5 h-5", updateStatuses[img.id]?.checking && "animate-pulse")} />
-                        </button>
-                        
-                        {/* Update Button - Show when update available */}
-                        {updateStatuses[img.id]?.available && (
-                          <button 
-                              onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }}
-                              className="p-2 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                              title="Pull Latest Version"
-                          >
-                              <ArrowUpCircleIcon className="w-5 h-5" />
-                          </button>
-                        )}
-                        
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
-                            className="p-2 text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
-                            title="Inspect Image"
-                        >
-                            <EyeIcon className="w-5 h-5" />
-                        </button>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
-                            className="p-2 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
-                            title="Remove Image"
-                        >
-                            <TrashIcon className="w-5 h-5" />
-                        </button>
-                    </div>
-                </GlassCard>
-            ))
         ) : (
             <div className={`grid gap-6 ${
                 isCollapsed 
@@ -564,21 +494,15 @@ export const Images = () => {
                             <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate mb-1" title={img.tags && img.tags[0]}>
                                 {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[0] : '<none>'}
                             </h4>
-                            <div className="flex flex-wrap gap-2 mb-3">
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
                                 <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
                                     {img.tags && img.tags.length > 0 ? img.tags[0].split(':')[1] || 'latest' : '<none>'}
                                 </span>
                                 {img.status === 'used' && (
                                      <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center">Used</span>
                                 )}
-                            </div>
-                            
-                            {/* Update Status Badge for Grid View */}
-                            {getUpdateStatusBadge(img.id) && (
-                              <div className="mb-3">
                                 {getUpdateStatusBadge(img.id)}
-                              </div>
-                            )}
+                            </div>
                             
                             <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-mono border-t border-slate-200 dark:border-slate-700/50 pt-3">
                                 <div>

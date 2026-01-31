@@ -49,6 +49,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":   user.ID,
 		"email": user.Email,
+		"name":  user.FullName,
 		"role":  user.Role,
 		"exp":   time.Now().Add(time.Minute * 30).Unix(),
 	})
