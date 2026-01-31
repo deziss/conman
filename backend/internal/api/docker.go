@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/docker/docker/api/types"
@@ -191,10 +192,15 @@ func (h *DockerHandler) GetSystemDF(w http.ResponseWriter, r *http.Request) {
 
 func (h *DockerHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
     id := chi.URLParam(r, "id")
+    // URL-decode the id (browser sends sha256%3A... but Docker needs sha256:...)
+    decodedID, err := url.QueryUnescape(id)
+    if err != nil {
+        decodedID = id // fallback to original if decode fails
+    }
 	cli := service.GetDockerClient()
 	
 	// We need image info to get repo:tag
-	info, _, err := cli.ImageInspectWithRaw(context.Background(), id)
+	info, _, err := cli.ImageInspectWithRaw(context.Background(), decodedID)
 	if err != nil {
 		ErrorJSON(w, http.StatusInternalServerError, err.Error())
 		return
@@ -206,14 +212,23 @@ func (h *DockerHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Check first tag
-	updateAvailable, err := service.CheckForUpdate(info.RepoTags[0], info.ID)
+	currentTag := info.RepoTags[0]
+	updateAvailable, latestVersion, err := service.CheckForUpdate(currentTag, info.ID)
 	if err != nil {
 		 // Don't fail the request, just report error in JSON
-		 WriteJSON(w, http.StatusOK, map[string]interface{}{"update_available": false, "error": err.Error()})
+		 WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"update_available": false, 
+			"error": err.Error(),
+			"current_tag": currentTag,
+		 })
 		 return
 	}
 	
-	WriteJSON(w, http.StatusOK, map[string]interface{}{"update_available": updateAvailable})
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"update_available": updateAvailable,
+		"current_tag":      currentTag,
+		"available_tag":    latestVersion,
+	})
 }
 
 func (h *DockerHandler) GetSystemStats(w http.ResponseWriter, r *http.Request) {

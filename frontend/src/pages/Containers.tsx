@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
-import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, CommandLineIcon, ServerStackIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, CommandLineIcon, ServerStackIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
 import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
@@ -50,9 +50,7 @@ export const Containers = () => {
 
   const fetchContainers = async () => {
     try {
-      const endpoint = isLocalHost 
-        ? '/docker/containers' 
-        : `/agents/${currentHost?.id}/containers`;
+      const endpoint = isLocalHost ? '/docker/containers' : '/agents/' + (currentHost ? currentHost.id : '') + '/containers';
       const { data } = await api.get(endpoint);
       setContainers(data || []);
 
@@ -99,13 +97,13 @@ export const Containers = () => {
       let method: 'post' | 'delete' = 'post';
 
       if (isLocalHost) {
-          endpoint = `/docker/containers/${id}`;
-          if (action !== 'remove') endpoint += `/${action}`;
+          endpoint = '/docker/containers/' + id;
+          if (action !== 'remove') endpoint += '/' + action;
           if (action === 'remove') method = 'delete';
       } else {
-           // Fallback for agent: needs backend implementation. 
-           endpoint = `/agents/${currentHost?.id}/containers/${id}`;
-           if (action !== 'remove') endpoint += `/${action}`;
+           // Fallback for agent
+           endpoint = '/agents/' + (currentHost ? currentHost.id : '') + '/containers/' + id;
+           if (action !== 'remove') endpoint += '/' + action;
            if (action === 'remove') method = 'delete';
       }
 
@@ -238,7 +236,7 @@ export const Containers = () => {
         </select>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
       <AnimatePresence mode="popLayout">
         {filteredContainers.map(container => (
           <motion.div
@@ -254,9 +252,11 @@ export const Containers = () => {
                 <div className="flex items-start space-x-3">
                     <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500`}></div>
                     <div>
-                        <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
-                            {container.name.replace(/^\//, '')}
-                        </h3>
+                        <Link to={'/containers/' + container.id}>
+                            <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[200px]" title={container.name.replace(/^\//, '')}>
+                                {container.name.replace(/^\//, '')}
+                            </h3>
+                        </Link>
                         <div className="flex items-center gap-2 mt-1">
                              <p className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-700/50 px-1.5 py-0.5 rounded">{container.image.substring(0, 25)}{container.image.length > 25 ? '...' : ''}</p>
                              <p className="text-xs text-slate-400">{container.status}</p>
@@ -285,8 +285,11 @@ export const Containers = () => {
                     >
                         <EyeIcon className="w-5 h-5" />
                     </button>
-                     <Link to={`/containers/${container.id}/logs`} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Logs">
+                     <Link to={'/containers/' + container.id + '/logs'} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Logs">
                         <CommandLineIcon className="w-5 h-5" />
+                    </Link>
+                    <Link to={'/containers/' + container.id} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Details">
+                        <DocumentTextIcon className="w-5 h-5" />
                     </Link>
                 </div>
              </div>
