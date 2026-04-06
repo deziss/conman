@@ -233,10 +233,42 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
 	mux.HandleFunc("/api/info", a.handleInfo)
 	mux.HandleFunc("/api/containers", a.handleContainers)
 	mux.HandleFunc("/api/images", a.handleImages)
+    mux.HandleFunc("/api/images/pull", a.handlePullImage)
 	mux.HandleFunc("/api/networks", a.handleNetworks)
 	mux.HandleFunc("/api/volumes", a.handleVolumes)
 	mux.HandleFunc("/api/metrics", a.handleMetrics)
 	mux.HandleFunc("/api/report", a.handleFullReport)
+	
+	// Inspection Endpoints
+	mux.HandleFunc("/api/containers/inspect", a.handleInspectContainer)
+	mux.HandleFunc("/api/images/inspect", a.handleInspectImage)
+	mux.HandleFunc("/api/networks/inspect", a.handleInspectNetwork)
+	mux.HandleFunc("/api/networks/duplicate", a.handleDuplicateNetwork)
+	mux.HandleFunc("/api/networks/connect", a.handleConnectNetwork)
+	mux.HandleFunc("/api/volumes/inspect", a.handleInspectVolume)
+    mux.HandleFunc("/api/images/check-update", a.handleCheckImageUpdate)
+    mux.HandleFunc("/api/stacks", func(w http.ResponseWriter, r *http.Request) {
+        switch r.Method {
+            case "GET": a.handleListStacks(w, r)
+            case "POST": a.handleCreateStack(w, r)
+        }
+    })
+    mux.HandleFunc("/api/stacks/remove", a.handleRemoveStack)
+
+	mux.HandleFunc("/api/system/df", a.handleSystemDF)
+	
+    // Remove Endpoints
+    mux.HandleFunc("/api/containers/remove", a.handleRemoveContainer)
+    mux.HandleFunc("/api/images/remove", a.handleRemoveImage)
+    mux.HandleFunc("/api/networks/remove", a.handleRemoveNetwork)
+    mux.HandleFunc("/api/volumes/remove", a.handleRemoveVolume)
+
+	// Remote Control Endpoints
+	mux.HandleFunc("/api/exec", a.handleStreamExec)
+	mux.HandleFunc("/api/files", a.handleListFiles)
+	mux.HandleFunc("/api/logs", a.handleStreamLogs)
+	mux.HandleFunc("/api/stats", a.handleStreamStats)
+
 
 	a.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", a.cfg.ScrapePort),

@@ -17,17 +17,20 @@ import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
+import { FileBrowser } from '../components/FileBrowser';
+import { useCache } from '../contexts/CacheContext';
 
 interface Volume {
-  Name: string;
-  Driver: string;
-  Mountpoint: string;
-  CreatedAt: string;
-  Scope: string;
-  Size?: number; // Added from System DF
+  name: string;
+  driver: string;
+  mountpoint: string;
+  created_at: string;
+  scope: string;
+  size?: number; // Added from System DF
+  usage?: string[];
 }
 
-type SortField = 'Name' | 'Driver' | 'Mountpoint' | 'CreatedAt' | 'Size';
+type SortField = 'name' | 'driver' | 'mountpoint' | 'created_at' | 'size';
 type SortDirection = 'asc' | 'desc';
 
 export const Volumes = () => {
@@ -36,35 +39,61 @@ export const Volumes = () => {
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
 
+  // Browse State
+  const [browseModalOpen, setBrowseModalOpen] = useState(false);
+  const [browseContainerId, setBrowseContainerId] = useState<string | null>(null);
+  const [browseVolName, setBrowseVolName] = useState('');
+
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const { currentHost, isLocalHost } = useHost();
+  const { currentHost } = useHost();
 
   // Sort State
-  const [sortField, setSortField] = useState<SortField>('Name');
+  const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   
   // Create Form State
   const [newVolumeName, setNewVolumeName] = useState('');
-  const [newVolumeDriver, setNewVolumeDriver] = useState('local');
+  const newVolumeDriver = 'local';
 
-  const fetchVolumes = async () => {
+  const { cache, setCache, getCache } = useCache();
+  const cacheKey = `volumes-${currentHost?.id || 'local'}`;
+
+  const fetchVolumes = async (forceRefresh = false) => {
+    // Check cache
+    if (!forceRefresh) {
+        const cached = getCache(cacheKey);
+        if (cached) {
+            setVolumes(cached);
+            setLoading(false);
+            return;
+        }
+    }
+
+    setLoading(true);
     try {
-      // Parallel fetch for speed
-      const endpoint = isLocalHost ? '/docker/volumes' : `/agents/${currentHost?.id}/volumes`;
-      
-      // Only fetch DF for usage stats if local (agents don't report volume usage details yet)
-      const requests: Promise<any>[] = [api.get(endpoint)];
-      if (isLocalHost) {
-          requests.push(api.get('/docker/system/df').catch(e => ({ data: null })));
-      }
-
+      if (!currentHost) return;
+      const requests = [
+          api.get(`/agents/${currentHost.id}/volumes`),
+          api.get(`/agents/${currentHost.id}/system/df`)
+      ];
       const [volRes, dfRes] = await Promise.all(requests);
 
       const volumesData: Volume[] = volRes.data || [];
-      const dfData = dfRes.data;
+      // Handle casing from legacy local endpoint if needed (PascalCase -> camelCase)
+      // Agent uses lowercase protocol. Local might use PascalCase.
+      // We normalize to lowercase.
+      const normalizedVolumes = volumesData.map((v: any) => ({
+          name: v.Name || v.name,
+          driver: v.Driver || v.driver,
+          mountpoint: v.Mountpoint || v.mountpoint,
+          created_at: v.CreatedAt || v.created_at,
+          scope: v.Scope || v.scope,
+          usage: v.usage
+      }));
+
+      const dfData = dfRes ? dfRes.data : null;
 
       // Map usage if available
-      // Docker system df returns { Volumes: [ { Name, UsageData: { Size, RefCount } } ] }
       const usageMap = new Map<string, number>();
       if (dfData && dfData.Volumes) {
           dfData.Volumes.forEach((v: any) => {
@@ -74,12 +103,14 @@ export const Volumes = () => {
           });
       }
 
-      const merged = volumesData.map(v => ({
+      const merged = normalizedVolumes.map(v => ({
           ...v,
-          Size: usageMap.get(v.Name) // Undefined if not found
+          size: usageMap.get(v.name)
       }));
 
       setVolumes(merged);
+      setCache(cacheKey, merged); 
+
     } catch (error) {
       console.error("Failed to fetch volumes", error);
       toast.error("Failed to load volume data");
@@ -97,14 +128,15 @@ export const Volumes = () => {
       if (!newVolumeName) return;
 
       try {
-          await api.post('/docker/volumes', { 
+          if (!currentHost) return;
+          await api.post(`/agents/${currentHost.id}/volumes`, { 
               name: newVolumeName,
               driver: newVolumeDriver
           });
           toast.success(`Volume ${newVolumeName} created`);
           setCreateModalOpen(false);
           setNewVolumeName('');
-          fetchVolumes();
+          fetchVolumes(true);
       } catch (error) {
           toast.error("Failed to create volume");
       }
@@ -113,9 +145,10 @@ export const Volumes = () => {
   const handleRemoveVolume = async (name: string) => {
       if (!confirm('Are you sure you want to remove this volume? Action is irreversible.')) return;
       try {
-          await api.delete(`/docker/volumes/${name}`);
+          if (!currentHost) return;
+          await api.delete(`/agents/${currentHost.id}/volumes/${name}`);
           toast.success('Volume removed');
-          fetchVolumes();
+          fetchVolumes(true);
       } catch (error) {
           toast.error('Failed to remove volume. Ensure it is not in use.');
       }
@@ -123,13 +156,53 @@ export const Volumes = () => {
 
   const handleInspect = async (name: string) => {
       try {
-          const { data } = await api.get(`/docker/volumes/inspect?id=${encodeURIComponent(name)}`);
-          setInspectData(data);
+          // Use docker inspect logic? Or use object from list?
+          // Agent LIST returns full objects.
+          // Or we can fetch details.
+          // Agent doesn't have explicit inspect endpoint for volumes other than list?
+          // I added /api/volumes (list). I didn't add /api/volumes/{name}.
+          // But I can just use the item from the list for now.
+          const vol = volumes.find(v => v.name === name);
+          setInspectData(vol);
           setInspectModalOpen(true);
       } catch (error) {
           toast.error("Failed to inspect volume");
       }
   }
+
+  const handleDownloadVolume = async (name: string) => {
+      try {
+           if (!currentHost) return;
+           const endpoint = `/agents/${currentHost.id}/volumes/${encodeURIComponent(name)}/browse`; 
+
+           const { data } = await api.post(endpoint);
+           if (!data.containerId) return;
+
+           const downloadUrl = `${api.defaults.baseURL}/agents/${currentHost.id}/containers/${data.containerId}/files/download?path=/mnt/volume`;
+           window.location.href = downloadUrl;
+           toast.success("Download started");
+
+      } catch (error) {
+          toast.error("Failed to prepare download");
+      }
+  };
+
+  const handleBrowse = async (name: string) => {
+      try {
+           if (!currentHost) return;
+           const endpoint = `/agents/${currentHost.id}/volumes/${encodeURIComponent(name)}/browse`;
+
+           const { data } = await api.post(endpoint);
+           if (data.containerId) {
+               setBrowseContainerId(data.containerId);
+               setBrowseVolName(name);
+               setBrowseModalOpen(true);
+           }
+      } catch (error) {
+          console.error(error);
+          toast.error("Failed to open volume browser");
+      }
+  };
 
   const handleSort = (field: SortField) => {
       if (sortField === field) {
@@ -145,17 +218,15 @@ export const Volumes = () => {
           let aValue: any = a[sortField];
           let bValue: any = b[sortField];
           
-          if (sortField === 'Size') {
-             // Treat undefined as -1 for sorting
-             aValue = a.Size ?? -1;
-             bValue = b.Size ?? -1;
+          if (sortField === 'size') {
+             aValue = a.size ?? -1;
+             bValue = b.size ?? -1;
              return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
           }
 
-          // Handle dates or strings
-          if (sortField === 'CreatedAt') {
-             aValue = new Date(a.CreatedAt || 0).getTime();
-             bValue = new Date(b.CreatedAt || 0).getTime();
+          if (sortField === 'created_at') {
+             aValue = new Date(a.created_at || 0).getTime();
+             bValue = new Date(b.created_at || 0).getTime();
           } else {
              aValue = String(aValue || '').toLowerCase();
              bValue = String(bValue || '').toLowerCase();
@@ -190,13 +261,13 @@ export const Volumes = () => {
           Volumes
         </h2>
         <div className="flex items-center space-x-3">
-             {!isLocalHost && (
+             {currentHost && (
                 <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
                     <ServerStackIcon className="w-4 h-4" />
-                    <span>{currentHost?.name}</span>
+                    <span>{currentHost.name}</span>
                 </GlassCard>
             )}
-             {isLocalHost && (
+            
              <button 
                 onClick={() => setCreateModalOpen(true)}
                 className="flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-amber-500/20"
@@ -204,8 +275,8 @@ export const Volumes = () => {
                 <PlusIcon className="w-5 h-5" />
                 <span>Create Volume</span>
             </button>
-            )}
-            <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={fetchVolumes}>
+            
+            <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={() => fetchVolumes(true)}>
                 <ArrowPathIcon className="w-4 h-4" />
                 <span>Refresh</span>
             </GlassCard>
@@ -218,81 +289,103 @@ export const Volumes = () => {
             <table className="w-full text-left text-sm text-slate-500 dark:text-slate-400">
                 <thead className="bg-black/5 dark:bg-white/5 text-slate-700 dark:text-slate-200 uppercase font-medium">
                     <tr>
-                        <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('Name')}>
-                            <div className="flex items-center">Name <SortIcon field="Name" /></div>
+                        <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('name')}>
+                            <div className="flex items-center">Name <SortIcon field="name" /></div>
                         </th>
-                        <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('Driver')}>
-                             <div className="flex items-center">Driver <SortIcon field="Driver" /></div>
+                        <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('driver')}>
+                             <div className="flex items-center">Driver <SortIcon field="driver" /></div>
                         </th>
-                         <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('Mountpoint')}>
-                             <div className="flex items-center">Mountpoint <SortIcon field="Mountpoint" /></div>
+                         <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('mountpoint')}>
+                             <div className="flex items-center">Mountpoint <SortIcon field="mountpoint" /></div>
                         </th>
-                        <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('Size')}>
-                             <div className="flex items-center">Size <SortIcon field="Size" /></div>
+                         <th className="px-6 py-4 cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('size')}>
+                             <div className="flex items-center">Size <SortIcon field="size" /></div>
                         </th>
-                         <th className="px-6 py-4 hidden md:table-cell cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('CreatedAt')}>
-                             <div className="flex items-center">Created <SortIcon field="CreatedAt" /></div>
+                         <th className="px-6 py-4 hidden md:table-cell">
+                             <div className="flex items-center">Used By</div>
+                        </th>
+                         <th className="px-6 py-4 hidden md:table-cell cursor-pointer group hover:bg-black/5 dark:hover:bg-white/5 transition-colors" onClick={() => handleSort('created_at')}>
+                             <div className="flex items-center">Created <SortIcon field="created_at" /></div>
                         </th>
                         <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-white/5">
                     {loading ? (
-                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500 animate-pulse">Loading volumes...</td></tr>
+                        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500 animate-pulse">Loading volumes...</td></tr>
                     ) : sortedVolumes.length === 0 ? (
-                        <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">No volumes found.</td></tr>
+                        <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">No volumes found.</td></tr>
                     ) : (
                         sortedVolumes.map((vol) => (
-                            <tr key={vol.Name} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                            <tr key={vol.name} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                 <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-200">
                                     <div className="flex items-center space-x-3">
                                         <ArchiveBoxIcon className="w-5 h-5 text-amber-600 dark:text-amber-500/50" />
-                                        <span title={vol.Name} className="truncate max-w-[200px]">{vol.Name}</span>
+                                        <span title={vol.name} className="truncate max-w-[200px]">{vol.name}</span>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4">
                                      <span className="px-2 py-1 rounded-md bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-white/5 text-xs">
-                                        {vol.Driver}
+                                        {vol.driver}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 font-mono text-xs text-slate-600 dark:text-slate-500">
                                     <div className="flex items-center space-x-2">
                                         <ServerIcon className="w-3 h-3 text-slate-500 dark:text-slate-600" />
-                                        <span className="truncate max-w-[250px]" title={vol.Mountpoint}>{vol.Mountpoint}</span>
+                                        <span className="truncate max-w-[250px]" title={vol.mountpoint}>{vol.mountpoint}</span>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 font-mono text-xs text-slate-600 dark:text-slate-500">
-                                    {formatSize(vol.Size)}
+                                    {formatSize(vol.size)}
                                 </td>
                                 <td className="px-6 py-4 hidden md:table-cell text-xs text-slate-500">
-                                    {vol.CreatedAt ? new Date(vol.CreatedAt).toLocaleDateString() : 'N/A'}
+                                    <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                        {vol.usage && vol.usage.length > 0 ? vol.usage.slice(0, 3).map(u => (
+                                            <span key={u} className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                                {u}
+                                            </span>
+                                        )) : <span className="text-slate-400 italic">Unused</span>}
+                                        {vol.usage && vol.usage.length > 3 && (
+                                            <span className="px-1.5 py-0.5 text-slate-400">+{vol.usage.length - 3}</span>
+                                        )}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 hidden md:table-cell text-xs text-slate-500">
+                                    {vol.created_at ? new Date(vol.created_at).toLocaleDateString() : 'N/A'}
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex items-center justify-end space-x-2">
                                         <button 
                                             onClick={(e) => { 
                                                 e.stopPropagation(); 
-                                                if (isLocalHost) {
-                                                    handleInspect(vol.Name); 
-                                                } else {
-                                                    setInspectData(vol);
-                                                    setInspectModalOpen(true);
-                                                }
+                                                handleInspect(vol.name); 
                                             }}
                                             className="p-1.5 text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
                                             title="Inspect"
                                         >
                                             <EyeIcon className="w-4 h-4" />
                                         </button>
-                                        {isLocalHost && (
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); handleRemoveVolume(vol.Name); }}
+                                            onClick={(e) => { e.stopPropagation(); handleBrowse(vol.name); }}
+                                            title="Browse Files" 
+                                            className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/10 rounded-lg transition-colors"
+                                        >
+                                           <ServerStackIcon className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleDownloadVolume(vol.name); }}
+                                            title="Download Volume" 
+                                            className="p-1.5 text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/10 rounded-lg transition-colors"
+                                        >
+                                           <ArrowPathIcon className="w-4 h-4" />
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleRemoveVolume(vol.name); }}
                                             className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
                                             title="Remove"
                                         >
                                             <TrashIcon className="w-4 h-4" />
                                         </button>
-                                        )}
                                     </div>
                                 </td>
                             </tr>
@@ -359,6 +452,32 @@ export const Volumes = () => {
                         </form>
                     </Dialog.Panel>
                 </div>
+            </div>
+        </Dialog>
+      </Transition.Root>
+
+      {/* Browse Modal */}
+      <Transition.Root show={browseModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={setBrowseModalOpen}>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="fixed inset-0 overflow-hidden flex justify-center items-center p-4">
+                 <Dialog.Panel className="w-full max-w-5xl h-[80vh] transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 text-left align-middle shadow-xl transition-all flex flex-col">
+                      <div className="flex justify-between items-center p-4 border-b border-white/5 bg-slate-800/50">
+                          <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white flex items-center space-x-2">
+                              <ServerStackIcon className="w-5 h-5 text-amber-500" />
+                              <span>Browsing: {browseVolName}</span>
+                          </Dialog.Title>
+                          <button onClick={() => setBrowseModalOpen(false)} className="text-slate-400 hover:text-white">
+                              <span className="sr-only">Close</span>
+                              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                          </button>
+                      </div>
+                      <div className="flex-1 overflow-hidden bg-slate-900">
+                          {browseContainerId && <FileBrowser containerId={browseContainerId} />}
+                      </div>
+                 </Dialog.Panel>
             </div>
         </Dialog>
       </Transition.Root>

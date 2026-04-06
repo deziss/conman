@@ -15,23 +15,42 @@ import {
 import toast from 'react-hot-toast';
 import { useHost } from '../contexts/HostContext';
 
-// ... (existing imports, GlassCard, InfoItem, Badge components are fine)
+import { GlassCard } from '../components/ui/GlassCard';
+import { clsx } from 'clsx';
+
+const Badge = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <span className={clsx("px-2 py-0.5 rounded text-xs font-medium border", className)}>
+        {children}
+    </span>
+);
+
+const InfoItem = ({ icon: Icon, label, value }: { icon: any, label: string, value: string }) => (
+    <div className="flex items-center space-x-3 p-3 rounded-lg bg-white/5 border border-white/5">
+        <div className="p-2 bg-slate-800 rounded-lg">
+            <Icon className="w-5 h-5 text-indigo-400" />
+        </div>
+        <div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">{label}</div>
+            <div className="text-sm font-medium text-slate-200 truncate max-w-[150px] md:max-w-xs" title={value}>{value || '-'}</div>
+        </div>
+    </div>
+);
 
 export const NetworkDetailsPage = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { currentHost, isLocalHost } = useHost();
+    const { currentHost } = useHost();
     const [network, setNetwork] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchNetwork = async () => {
-            if (!id) return;
+            if (!id || !currentHost) return;
             try {
-                // Fetch list and find fallback logic
-                const endpoint = isLocalHost ? '/docker/networks' : `/agents/${currentHost?.id}/networks`;
+                // Unified API: Always use agent endpoint
+                const endpoint = `/agents/${currentHost.id}/networks`;
                 const { data } = await api.get(endpoint);
-                const found = data.find((n: any) => n.ID === id || n.Id === id || n.Name === id);
+                const found = data.find((n: any) => n.ID === id || n.id === id || n.Name === id || n.name === id);
                 
                 if (found) {
                      setNetwork(found);
@@ -48,12 +67,13 @@ export const NetworkDetailsPage = () => {
             }
         };
         fetchNetwork();
-    }, [id, navigate, currentHost, isLocalHost]);
+    }, [id, navigate, currentHost]);
 
     const handleRemove = async () => {
         if (!confirm('Are you sure you want to remove this network?')) return;
+        if (!currentHost) return;
         try {
-            await api.delete(`/docker/networks/${id}`);
+            await api.delete(`/agents/${currentHost.id}/networks/${id}`);
             toast.success("Network removed successfully");
             navigate('/networks');
         } catch (error: any) {
@@ -90,7 +110,6 @@ export const NetworkDetailsPage = () => {
                 </button>
                 <div className="flex items-center space-x-3">
                      <span className="text-xs text-slate-500 font-mono">{network.Id}</span>
-                     {isLocalHost && (
                      <button 
                         onClick={handleRemove}
                         className="flex items-center space-x-2 bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-rose-500/20"
@@ -98,7 +117,6 @@ export const NetworkDetailsPage = () => {
                         <TrashIcon className="w-4 h-4" />
                         <span>Remove</span>
                     </button>
-                    )}
                 </div>
             </div>
 

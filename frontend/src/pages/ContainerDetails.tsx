@@ -1,7 +1,9 @@
 import { useParams, Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Terminal } from '../components/Terminal';
+import { FileBrowser } from '../components/FileBrowser';
 import { ContainerLogs } from '../components/ContainerLogs';
+
 import { StatsChart } from '../components/StatsChart';
 import { 
     ArrowLeftIcon, 
@@ -15,7 +17,9 @@ import {
     ChartBarIcon,
     Cog6ToothIcon,
     FolderIcon,
+
     GlobeAltIcon,
+
     ClockIcon,
     CubeIcon,
     ShieldCheckIcon,
@@ -63,15 +67,7 @@ interface ContainerDetails {
         IPAddress?: string;
         Gateway?: string;
         MacAddress?: string;
-        Networks?: Record<string, {
-            IPAddress?: string;
-            Gateway?: string;
-            MacAddress?: string;
-            IPPrefixLen?: number;
-            NetworkID?: string;
-            EndpointID?: string;
-            Aliases?: string[];
-        }>;
+        Networks?: Record<string, any>; // Relaxed type for now or fix strict structure
         Ports?: Record<string, Array<{ HostIp: string; HostPort: string }> | null>;
     };
     Mounts?: Array<{ 
@@ -123,7 +119,8 @@ interface StatPoint {
     value: number;
 }
 
-type TabType = 'overview' | 'metrics' | 'logs' | 'shell' | 'config' | 'networks' | 'resources';
+type TabType = 'overview' | 'metrics' | 'logs' | 'shell' | 'files' | 'config' | 'networks' | 'resources';
+
 
 // Helper to format time ago
 const timeAgo = (dateString: string) => {
@@ -137,6 +134,16 @@ const timeAgo = (dateString: string) => {
     if (seconds < 86400) return `about ${Math.floor(seconds / 3600)} hours ago`;
     return `${Math.floor(seconds / 86400)} days ago`;
 };
+
+declare global {
+    interface Window {
+        lastCpu?: number;
+        lastSys?: number;
+        lastNetRx?: number;
+        lastNetTx?: number;
+        lastDisk?: number;
+    }
+}
 
 const formatDate = (dateString: string) => {
     if (!dateString || dateString === '0001-01-01T00:00:00Z') return '-';
@@ -297,7 +304,7 @@ const NetworkCard = ({ name, network }: {
                 <div>
                     <div className="text-xs text-slate-500 mb-1">Aliases</div>
                     <div className="text-sm text-slate-300">
-                        {network.Aliases.map((alias, i) => (
+                        {network.Aliases.map((alias: string, i: number) => (
                             <div key={i} className="font-mono">{alias}</div>
                         ))}
                     </div>
@@ -313,32 +320,33 @@ export const ContainerDetails = () => {
     const [loading, setLoading] = useState(true);
     const [cpuData, setCpuData] = useState<StatPoint[]>([]);
     const [memData, setMemData] = useState<StatPoint[]>([]);
+    const [netData, setNetData] = useState<StatPoint[]>([]);
+    const [diskData, setDiskData] = useState<StatPoint[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const wsRef = useRef<WebSocket | null>(null);
 
-    const { currentHost, isLocalHost } = useHost();
+    const { currentHost } = useHost();
 
     const fetchDetails = async () => {
-        if (!id) return;
+        if (!id || !currentHost) return;
         setLoading(true);
 
         try {
-            if (isLocalHost) {
-                const { data } = await api.get(`/docker/containers/${id}`);
-                if (data.Name && data.Name.startsWith('/')) {
-                    data.Name = data.Name.substring(1);
-                }
-                setContainer(data);
-            } else {
-                // Agent Context
-                if (currentHost?.containers) {
-                    const found = currentHost.containers.find((c: any) => c.id === id);
-                    if (found) {
-                        const mapped = mapAgentContainerToDetails(found);
-                        setContainer(mapped as any);
-                    }
-                }
-            }
+             // Unified API Fetch
+             const { data } = await api.get(`/agents/${currentHost.id}/containers/${id}`);
+             // If we need custom mapping for agent containers vs local?
+             // The unified API should ideally return consistent structure.
+             // But if `data` is raw docker JSON from agent, we might need mapping depending on how backend proxies it.
+             // Backend ProxyContainerDetails usually returns raw Docker JSON.
+             // Let's assume consistent structure or map if needed.
+             // Previous code mapped agent containers from `currentHost.containers` list but fetched local from `/docker/...`
+             // Now we fetch from `/agents/...`.
+             
+             if (data.Name && data.Name.startsWith('/')) {
+                data.Name = data.Name.substring(1);
+             }
+             setContainer(data);
+
         } catch (error) {
             console.error("Failed to fetch container details", error);
             toast.error("Failed to load container details");
@@ -350,13 +358,15 @@ export const ContainerDetails = () => {
     useEffect(() => {
         fetchDetails();
         
-        if (!id) return;
+        if (!id || !currentHost) return;
         
-        if (isLocalHost) {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const token = localStorage.getItem('token');
-            const wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${id}/stats?token=${token}`;
-            
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const token = localStorage.getItem('token');
+        
+        // Unified WebSocket URL
+        const wsUrl = `${protocol}//${window.location.host}/api/v1/agents/${currentHost.id}/containers/${id}/stats?token=${token}`;
+
+        if (wsUrl) {
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 
@@ -365,23 +375,74 @@ export const ContainerDetails = () => {
                     const stats = JSON.parse(event.data);
                     const now = new Date().toLocaleTimeString();
                     
+                    // Memory
                     if (stats.memory_stats && stats.memory_stats.usage) {
                         const memMb = stats.memory_stats.usage / 1024 / 1024;
                         setMemData(prev => [...prev.slice(-29), { time: now, value: memMb }]);
                     }
 
+                    // CPU
                     if (stats.cpu_stats && stats.cpu_stats.cpu_usage && stats.cpu_stats.system_cpu_usage) {
-                         if (window.lastCpu && window.lastSys) {
+                        if (window.lastCpu && window.lastSys) {
                             const deltaCpu = stats.cpu_stats.cpu_usage.total_usage - window.lastCpu;
                             const deltaSys = stats.cpu_stats.system_cpu_usage - window.lastSys;
-                             if (deltaSys > 0) {
-                                 const perc = (deltaCpu / deltaSys) * (stats.cpu_stats.online_cpus || 1) * 100;
-                                 setCpuData(prev => [...prev.slice(-29), { time: now, value: perc }]);
-                             }
-                         }
-                         window.lastCpu = stats.cpu_stats.cpu_usage.total_usage;
-                         window.lastSys = stats.cpu_stats.system_cpu_usage;
+                            if (deltaSys > 0) {
+                                const perc = (deltaCpu / deltaSys) * (stats.cpu_stats.online_cpus || 1) * 100;
+                                setCpuData(prev => [...prev.slice(-29), { time: now, value: perc }]);
+                            }
+                        }
+                        window.lastCpu = stats.cpu_stats.cpu_usage.total_usage;
+                        window.lastSys = stats.cpu_stats.system_cpu_usage;
                     }
+
+                    // Network I/O (Sum of all interfaces)
+                    if (stats.networks) {
+                        let rx = 0;
+                        let tx = 0;
+                        Object.values(stats.networks).forEach((net: any) => {
+                            rx += net.rx_bytes || 0;
+                            tx += net.tx_bytes || 0;
+                        });
+                        // Use RX for the chart for simplicity, or sum? Let's use RX + TX or just RX.
+                        // Chart usually shows rate, but here we show total bytes or current usage? 
+                        // Docker stats stream gives cumulative counters. We need rate.
+                        // For simplicity in this demo, let's just show total KB transferred delta? 
+                        // Actually, standard stats charts usually plot the counter or the rate.
+                        // Let's plot rate if we can store previous state, but calculating rate requires previous timestamp.
+                        // For now, let's just plot the cumulative value converted to KB creates a rising line, which is fine for "Total I/O".
+                        // OR better: Windowed diff.
+                        
+                        // We will use a global window variable for prev net stats to calculate rate if possible, 
+                        // but React state is cleaner. Since we are inside onmessage closure, we rely on window or refs.
+                        // Let's stick to simple "Total KB" for now to match the "Memory Usage" (which is state, not rate).
+                        // Wait, Memory is usage (state), CPU is usage (rate). 
+                        // Network I/O typically implies Rate (KB/s).
+                        // Let's try to calculate rate.
+                        
+                        if (window.lastNetRx !== undefined && window.lastNetTx !== undefined) {
+                             const delta = (rx - window.lastNetRx) + (tx - window.lastNetTx);
+                             setNetData(prev => [...prev.slice(-29), { time: now, value: delta / 1024 }]); // KB delta
+                        }
+                        window.lastNetRx = rx;
+                        window.lastNetTx = tx;
+                    }
+
+                    // Disk I/O
+                    if (stats.blkio_stats && stats.blkio_stats.io_service_bytes_recursive) {
+                        let io = 0;
+                        stats.blkio_stats.io_service_bytes_recursive.forEach((s: any) => {
+                            if (s.op.toLowerCase() === 'read' || s.op.toLowerCase() === 'write') {
+                                io += s.value;
+                            }
+                        });
+                        
+                        if (window.lastDisk !== undefined) {
+                            const delta = io - window.lastDisk;
+                            setDiskData(prev => [...prev.slice(-29), { time: now, value: delta / 1024 }]); // KB delta
+                        }
+                        window.lastDisk = io;
+                    }
+
                 } catch (e) {}
             };
 
@@ -389,14 +450,21 @@ export const ContainerDetails = () => {
                 if (wsRef.current) wsRef.current.close();
             };
         }
-    }, [id, isLocalHost, currentHost]);
+    }, [id, currentHost]);
+
+    // Derived State
+    const envVars = container?.Config?.Env?.map(e => {
+        const [name, ...rest] = e.split('=');
+        return { name, value: rest.join('=') };
+    }) || [];
+
+    const labels = container?.Config?.Labels || {};
 
     const handleAction = async (action: string) => {
-        if (!container) return;
+        if (!container || !currentHost) return;
         try {
-            const endpoint = isLocalHost 
-                ? `/docker/containers/${container.Id}/${action}`
-                : `/agents/${currentHost?.id}/containers/${container.Id}/${action}`;
+            // Unified API Action
+            const endpoint = `/agents/${currentHost.id}/containers/${container.Id}/${action}`;
 
             await api.post(endpoint);
             toast.success(`Container ${action}ed`);
@@ -410,253 +478,188 @@ export const ContainerDetails = () => {
     if (!container) return <div className="text-center mt-20 text-slate-500">Container not found</div>;
 
     const isRunning = container.State.Running;
-    const isPaused = container.State.Paused;
-    
-    // Extract data for display
-    const ipAddress = container.NetworkSettings?.IPAddress || 
-        Object.values(container.NetworkSettings?.Networks || {})[0]?.IPAddress || '-';
-    
-    const ports = container.NetworkSettings?.Ports || {};
-    const portMappings = Object.entries(ports)
-        .filter(([_, bindings]) => bindings && bindings.length > 0)
-        .map(([containerPort, bindings]) => {
-            const binding = bindings![0];
-            return `${binding.HostPort}:${containerPort.split('/')[0]}`;
-        });
-    
-    const volumeCount = container.Mounts?.length || 0;
-    const networkCount = Object.keys(container.NetworkSettings?.Networks || {}).length;
-    const restartPolicy = container.HostConfig?.RestartPolicy?.Name || 'no';
-    const command = container.Config?.Cmd?.join(' ') || '-';
-    const workingDir = container.Config?.WorkingDir || '/';
-    
-    // Parse environment variables
-    const envVars = (container.Config?.Env || []).map(env => {
-        const idx = env.indexOf('=');
-        return { name: env.substring(0, idx), value: env.substring(idx + 1) };
-    });
-    
-    // Labels
-    const labels = container.Config?.Labels || {};
 
-    const tabs = [
-        { id: 'overview' as TabType, label: 'Overview', icon: InformationCircleIcon },
-        { id: 'metrics' as TabType, label: 'Metrics', icon: ChartBarIcon },
-        ...(isLocalHost ? [
-            { id: 'logs' as TabType, label: 'Logs', icon: DocumentTextIcon },
-            { id: 'shell' as TabType, label: 'Shell', icon: CommandLineIcon },
-        ] : []),
-        { id: 'config' as TabType, label: 'Configuration', icon: Cog6ToothIcon },
-        { id: 'networks' as TabType, label: 'Networks', icon: GlobeAltIcon },
-        { id: 'resources' as TabType, label: 'Resources & Security', icon: ShieldCheckIcon },
-    ];
-
-  return (
-    <div className="space-y-6 h-[calc(100vh-100px)] flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Link to="/containers" className="flex items-center space-x-2 text-slate-400 hover:text-white transition-colors">
-                <ArrowLeftIcon className="w-4 h-4" />
-                <span className="text-sm">Back</span>
-            </Link>
-            <div className="flex items-center space-x-3">
-                <h2 className="text-xl font-semibold text-white">{container.Name}</h2>
-                <span className={clsx(
-                    "text-xs px-2.5 py-1 rounded-full font-medium",
-                    isRunning 
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
-                        : "bg-slate-500/20 text-slate-400 border border-slate-500/30"
-                )}>
-                    {container.State.Status}
-                </span>
+    return (
+        <div className="h-full flex flex-col space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                    <button 
+                        onClick={() => window.history.back()} 
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+                    >
+                        <ArrowLeftIcon className="w-5 h-5" />
+                    </button>
+                    <div>
+                        <h1 className="text-2xl font-bold text-white flex items-center space-x-3">
+                            <span>{container.Name}</span>
+                            <span className={clsx(
+                                "px-2 py-0.5 text-xs font-medium rounded uppercase",
+                                isRunning ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-slate-700 text-slate-400 border border-slate-600"
+                            )}>
+                                {container.State.Status}
+                            </span>
+                        </h1>
+                        <div className="flex items-center space-x-4 text-xs text-slate-500 mt-1">
+                            <span className="font-mono">{container.Id.substring(0, 12)}</span>
+                            <span>•</span>
+                            <span>{container.Image}</span>
+                            <span>•</span>
+                            <span>Created {new Date(container.Created).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                    {isRunning ? (
+                        <>
+                            <button onClick={() => handleAction('stop')} className="p-2 hover:bg-white/10 rounded-lg text-rose-400" title="Stop">
+                                <StopIcon className="w-5 h-5" />
+                            </button>
+                            <button onClick={() => handleAction('restart')} className="p-2 hover:bg-white/10 rounded-lg text-amber-400" title="Restart">
+                                <ArrowPathIcon className="w-5 h-5" />
+                            </button>
+                        </>
+                    ) : (
+                        <button onClick={() => handleAction('start')} className="p-2 hover:bg-white/10 rounded-lg text-emerald-400" title="Start">
+                            <PlayIcon className="w-5 h-5" />
+                        </button>
+                    )}
+                    <button onClick={() => handleAction('remove')} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-rose-400" title="Remove">
+                        <TrashIcon className="w-5 h-5" />
+                    </button>
+                </div>
             </div>
-          </div>
 
-          <div className="flex items-center space-x-2">
-             {isRunning && !isPaused && (
-                 <button onClick={() => handleAction('stop')} className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg hover:bg-rose-500/30 transition-colors">
-                     <StopIcon className="w-4 h-4" />
-                     <span className="text-sm">Stop</span>
-                 </button>
-             )}
-             {isRunning && (
-                 <button onClick={() => handleAction('restart')} className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/30 transition-colors">
-                     <ArrowPathIcon className="w-4 h-4" />
-                     <span className="text-sm">Restart</span>
-                 </button>
-             )}
-             {!isRunning && (
-                 <button onClick={() => handleAction('start')} className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors">
-                     <PlayIcon className="w-4 h-4" />
-                     <span className="text-sm">Start</span>
-                 </button>
-             )}
-             <button onClick={() => handleAction('remove')} className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-700/50 text-slate-400 border border-slate-600/50 rounded-lg hover:bg-slate-700 transition-colors">
-                 <TrashIcon className="w-4 h-4" />
-                 <span className="text-sm">Remove</span>
-             </button>
-          </div>
-      </div>
+            {/* Tabs */}
+            <div className="flex space-x-1 bg-white/5 p-1 rounded-lg w-fit">
+                {(['overview', 'logs', 'shell', 'files', 'config', 'networks', 'resources'] as const).map((tab) => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={clsx(
+                            "px-4 py-2 rounded-md text-sm font-medium transition-all",
+                            activeTab === tab 
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" 
+                                : "text-slate-400 hover:text-white hover:bg-white/5"
+                        )}
+                    >
+                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                ))}
+            </div>
 
-      {/* Tab Navigation */}
-      <div className="flex items-center space-x-1 border-b border-white/10 pb-px overflow-x-auto">
-          {tabs.map(tab => (
-              <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={clsx(
-                      "flex items-center space-x-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors border-b-2 -mb-px whitespace-nowrap",
-                      activeTab === tab.id
-                          ? "text-purple-400 border-purple-500 bg-purple-500/10"
-                          : "text-slate-400 border-transparent hover:text-slate-200 hover:bg-white/5"
-                  )}
-              >
-                  <tab.icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-              </button>
-          ))}
-      </div>
+            <div className="flex-1 overflow-hidden min-h-0">
+                {activeTab === 'overview' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto pr-2 pb-20">
+                         {/* Stats Column */}
+                         <div className="space-y-6">
+                            <GlassCard className="p-4">
+                                <h3 className="text-sm font-medium text-slate-400 mb-4 flex items-center space-x-2">
+                                    <CpuChipIcon className="w-4 h-4" />
+                                    <span>CPU Usage</span>
+                                </h3>
+                                <div className="h-32">
+                                    <StatsChart data={cpuData} color="#818cf8" />
+                                </div>
+                            </GlassCard>
+                            <GlassCard className="p-4">
+                                <h3 className="text-sm font-medium text-slate-400 mb-4 flex items-center space-x-2">
+                                    <CircleStackIcon className="w-4 h-4" />
+                                    <span>Memory Usage</span>
+                                </h3>
+                                <div className="h-32">
+                                    <StatsChart data={memData} color="#34d399" />
+                                </div>
+                            </GlassCard>
+                            <GlassCard className="p-4">
+                                <h3 className="text-sm font-medium text-slate-400 mb-4 flex items-center space-x-2">
+                                    <GlobeAltIcon className="w-4 h-4" />
+                                    <span>Network I/O</span>
+                                </h3>
+                                <div className="h-32">
+                                    <StatsChart data={netData} color="#f472b6" />
+                                </div>
+                            </GlassCard>
+                         </div>
 
-      {/* Tab Content */}
-      <div className="flex-1 min-h-0 overflow-auto">
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-              <div className="space-y-6">
-                  {/* Container Details Header */}
-                  <GlassCard className="p-6">
-                      <div className="flex items-center space-x-3 mb-6">
-                          <div className="p-2 bg-purple-500/20 rounded-lg">
-                              <InformationCircleIcon className="w-5 h-5 text-purple-400" />
-                          </div>
-                          <div>
-                              <h3 className="text-lg font-semibold text-white">Container Details</h3>
-                              <p className="text-xs text-slate-500">Basic information about this container</p>
-                          </div>
-                      </div>
+                         {/* Details Column */}
+                         <div className="lg:col-span-2 space-y-6">
+                             <GlassCard className="p-6">
+                                 <h3 className="text-lg font-semibold text-white mb-6">Container Details</h3>
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                     <InfoCard label="ID" value={container.Id} mono />
+                                     <InfoCard label="Name" value={container.Name} />
+                                     <InfoCard label="Image" value={container.Image} mono />
+                                     <InfoCard label="Command" value={container.Config?.Cmd?.join(' ') || '-'} mono />
+                                     <InfoCard label="State" value={container.State.Status} />
+                                     <InfoCard label="Created" value={new Date(container.Created).toLocaleString()} />
+                                 </div>
+                             </GlassCard>
 
-                      {/* Top Info Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                          <div className="flex items-center space-x-3">
-                              <CubeIcon className="w-5 h-5 text-purple-400" />
-                              <div>
-                                  <div className="text-xs text-slate-500 uppercase">Image</div>
-                                  <div className="text-sm text-purple-400 font-mono break-all">{container.Image}</div>
-                              </div>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                              <ClockIcon className="w-5 h-5 text-emerald-400" />
-                              <div>
-                                  <div className="text-xs text-slate-500 uppercase">Uptime</div>
-                                  <div className="text-sm text-slate-200">{timeAgo(container.State.StartedAt)}</div>
-                              </div>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                              <GlobeAltIcon className="w-5 h-5 text-cyan-400" />
-                              <div>
-                                  <div className="text-xs text-slate-500 uppercase">IP Address</div>
-                                  <div className="text-sm text-cyan-400 font-mono">{ipAddress}</div>
-                              </div>
-                          </div>
-                      </div>
-
-                      {/* Info Cards Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                          <InfoCard label="ID" value={container.Id} mono />
-                          <InfoCard label="Created" value={<><div>{timeAgo(container.Created)}</div><div className="text-xs text-slate-500 mt-1">{formatDate(container.Created)}</div></>} />
-                          <InfoCard label="Started" value={<><div>{timeAgo(container.State.StartedAt)}</div><div className="text-xs text-slate-500 mt-1">{formatDate(container.State.StartedAt)}</div></>} />
-                          <InfoCard label="Restart Policy" value={restartPolicy} />
-                      </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                          <InfoCard label="Ports" value={`${portMappings.length} published`} />
-                          <InfoCard label="Volumes" value={`${volumeCount} mounts`} />
-                          <InfoCard label="Networks" value={`${networkCount} network${networkCount !== 1 ? 's' : ''}`} />
-                          <InfoCard label="PID" value={container.State.Pid} mono />
-                      </div>
-
-                      {/* Working Directory and Command */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                          <InfoCard label="Working Directory" value={workingDir} mono />
-                          <InfoCard label="Command" value={command} mono />
-                      </div>
-
-                      {/* Port Mappings */}
-                      {portMappings.length > 0 && (
-                          <div>
-                              <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Port Mappings</div>
-                              <div className="flex flex-wrap gap-2">
-                                  {portMappings.map((mapping, i) => (
-                                      <PortBadge key={i} mapping={mapping} />
-                                  ))}
-                              </div>
-                          </div>
-                      )}
-                  </GlassCard>
-
-                  {/* Storage & Mounts Section */}
-                  {container.Mounts && container.Mounts.length > 0 && (
-                      <GlassCard className="p-6">
-                          <div className="flex items-center space-x-3 mb-6">
-                              <div className="p-2 bg-amber-500/20 rounded-lg">
-                                  <CircleStackIcon className="w-5 h-5 text-amber-400" />
-                              </div>
-                              <div>
-                                  <h3 className="text-lg font-semibold text-white">Storage & Mounts</h3>
-                                  <p className="text-xs text-slate-500">Volume mounts and storage configuration for persistent data</p>
-                              </div>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {container.Mounts.map((mount, i) => (
-                                  <MountCard key={i} mount={mount} />
-                              ))}
-                          </div>
-                      </GlassCard>
-                  )}
-              </div>
-          )}
-
-          {/* Metrics Tab */}
-          {activeTab === 'metrics' && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
-                  <GlassCard className="p-6 flex flex-col min-h-[300px]">
-                      <div className="flex items-center space-x-3 mb-4">
-                          <div className="p-2 bg-cyan-500/20 rounded-lg">
-                              <ChartBarIcon className="w-5 h-5 text-cyan-400" />
-                          </div>
-                          <h3 className="text-lg font-semibold text-white">CPU Usage</h3>
-                      </div>
-                      <div className="flex-1">
-                          <StatsChart data={cpuData} color="#22d3ee" label="CPU Usage" unit="%" />
-                      </div>
-                  </GlassCard>
-                  <GlassCard className="p-6 flex flex-col min-h-[300px]">
-                      <div className="flex items-center space-x-3 mb-4">
-                          <div className="p-2 bg-purple-500/20 rounded-lg">
-                              <ChartBarIcon className="w-5 h-5 text-purple-400" />
-                          </div>
-                          <h3 className="text-lg font-semibold text-white">Memory Usage</h3>
-                      </div>
-                      <div className="flex-1">
-                          <StatsChart data={memData} color="#8b5cf6" label="Memory Usage" unit="MB" />
-                      </div>
-                  </GlassCard>
-              </div>
-          )}
-
-          {/* Logs Tab */}
+                             {/* Mounts */}
+                             <GlassCard className="p-6">
+                                 <h3 className="text-lg font-semibold text-white mb-6 flex items-center space-x-2">
+                                     <FolderIcon className="w-5 h-5 text-amber-400" />
+                                     <span>Mounts</span>
+                                 </h3>
+                                 {container.Mounts && container.Mounts.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {container.Mounts.map((mount, i) => (
+                                            <div key={i} className="flex items-center space-x-4 p-3 bg-slate-800/50 rounded-lg border border-white/5">
+                                                <div className="flex-1">
+                                                    <div className="text-xs text-slate-500 uppercase mb-1">Source</div>
+                                                    <div className="text-sm text-slate-300 font-mono truncate">{mount.Source}</div>
+                                                </div>
+                                                <div className="text-slate-500">→</div>
+                                                <div className="flex-1">
+                                                     <div className="text-xs text-slate-500 uppercase mb-1">Target</div>
+                                                     <div className="text-sm text-emerald-400 font-mono truncate">{mount.Destination}</div>
+                                                </div>
+                                                <div className="px-2 py-1 rounded bg-slate-700 text-xs text-slate-300 uppercase">
+                                                    {mount.Type}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                 ) : (
+                                     <div className="text-slate-500">No mounts configured</div>
+                                 )}
+                             </GlassCard>
+                         </div>
+                    </div>
+                )}
+                
           {activeTab === 'logs' && (
               <div className="h-full">
-                  <ContainerLogs containerId={id || ''} />
+                  <ContainerLogs 
+                    containerId={id || ''} 
+                    agentId={currentHost?.id}
+                  />
               </div>
           )}
 
           {/* Shell Tab */}
           {activeTab === 'shell' && (
               <GlassCard className="h-full p-0 overflow-hidden">
-                  <Terminal containerId={id || ''} />
+                  <Terminal 
+                    containerId={id || ''} 
+                    agentId={currentHost?.id}
+                  />
               </GlassCard>
           )}
+
+          {/* Files Tab */}
+          {activeTab === 'files' && (
+              <GlassCard className="h-full p-0 overflow-hidden">
+                  <FileBrowser 
+                    containerId={id || ''} 
+                    agentId={currentHost?.id}
+                  />
+              </GlassCard>
+          )}
+
+
+
 
           {/* Configuration Tab */}
           {activeTab === 'config' && (
@@ -954,5 +957,8 @@ declare global {
     interface Window {
         lastCpu?: number;
         lastSys?: number;
+        lastNetRx?: number;
+        lastNetTx?: number;
+        lastDisk?: number;
     }
 }

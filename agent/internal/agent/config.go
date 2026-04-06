@@ -53,6 +53,9 @@ type Config struct {
 	CollectVolumes    bool `json:"collect_volumes"`
 	CollectMetrics    bool `json:"collect_metrics"`
 	CollectEvents     bool `json:"collect_events"`
+	
+	// Networking
+	AdvertisedAddress string `json:"advertised_address"`
 }
 
 // LoadConfig loads configuration from environment variables
@@ -78,6 +81,7 @@ func LoadConfig() (*Config, error) {
 		CollectVolumes:    parseBool(getEnv("COLLECT_VOLUMES", "true")),
 		CollectMetrics:    parseBool(getEnv("COLLECT_METRICS", "true")),
 		CollectEvents:     parseBool(getEnv("COLLECT_EVENTS", "true")),
+		AdvertisedAddress: getEnv("ADVERTISED_ADDRESS", ""),
 	}
 
 	// Auto-generate agent ID if not provided

@@ -31,9 +31,9 @@ interface Host {
         hostname?: string;
         os?: string;
         docker_version?: string;
-        kernel?: string;
-        cpu_count?: number;
-        mem_total?: number;
+        kernel_version?: string;
+        cpus?: number;
+        memory_total?: number;
     };
     status: string;
     last_heartbeat?: string;
@@ -232,15 +232,15 @@ export const Hosts = () => {
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Kernel</p>
-                                                <p className="text-slate-300">{host.host_info?.kernel || 'Unknown'}</p>
+                                                <p className="text-slate-300">{host.host_info?.kernel_version || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Memory</p>
-                                                <p className="text-slate-300">{host.host_info?.mem_total ? formatBytes(host.host_info.mem_total) : 'Unknown'}</p>
+                                                <p className="text-slate-300">{host.host_info?.memory_total ? formatBytes(host.host_info.memory_total) : 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">CPUs</p>
-                                                <p className="text-slate-300">{host.host_info?.cpu_count || 'Unknown'}</p>
+                                                <p className="text-slate-300">{host.host_info?.cpus || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Mode</p>

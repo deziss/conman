@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import api from '../services/api';
 
 interface HostInfo {
@@ -26,18 +26,12 @@ interface HostContextType {
     hosts: Host[];
     currentHost: Host | null;
     setCurrentHost: (host: Host | null) => void;
-    isLocalHost: boolean;
     refreshHosts: () => Promise<void>;
     loading: boolean;
 }
 
 // Special "local" host representing the server's own Docker
-const LOCAL_HOST: Host = {
-    id: 'local',
-    name: 'Local Docker',
-    status: 'healthy',
-    mode: 'local'
-};
+// const LOCAL_HOST: Host = { ... }; // Removed in Unified Arch
 
 const HostContext = createContext<HostContextType | undefined>(undefined);
 
@@ -60,42 +54,54 @@ export const HostProvider = ({ children }: { children: ReactNode }) => {
 
     // Load saved host from localStorage on mount
     useEffect(() => {
-        const savedHostId = localStorage.getItem('currentHostId');
-        if (savedHostId && savedHostId !== 'local') {
-            // Will be set once hosts are loaded
-        } else {
-            setCurrentHostState(LOCAL_HOST);
-        }
         refreshHosts();
     }, []);
 
     // Update current host when hosts are loaded
     useEffect(() => {
         const savedHostId = localStorage.getItem('currentHostId');
-        if (savedHostId && savedHostId !== 'local') {
-            const found = hosts.find(h => h.id === savedHostId);
-            if (found) {
-                setCurrentHostState(found);
-            } else if (currentHost === null) {
-                setCurrentHostState(LOCAL_HOST);
+        
+        if (hosts.length > 0) {
+            let selected: Host | undefined;
+
+            // 1. Try to find saved host
+            if (savedHostId) {
+                selected = hosts.find(h => h.id === savedHostId);
             }
+
+            // 2. If not found, try to find "Local Agent"
+            if (!selected) {
+                selected = hosts.find(h => h.name === 'Local Agent');
+            }
+
+            // 3. Fallback to first available host
+            if (!selected) {
+                selected = hosts[0];
+            }
+
+            setCurrentHostState(selected || null);
+            if (selected) {
+                 localStorage.setItem('currentHostId', selected.id);
+            }
+        } else {
+            setCurrentHostState(null);
         }
     }, [hosts]);
 
     const setCurrentHost = (host: Host | null) => {
-        const selectedHost = host || LOCAL_HOST;
-        setCurrentHostState(selectedHost);
-        localStorage.setItem('currentHostId', selectedHost.id);
+        setCurrentHostState(host);
+        if (host) {
+            localStorage.setItem('currentHostId', host.id);
+        } else {
+            localStorage.removeItem('currentHostId');
+        }
     };
-
-    const isLocalHost = currentHost?.id === 'local';
 
     return (
         <HostContext.Provider value={{
             hosts,
             currentHost,
             setCurrentHost,
-            isLocalHost,
             refreshHosts,
             loading
         }}>
@@ -111,6 +117,3 @@ export const useHost = () => {
     }
     return context;
 };
-
-// Export LOCAL_HOST for reference
-export { LOCAL_HOST };

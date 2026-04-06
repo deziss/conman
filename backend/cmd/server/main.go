@@ -36,7 +36,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -184,6 +184,8 @@ func main() {
                          r.Post("/unpause", containerHandler.UnpauseContainer)
                          r.Post("/restart", containerHandler.RestartContainer)
                          r.Delete("/", containerHandler.RemoveContainer)
+                         r.Get("/files", containerHandler.ListContainerFiles)
+                         r.Get("/files/download", containerHandler.DownloadContainerFile)
                      })
                 })
 
@@ -199,6 +201,9 @@ func main() {
                      r.Use(mw.RequirePermission("networks", "write"))
                      r.Post("/", networkHandler.CreateNetwork)
                      r.Delete("/{id}", networkHandler.RemoveNetwork)
+                     r.Post("/{id}/duplicate", networkHandler.DuplicateNetwork)
+                     r.Post("/{id}/connect", networkHandler.ConnectContainer)
+                     r.Post("/{id}/disconnect", networkHandler.DisconnectContainer)
                 })
             })
 
@@ -212,7 +217,20 @@ func main() {
                      r.Post("/", volumeHandler.CreateVolume)
                      r.Delete("/{name}", volumeHandler.RemoveVolume)
                      r.Post("/prune", volumeHandler.PruneVolumes)
+                     r.Post("/{name}/browse", volumeHandler.BrowseVolume)
                  })
+            })
+
+            // Stacks
+            stackHandler := api.NewStackHandler(db)
+            r.Route("/stacks", func(r chi.Router) {
+                // Permissions?
+                r.Get("/", stackHandler.ListStacks)
+                r.Post("/", stackHandler.CreateStack)
+                r.Get("/{id}", stackHandler.GetStack)
+                r.Put("/{id}", stackHandler.UpdateStack)
+                r.Post("/{id}/stop", stackHandler.StopStack)
+                r.Delete("/{id}", stackHandler.DeleteStack)
             })
 
             // Agent Management (Multi-Host)

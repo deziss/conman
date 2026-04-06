@@ -238,6 +238,32 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
 	mux.HandleFunc("/api/metrics", a.handleMetrics)
 	mux.HandleFunc("/api/report", a.handleFullReport)
 
+    // Management endpoints
+    mux.HandleFunc("/api/containers/start", a.handleStartContainer)
+    mux.HandleFunc("/api/containers/stop", a.handleStopContainer)
+    mux.HandleFunc("/api/containers/restart", a.handleRestartContainer)
+    mux.HandleFunc("/api/containers/remove", a.handleRemoveContainer)
+    mux.HandleFunc("/api/containers/inspect", a.handleInspectContainer)
+    mux.HandleFunc("/api/images/inspect", a.handleInspectImage)
+    mux.HandleFunc("/api/networks/inspect", a.handleInspectNetwork)
+    mux.HandleFunc("/api/volumes/inspect", a.handleInspectVolume)
+    
+    mux.HandleFunc("/api/images/pull", a.handlePullImage)
+    mux.HandleFunc("/api/images/remove", a.handleRemoveImage)
+    mux.HandleFunc("/api/images/check-update", a.handleCheckImageUpdate)
+    
+    mux.HandleFunc("/api/volumes/create", a.handleCreateVolume)
+    mux.HandleFunc("/api/volumes/remove", a.handleRemoveVolume)
+    mux.HandleFunc("/api/volumes/browse", a.handleBrowseVolume)
+    
+    mux.HandleFunc("/api/networks/create", a.handleCreateNetwork)
+    mux.HandleFunc("/api/networks/remove", a.handleRemoveNetwork)
+    mux.HandleFunc("/api/networks/connect", a.handleConnectNetwork)
+    mux.HandleFunc("/api/networks/duplicate", a.handleDuplicateNetwork)
+
+
+    mux.HandleFunc("/api/files/download", a.handleDownloadFile)
+
 	a.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", a.cfg.ScrapePort),
 		Handler: mux,

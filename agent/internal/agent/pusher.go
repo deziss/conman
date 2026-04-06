@@ -118,7 +118,11 @@ func (a *Agent) registerWithServer(ctx context.Context) error {
 	}
 
 	if a.cfg.ScrapeEnabled {
-		registration.ScrapeURL = fmt.Sprintf("http://%s:%d", a.cfg.AgentName, a.cfg.ScrapePort)
+		host := a.cfg.AgentName
+		if a.cfg.AdvertisedAddress != "" {
+			host = a.cfg.AdvertisedAddress
+		}
+		registration.ScrapeURL = fmt.Sprintf("http://%s:%d", host, a.cfg.ScrapePort)
 	}
 
 	data, err := json.Marshal(registration)

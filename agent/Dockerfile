@@ -16,11 +16,13 @@ COPY . .
 # Build with optimizations
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o conman-agent ./cmd/agent
 
-# Final stage - minimal image
-FROM scratch
+# Final stage - minimal image with shell
+FROM alpine:latest
 
-# Copy CA certificates for HTTPS
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Install dependencies for shell and network tools, and Docker CLI/Compose
+RUN apk add --no-cache ca-certificates curl bash iproute2 docker-cli docker-cli-compose
+
+# Copy the binary
 
 # Copy the binary
 COPY --from=builder /app/conman-agent /conman-agent

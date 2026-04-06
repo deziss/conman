@@ -177,52 +177,39 @@ const SectionHeader = ({ title, subTitle, actions }: any) => (
 export const Dashboard = () => {
     const navigate = useNavigate();
     const { refreshInterval } = useSettings();
-    const { currentHost, isLocalHost } = useHost();
+    const { currentHost } = useHost();
     const [loading, setLoading] = useState(true);
     const [systemInfo, setSystemInfo] = useState<any>(null);
-    const [systemStats, setSystemStats] = useState<any>(null);
+    const [systemStats, setSystemStats] = useState<any>(null); 
+    const [localStats, setLocalStats] = useState<any>(null); // Kept for now if we want real usage of machine where dashboard runs? 
+                                                             // Actually "Local Agent" usage is what we want.
     
     // View state
     const [containers, setContainers] = useState<any[]>([]);
     const [images, setImages] = useState<any[]>([]);
-    const [remoteEnvs, setRemoteEnvs] = useState<any[]>([]); // For 'Environments' section
+    const [remoteEnvs, setRemoteEnvs] = useState<any[]>([]); 
 
     useEffect(() => {
         const fetchData = async () => {
              setLoading(true);
              try {
-                if (isLocalHost) {
-                    // Local Mode: Use /docker/ endpoints
-                    const [sysRes, contRes, imgRes, statsRes, envRes] = await Promise.all([
-                        api.get('/docker/system/info').catch(() => ({ data: {} })),
-                        api.get('/docker/containers').catch(() => ({ data: [] })),
-                        api.get('/docker/images').catch(() => ({ data: [] })),
-                        api.get('/docker/system/stats').catch(() => ({ data: null })),
-                        api.get('/agents').catch(() => ({ data: [] }))
-                    ]);
-                    
-                    setSystemInfo(sysRes.data);
-                    setContainers(contRes.data || []);
-                    setImages(imgRes.data || []);
-                    setSystemStats(statsRes.data);
-                    setRemoteEnvs(envRes.data || []);
-                } else {
-                    // Agent Mode: Use currentHost data or fetch specific agent data
-                    if (currentHost?.id) {
-                         const { data } = await api.get(`/agents/${currentHost.id}`);
-                         // Map agent data to dashboard format
-                         setSystemInfo({
-                             Name: data.name,
-                             NCPU: data.host_info?.cpus,
-                             ...data.host_info
-                         });
-                         setSystemStats(data.stats);
-                         setContainers(data.containers || []);
-                         setImages(data.images || []);
-                         
-                         const envRes = await api.get('/agents');
-                         setRemoteEnvs(envRes.data || []);
-                    }
+                // Fetch all agents for environment list
+                const envRes = await api.get('/agents').catch(() => ({ data: [] }));
+                setRemoteEnvs(envRes.data || []);
+
+                if (currentHost?.id) {
+                     // Unified Fetch: Always use Agent API
+                     const { data } = await api.get(`/agents/${currentHost.id}`);
+                     
+                     // Map agent data
+                     setSystemInfo({
+                         Name: data.name,
+                         NCPU: data.host_info?.cpus,
+                         ...data.host_info
+                     });
+                     setSystemStats(data.stats); 
+                     setContainers(data.containers || []);
+                     setImages(data.images || []);
                 }
              } catch (e) {
                  console.error("Dashboard data load error", e);
@@ -237,7 +224,7 @@ export const Dashboard = () => {
         }, refreshInterval);
 
         return () => clearInterval(interval);
-    }, [refreshInterval, currentHost, isLocalHost]);
+    }, [refreshInterval, currentHost]);
 
     // Derived States
     const runningContainers = containers.filter(c => c.state === 'running');
@@ -254,20 +241,18 @@ export const Dashboard = () => {
     };
 
     const handleAction = (action: string) => {
-        if (!isLocalHost) {
-            toast('Bulk actions not yet supported for remote agents', { icon: '🚧' });
-            return;
-        }
-        toast('Action triggered: ' + action, { icon: '🚧' });
+         // Placeholder for bulk actions
+         toast(`Bulk action ${action} not yet implemented via Agent API`, { icon: '🚧' });
     };
 
-    const localEnvironment = {
-        id: 'local',
-        name: 'Local Docker',
-        host: 'localhost',
-        running_containers: isLocalHost ? runningContainers.length : 0, 
-        total_containers: isLocalHost ? containers.length : 0,
-        images: isLocalHost ? images.length : 0,
+    // Current Environment Card Data
+    const currentEnvData = {
+        id: currentHost?.id,
+        name: currentHost?.name || 'Loading...',
+        host: currentHost?.host_info?.hostname || 'localhost',
+        running_containers: runningContainers.length, 
+        total_containers: containers.length,
+        images: images.length,
         host_info: systemInfo
     };
 
@@ -280,29 +265,13 @@ export const Dashboard = () => {
                         Dashboard
                     </h1>
                      <p className="text-slate-500 dark:text-slate-400">
-                        {isLocalHost ? 'Overview of your Container Environments' : `Managing ${currentHost?.name}`}
+                        Managing {currentHost?.name || 'Environment'}
                      </p>
                 </div>
-                {isLocalHost && (
-                    <div className="flex space-x-3">
-                        <button onClick={() => handleAction('Start All')} className="flex items-center px-4 py-2 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 rounded-lg hover:bg-emerald-500 hover:text-white transition-colors text-sm font-medium">
-                            <PlayIcon className="w-4 h-4 mr-2" />
-                            Start All ({stoppedContainers.length})
-                        </button>
-                        <button onClick={() => handleAction('Stop All')} className="flex items-center px-4 py-2 bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 rounded-lg hover:bg-rose-500 hover:text-white transition-colors text-sm font-medium">
-                            <StopIcon className="w-4 h-4 mr-2" />
-                            Stop All ({runningContainers.length})
-                        </button>
-                        <button onClick={() => handleAction('Prune')} className="flex items-center px-4 py-2 bg-amber-100 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 rounded-lg hover:bg-amber-500 hover:text-white transition-colors text-sm font-medium">
-                            <TrashIcon className="w-4 h-4 mr-2" />
-                            Prune
-                        </button>
-                        <button onClick={() => window.location.reload()} className="flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/10 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 transition-colors text-sm font-medium">
-                            <ArrowPathIcon className="w-4 h-4 mr-2" />
-                            Refresh
-                        </button>
-                    </div>
-                )}
+                {/* 
+                  Bulk Actions Hidden until implemented in backend ops 
+                  or we can implement frontend loop
+                */}
             </div>
 
             {/* Environments Section */}
@@ -318,26 +287,21 @@ export const Dashboard = () => {
                 />
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {/* Local Environment Card */}
-                    <EnvironmentCard 
-                        env={localEnvironment}
-                        stats={isLocalHost ? systemStats : null}
-                        systemInfo={isLocalHost ? systemInfo : null}
-                        isActive={isLocalHost}
-                        onClick={() => { /* Handled by sidebar usually */ }}
-                    />
-                    
-                    {/* Remote Environments */}
+                    {/* Render All Environments (Agents) */}
                     {remoteEnvs.map((env: any) => (
                         <EnvironmentCard 
                             key={env.id}
                             env={env}
                             stats={env.stats}
-                            systemInfo={null}
+                            systemInfo={null} // Agent list doesn't have full sys info usually, but stats has some
                             isActive={currentHost?.id === env.id}
-                            onClick={() => navigate(`/hosts/${env.id}`)} // This might conflict with Sidebar context? 
-                            // Actually navigate to host details is fine, but context switching happens in sidebar.
-                            // But usually selecting an env here should probably switch context?
+                            onClick={() => {
+                                // Switch host logic? 
+                                // Ideally we should use setHost from context, but context is global.
+                                // Navigate to hosts page or switch context?
+                                // For now just navigate to hosts management which enables switching.
+                                navigate('/hosts'); 
+                            }}
                         />
                     ))}
                     
