@@ -55,6 +55,7 @@ RUN apk add --no-cache \
     ca-certificates \
     curl \
     docker-cli \
+    docker-cli-compose \
     && rm -rf /var/cache/apk/*
 
 # Copy backend binary

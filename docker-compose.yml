@@ -45,7 +45,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
-      - "9090:9090"
+      - "9095:9090"
+      - "9096:9091"
     environment:
       - AGENT_NAME=local-host
       - CONMAN_SERVER_URL=http://backend:8000
@@ -54,12 +55,13 @@ services:
       - METRICS_INTERVAL=5s
       - HEARTBEAT_INTERVAL=30s
       - SCRAPE_ENABLED=true
-      - SCRAPE_PORT=9090
+      - SCRAPE_PORT=9091
       - PUSH_ENABLED=true
     networks:
       - app-network
     depends_on:
       - backend
+
     deploy:
       resources:
         limits:

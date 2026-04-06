@@ -14,10 +14,12 @@ import (
 	"conman-backend/pkg/protocol"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
 // AgentHandler handles agent-related API endpoints
+
 type AgentHandler struct {
 	mu     sync.RWMutex
 	agents map[string]*AgentState
@@ -94,12 +96,53 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/agents/{id}/containers", h.GetAgentContainers)
 	r.Get("/agents/{id}/images", h.GetAgentImages)
 	r.Get("/agents/{id}/networks", h.GetAgentNetworks)
+	r.Get("/agents/{id}/networks", h.GetAgentNetworks)
 	r.Get("/agents/{id}/volumes", h.GetAgentVolumes)
+	
+	// Remote Control Proxies
+	r.Get("/agents/{id}/containers/{containerId}/exec", h.ProxyStreamExec)
+	r.Get("/agents/{id}/containers/{containerId}/files", h.ProxyListContainerFiles)
+	r.Get("/agents/{id}/containers/{containerId}/logs", h.ProxyStreamLogs)
+	r.Get("/agents/{id}/containers/{containerId}/stats", h.ProxyStreamStats)
+    r.Get("/agents/{id}/containers/{containerId}/files/download", h.ProxyDownloadFile)
+
+    // Container Management
+	// Container Management
+    r.Get("/agents/{id}/containers/{containerId}", h.ProxyInspectContainer)
+	r.Post("/agents/{id}/containers/{containerId}/start", h.ProxyStartContainer)
+	r.Post("/agents/{id}/containers/{containerId}/stop", h.ProxyStopContainer)
+	r.Post("/agents/{id}/containers/{containerId}/restart", h.ProxyRestartContainer)
+	r.Delete("/agents/{id}/containers/{containerId}", h.ProxyRemoveContainer)
+    
+	// Image Management
+    r.Get("/agents/{id}/images/{imageId}", h.ProxyInspectImage)
+	r.Post("/agents/{id}/images/pull", h.ProxyPullImage)
+	r.Delete("/agents/{id}/images/{imageId}", h.ProxyRemoveImage)
+    r.Get("/agents/{id}/images/{imageId}/check-update", h.ProxyCheckImageUpdate)
+    
+	// Volume Management
+    r.Get("/agents/{id}/volumes/{name}", h.ProxyInspectVolume)
+	r.Post("/agents/{id}/volumes", h.ProxyCreateVolume)
+	r.Delete("/agents/{id}/volumes/{name}", h.ProxyRemoveVolume)
+    r.Post("/agents/{id}/volumes/{name}/browse", h.ProxyBrowseVolume)
+    
+	// Network Management
+    r.Get("/agents/{id}/networks/{networkId}", h.ProxyInspectNetwork)
+	r.Post("/agents/{id}/networks", h.ProxyCreateNetwork)
+	r.Delete("/agents/{id}/networks/{networkId}", h.ProxyRemoveNetwork)
+    r.Post("/agents/{id}/networks/{networkId}/connect", h.ProxyConnectNetwork) 
+    r.Post("/agents/{id}/networks/{networkId}/duplicate", h.ProxyDuplicateNetwork)
 	
 	// Host-centric endpoints (aggregate from all agents)
 	r.Get("/hosts", h.ListHosts)
 	r.Get("/hosts/{id}/containers", h.GetHostContainers)
 	r.Get("/hosts/{id}/images", h.GetHostImages)
+	r.Get("/agents/{id}/system/df", h.ProxySystemDF)
+
+    // Stack Management
+    r.Get("/agents/{id}/stacks", h.ProxyListStacks)
+    r.Post("/agents/{id}/stacks", h.ProxyCreateStack)
+    r.Delete("/agents/{id}/stacks/{stackName}", h.ProxyRemoveStack)
 }
 
 // RegisterPublicRoutes registers agent API routes that don't require auth (for agent self-registration)
@@ -463,3 +506,297 @@ func (h *AgentHandler) GetHostContainers(w http.ResponseWriter, r *http.Request)
 func (h *AgentHandler) GetHostImages(w http.ResponseWriter, r *http.Request) {
 	h.GetAgentImages(w, r)
 }
+
+// ProxyStreamExec proxies usage of the exec-stream to an agent
+func (h *AgentHandler) ProxyStreamExec(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	containerID := chi.URLParam(r, "containerId")
+
+	h.mu.RLock()
+	agent, exists := h.agents[agentID]
+	h.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Agent not found", http.StatusNotFound)
+		return
+	}
+
+	// Construct Agent WebSocket URL
+	// ScrapeURL is usually http://ip:port. We need ws://ip:port/api/exec?id=...
+	base := agent.ScrapeURL
+	if base == "" {
+        // Fallback for demo/dev if not set
+        if agent.HostInfo != nil {
+             // Try to guess from remote address? Difficult without storage.
+             // Assuming ScrapeURL is properly set during registration/update.
+        }
+		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
+		return
+	}
+    
+    // Convert http/https to ws/wss
+    targetScheme := "ws"
+    if len(base) >= 5 && base[:5] == "https" {
+        targetScheme = "wss"
+        base = base[8:]
+    } else if len(base) >= 4 && base[:4] == "http" {
+        base = base[7:]
+    }
+    
+    targetURL := targetScheme + "://" + base + "/api/exec?id=" + containerID
+
+	// Connect to Agent
+	agentConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	if err != nil {
+		log.Printf("Failed to dial agent %s: %v", targetURL, err)
+		http.Error(w, "Failed to connect to agent", http.StatusBadGateway)
+		return
+	}
+	defer agentConn.Close()
+
+	// Upgrade Client Connection
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer clientConn.Close()
+
+	// Pipe
+	errCh := make(chan error, 2)
+
+	go func() {
+		for {
+			mt, message, err := agentConn.ReadMessage()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if err := clientConn.WriteMessage(mt, message); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			mt, message, err := clientConn.ReadMessage()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if err := agentConn.WriteMessage(mt, message); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	<-errCh
+}
+
+// ProxyListContainerFiles proxies file listing to an agent
+func (h *AgentHandler) ProxyListContainerFiles(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	containerID := chi.URLParam(r, "containerId")
+	path := r.URL.Query().Get("path")
+
+	h.mu.RLock()
+	agent, exists := h.agents[agentID]
+	h.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Agent not found", http.StatusNotFound)
+		return
+	}
+
+	if agent.ScrapeURL == "" {
+		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
+		return
+	}
+
+	// Construct Agent HTTP URL
+	targetURL := agent.ScrapeURL + "/api/files?id=" + containerID + "&path=" + path
+
+	resp, err := http.Get(targetURL)
+	if err != nil {
+		http.Error(w, "Failed to contact agent", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy headers
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	// Copy body
+	io.Copy(w, resp.Body)
+}
+
+// ProxyStreamLogs proxies log streaming to an agent
+func (h *AgentHandler) ProxyStreamLogs(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	containerID := chi.URLParam(r, "containerId")
+	
+	// Pass through query params (tail, since)
+	query := r.URL.Query().Encode()
+
+	h.mu.RLock()
+	agent, exists := h.agents[agentID]
+	h.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Agent not found", http.StatusNotFound)
+		return
+	}
+
+	if agent.ScrapeURL == "" {
+		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
+		return
+	}
+
+	// Construct Agent WebSocket URL
+	base := agent.ScrapeURL
+    targetScheme := "ws"
+    if len(base) >= 5 && base[:5] == "https" {
+        targetScheme = "wss"
+        base = base[8:]
+    } else if len(base) >= 4 && base[:4] == "http" {
+        base = base[7:]
+    }
+    
+    targetURL := targetScheme + "://" + base + "/api/logs?id=" + containerID + "&" + query
+
+	// Connect to Agent
+	agentConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	if err != nil {
+		log.Printf("Failed to dial agent logs %s: %v", targetURL, err)
+		http.Error(w, "Failed to connect to agent", http.StatusBadGateway)
+		return
+	}
+	defer agentConn.Close()
+
+	// Upgrade Client Connection
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer clientConn.Close()
+
+	// Pipe
+	errCh := make(chan error, 2)
+
+	go func() {
+		for {
+			mt, message, err := agentConn.ReadMessage()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if err := clientConn.WriteMessage(mt, message); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	// Frontend shouldn't really write to logs, but keep pipe open to detect close
+	go func() {
+		for {
+			_, _, err := clientConn.ReadMessage()
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	<-errCh
+}
+
+// ProxyStreamStats proxies log streaming to an agent
+func (h *AgentHandler) ProxyStreamStats(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+	containerID := chi.URLParam(r, "containerId")
+	
+	h.mu.RLock()
+	agent, exists := h.agents[agentID]
+	h.mu.RUnlock()
+
+	if !exists {
+		http.Error(w, "Agent not found", http.StatusNotFound)
+		return
+	}
+
+	if agent.ScrapeURL == "" {
+		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
+		return
+	}
+
+	// Construct Agent WebSocket URL
+	base := agent.ScrapeURL
+    targetScheme := "ws"
+    if len(base) >= 5 && base[:5] == "https" {
+        targetScheme = "wss"
+        base = base[8:]
+    } else if len(base) >= 4 && base[:4] == "http" {
+        base = base[7:]
+    }
+    
+    targetURL := targetScheme + "://" + base + "/api/stats?id=" + containerID
+
+	// Connect to Agent
+	agentConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	if err != nil {
+		log.Printf("Failed to dial agent stats %s: %v", targetURL, err)
+		http.Error(w, "Failed to connect to agent", http.StatusBadGateway)
+		return
+	}
+	defer agentConn.Close()
+
+	// Upgrade Client Connection
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer clientConn.Close()
+
+	// Pipe
+	errCh := make(chan error, 2)
+
+	go func() {
+		for {
+			mt, message, err := agentConn.ReadMessage()
+			if err != nil {
+				errCh <- err
+				return
+			}
+			if err := clientConn.WriteMessage(mt, message); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		for {
+		    // We don't expect input from client for stats, but keep pipe open
+			_, _, err := clientConn.ReadMessage()
+			if err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+
+	<-errCh
+}
+
+
+
+
+
+
+

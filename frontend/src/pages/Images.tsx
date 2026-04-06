@@ -6,8 +6,6 @@ import {
     TrashIcon, 
     Square3Stack3DIcon, 
     ArrowPathIcon,
-    TagIcon,
-    ClockIcon,
     EyeIcon,
     ArrowUpCircleIcon,
     CheckCircleIcon,
@@ -45,7 +43,7 @@ export const Images = () => {
   const [loading, setLoading] = useState(true);
   const [pullImageName, setPullImageName] = useState('');
   const [pulling, setPulling] = useState(false);
-  const [inspectData, setInspectData] = useState<any>(null);
+  const [inspectData, setInspectData] = useState<any>(null); // Kept for modal props compatibility if needed, else remove.
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'name' | 'size' | 'created' | 'status'>('created');
   
@@ -80,12 +78,13 @@ export const Images = () => {
 
   const [checkingAll, setCheckingAll] = useState(false);
   const { isCollapsed } = useSidebar();
-  const { currentHost, isLocalHost } = useHost();
+  const { currentHost } = useHost();
   const navigate = useNavigate();
 
   const fetchImages = async () => {
     try {
-      const endpoint = isLocalHost ? '/docker/images' : `/agents/${currentHost?.id}/images`;
+      if (!currentHost) return;
+      const endpoint = `/agents/${currentHost.id}/images`;
       const { data } = await api.get(endpoint);
       setImages(data || []);
     } catch (error) {
@@ -107,7 +106,8 @@ export const Images = () => {
     const toastId = toast.loading(`Pulling image ${pullImageName}...`);
 
     try {
-        await api.post('/docker/images/pull', { image: pullImageName });
+        if (!currentHost) return;
+        await api.post(`/agents/${currentHost.id}/images/pull`, { image: pullImageName });
         toast.success(`Successfully pulled ${pullImageName}`, { id: toastId });
         setPullImageName('');
         fetchImages();
@@ -121,16 +121,28 @@ export const Images = () => {
   const handleRemoveImage = async (id: string) => {
       if (!confirm('Are you sure you want to remove this image?')) return;
       try {
-          await api.delete(`/docker/images/${id}`);
+          if (!currentHost) return;
+          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
           toast.success('Image removed');
           fetchImages();
-      } catch (error) {
-          toast.error('Failed to remove image');
+      } catch (error: any) {
+          console.error("Remove image failed", error);
+          toast.error(`Failed to remove image: ${error.response?.data || error.message}`);
       }
   };
 
   const handleInspect = async (id: string) => {
-      navigate(`/images/${encodeURIComponent(id)}`);
+      try {
+        // Fetch detailed inspect data
+        // Backend proxy: /agents/{id}/images/{imageId} -> Agent: /api/images/inspect?id={imageId}
+        if (!currentHost) return;
+        const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
+        // data is the Inspect result
+        setInspectData(data);
+        setInspectModalOpen(true);
+      } catch (error) {
+          toast.error("Failed to inspect image");
+      }
   }
 
   const checkImageUpdate = async (imageId: string) => {
@@ -140,7 +152,9 @@ export const Images = () => {
     }));
 
     try {
-      const { data } = await api.get(`/docker/images/${encodeURIComponent(imageId)}/check-update`);
+      if (!currentHost) return;
+      // Backend: /agents/{id}/images/{imageId}/check-update -> Agent: /api/images/check-update?id={imageId}
+      const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}/check-update`);
       setUpdateStatuses(prev => ({
         ...prev,
         [imageId]: { 
@@ -191,7 +205,8 @@ export const Images = () => {
       }));
 
       try {
-        const { data } = await api.get(`/docker/images/${encodeURIComponent(img.id)}/check-update`);
+        if (!currentHost) continue;
+        const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(img.id)}/check-update`);
         setUpdateStatuses(prev => ({
           ...prev,
           [img.id]: { 
@@ -240,7 +255,8 @@ export const Images = () => {
     const toastId = toast.loading(`Pulling latest ${imageName}...`);
     
     try {
-      await api.post('/docker/images/pull', { image: imageName });
+      if (!currentHost) return;
+      await api.post(`/agents/${currentHost.id}/images/pull`, { image: imageName });
       toast.success(`Successfully updated ${imageName}`, { id: toastId });
       
       // Clear update status and refresh
@@ -349,10 +365,10 @@ export const Images = () => {
           Images
         </h2>
         <div className="flex items-center space-x-2">
-          {!isLocalHost && (
+          {currentHost && (
             <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
               <ServerStackIcon className="w-4 h-4" />
-              <span>{currentHost?.name}</span>
+              <span>{currentHost.name}</span>
             </GlassCard>
           )}
           <GlassCard 
@@ -374,9 +390,44 @@ export const Images = () => {
           </GlassCard>
         </div>
       </div>
+       {/* Stats Grid */}
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <GlassCard className="p-6 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <Square3Stack3DIcon className="w-24 h-24 text-blue-500" />
+                </div>
+                <div className="relative z-10">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Images</p>
+                    <p className="text-4xl font-bold text-slate-800 dark:text-slate-100 mt-2">{images.length}</p>
+                    <div className="mt-4 flex items-center text-xs text-slate-500">
+                        <span className="text-blue-500 font-medium">{formatSize(images.reduce((acc, img) => acc + img.size, 0))}</span>
+                        <span className="ml-1">total size</span>
+                    </div>
+                </div>
+            </GlassCard>
+
+            <GlassCard className="p-6 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <ServerStackIcon className="w-24 h-24 text-emerald-500" />
+                </div>
+                <div className="relative z-10">
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Used Images</p>
+                    <p className="text-4xl font-bold text-slate-800 dark:text-slate-100 mt-2">
+                        {images.filter(img => img.status === 'used').length}
+                    </p>
+                     <div className="mt-4 flex items-center text-xs text-slate-500">
+                        <span className="text-emerald-500 font-medium">
+                            {Math.round((images.filter(img => img.status === 'used').length / (images.length || 1)) * 100)}%
+                        </span>
+                        <span className="ml-1">in use by containers</span>
+                    </div>
+                </div>
+            </GlassCard>
+       </div>
+
 
         {/* Pull Image Section - Local Only */}
-        {isLocalHost && (
+        {/* Pull Image Section - Enabled for All Agents */}
         <GlassCard className="p-6">
             <h3 className="text-lg font-medium text-slate-900 dark:text-slate-200 mb-4 flex items-center">
                 <CloudArrowDownIcon className="w-5 h-5 mr-2 text-cyan-600 dark:text-cyan-400" />
@@ -387,7 +438,7 @@ export const Images = () => {
                     type="text" 
                     value={pullImageName}
                     onChange={(e) => setPullImageName(e.target.value)}
-                    placeholder="e.g. alpine:latest, nginx:alpine, ghcr.io/user/repo:tag"
+                    placeholder="e.g. alpine:latest, nginx:alpine"
                     className="flex-1 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-lg px-4 py-2 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
                 />
                 <button 
@@ -402,7 +453,7 @@ export const Images = () => {
               Supports Docker Hub, GitHub Container Registry (ghcr.io), and private registries
             </p>
         </GlassCard>
-        )}
+
 
         {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
@@ -452,8 +503,6 @@ export const Images = () => {
                                 )}
                             </div>
                             <div className="flex space-x-1">
-                                {isLocalHost && (
-                                <>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
                                     disabled={updateStatuses[img.id]?.checking}
@@ -467,7 +516,6 @@ export const Images = () => {
                                 >
                                     <MagnifyingGlassIcon className={clsx("w-4 h-4", updateStatuses[img.id]?.checking && "animate-pulse")} />
                                 </button>
-                                {updateStatuses[img.id]?.available && (
                                   <button 
                                       onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }}
                                       className="p-1.5 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
@@ -475,9 +523,6 @@ export const Images = () => {
                                   >
                                       <ArrowUpCircleIcon className="w-4 h-4" />
                                   </button>
-                                )}
-                                </>
-                                )}
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
                                     className="p-1.5 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
@@ -485,15 +530,13 @@ export const Images = () => {
                                 >
                                     <EyeIcon className="w-4 h-4" />
                                 </button>
-                                {isLocalHost && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
-                                    className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
+                                    className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
                                     title="Remove Image"
                                 >
                                     <TrashIcon className="w-4 h-4" />
                                 </button>
-                                )}
                             </div>
                          </div>
                         

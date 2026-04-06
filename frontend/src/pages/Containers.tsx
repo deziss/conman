@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
-import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, CommandLineIcon, ServerStackIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, ServerStackIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
 import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
@@ -37,7 +37,7 @@ export const Containers = () => {
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const { isCollapsed } = useSidebar();
-  const { currentHost, isLocalHost } = useHost();
+  const { currentHost } = useHost();
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState({
@@ -50,7 +50,8 @@ export const Containers = () => {
 
   const fetchContainers = async () => {
     try {
-      const endpoint = isLocalHost ? '/docker/containers' : '/agents/' + (currentHost ? currentHost.id : '') + '/containers';
+      if (!currentHost) return;
+      const endpoint = '/agents/' + currentHost.id + '/containers';
       const { data } = await api.get(endpoint);
       setContainers((data || []).map((c: any) => ({
         ...c,
@@ -95,22 +96,16 @@ export const Containers = () => {
     fetchContainers();
     const interval = setInterval(fetchContainers, refreshInterval);
     return () => clearInterval(interval);
-  }, [currentHost, isLocalHost, refreshInterval]);
+  }, [currentHost, refreshInterval]);
 
   const executeAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
-      let endpoint = '';
-      let method: 'post' | 'delete' = 'post';
+      if (!currentHost) return;
+      
+      let endpoint = '/agents/' + currentHost.id + '/containers/' + id;
+      if (action !== 'remove') endpoint += '/' + action;
+      
+      const method: 'post' | 'delete' = action === 'remove' ? 'delete' : 'post';
 
-      if (isLocalHost) {
-          endpoint = '/docker/containers/' + id;
-          if (action !== 'remove') endpoint += '/' + action;
-          if (action === 'remove') method = 'delete';
-      } else {
-           // Fallback for agent
-           endpoint = '/agents/' + (currentHost ? currentHost.id : '') + '/containers/' + id;
-           if (action !== 'remove') endpoint += '/' + action;
-           if (action === 'remove') method = 'delete';
-      }
 
       const promise = method === 'delete' ? api.delete(endpoint) : api.post(endpoint);
       
@@ -144,7 +139,8 @@ export const Containers = () => {
       e.preventDefault();
       e.stopPropagation();
       try {
-          const endpoint = isLocalHost ? `/docker/containers/${id}` : `/agents/${currentHost?.id}/containers/${id}`;
+          if (!currentHost) return;
+          const endpoint = `/agents/${currentHost.id}/containers/${id}`;
           const { data } = await api.get(endpoint);
           setInspectData(data);
           setInspectModalOpen(true);
@@ -180,7 +176,7 @@ export const Containers = () => {
           Containers
         </h2>
         <div className="flex items-center space-x-3">
-          {!isLocalHost && (
+          {currentHost && (
            <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400">
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
@@ -290,9 +286,7 @@ export const Containers = () => {
                     >
                         <EyeIcon className="w-5 h-5" />
                     </button>
-                     <Link to={'/containers/' + container.id + '/logs'} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Logs">
-                        <CommandLineIcon className="w-5 h-5" />
-                    </Link>
+
                     <Link to={'/containers/' + container.id} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Details">
                         <DocumentTextIcon className="w-5 h-5" />
                     </Link>
