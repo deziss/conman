@@ -4,7 +4,7 @@ import { HomeIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Co
 import { EnvelopeIcon } from '@heroicons/react/24/outline';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth, getInitials } from '../contexts/AuthContext';
-import { useHost, LOCAL_HOST } from '../contexts/HostContext';
+import { useHost } from '../contexts/HostContext';
 import { ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
 import { APP_CONFIG } from '../constants/app';
 import { useState, useRef, useEffect } from 'react';
@@ -17,7 +17,7 @@ interface SidebarProps {
 export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
   const { theme, toggleTheme } = useTheme();
   const { logout, user } = useAuth();
-  const { hosts, currentHost, setCurrentHost, isLocalHost } = useHost();
+  const { hosts, currentHost, setCurrentHost } = useHost();
   const [hostDropdownOpen, setHostDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -68,11 +68,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
           className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} p-2 rounded-lg bg-gradient-to-r from-cyan-500/5 to-blue-500/5 border border-cyan-500/20 cursor-pointer hover:bg-cyan-500/10 transition-colors`}
         >
           <div className="flex items-center space-x-2 min-w-0">
-            {isLocalHost ? (
-              <ComputerDesktopIcon className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-            ) : (
-              <ServerStackIcon className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            )}
+            <ServerStackIcon className="w-4 h-4 text-purple-400 flex-shrink-0" />
             {!isCollapsed && (
               <span className="text-sm font-medium text-slate-200 truncate">
                 {currentHost?.name || 'Select Host'}
@@ -85,16 +81,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
         {/* Dropdown */}
         {hostDropdownOpen && !isCollapsed && (
           <div className="absolute left-4 right-4 mt-1 bg-slate-900 border border-white/10 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-            {/* Local Docker */}
-            <button
-              onClick={() => { setCurrentHost(LOCAL_HOST); setHostDropdownOpen(false); }}
-              className={`w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-white/5 transition-colors ${isLocalHost ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-300'}`}
-            >
-              <ComputerDesktopIcon className="w-4 h-4" />
-              <span>Local Docker</span>
-            </button>
-            
-            {hosts.length > 0 && <div className="border-t border-white/5 my-1" />}
+            {/* Hosts Dropdown */}
             
             {/* Remote Hosts */}
             {hosts.map(host => (
@@ -138,6 +125,25 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
                  <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Manage</p>
               </div>
               {isCollapsed && <div className="h-4" />}
+
+               <NavLink
+                to="/stacks"
+                title={isCollapsed ? "Stacks" : ""}
+                className={({ isActive }) =>
+                  `flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
+                    isActive
+                      ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)]'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`
+                }
+              >
+                <div className={`p-1 rounded-md bg-black/5 dark:bg-white/5 group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-all duration-300 ${isCollapsed ? 'mr-0' : 'mr-3'}`}>
+                    <Square3Stack3DIcon className="w-5 h-5" />
+                </div>
+                <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+                  Stacks
+                </span>
+              </NavLink>
 
               <NavLink
                 to="/containers"
@@ -225,6 +231,25 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
               </div>
               {isCollapsed && <div className="h-4" />}
               
+              <NavLink
+                to="/hosts"
+                title={isCollapsed ? "Hosts" : ""}
+                className={({ isActive }) =>
+                  `flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
+                    isActive
+                      ? 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`
+                }
+              >
+                <div className={`p-1 rounded-md bg-black/5 dark:bg-white/5 group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-all duration-300 ${isCollapsed ? 'mr-0' : 'mr-3'}`}>
+                    <ServerStackIcon className="w-5 h-5" />
+                </div>
+                <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+                  Hosts
+                </span>
+              </NavLink>
+
               <NavLink
                 to="/users"
                 title={isCollapsed ? "Users" : ""}

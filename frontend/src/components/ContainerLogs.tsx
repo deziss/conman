@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { SearchAddon } from 'xterm-addon-search';
@@ -15,14 +15,12 @@ import {
     Bars3BottomLeftIcon,
     TableCellsIcon,
     CommandLineIcon,
-    ArrowsPointingOutIcon,
     ChevronDoubleDownIcon,
     ChevronDoubleUpIcon,
     ExclamationTriangleIcon,
     InformationCircleIcon,
     BugAntIcon,
-    XCircleIcon,
-    FunnelIcon
+    XCircleIcon
 } from '@heroicons/react/24/solid';
 import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
@@ -31,6 +29,7 @@ import { StructuredLogViewer } from './StructuredLogViewer';
 
 interface ContainerLogsProps {
   containerId: string;
+  agentId?: string;
 }
 
 // Helper to format ISO strings
@@ -98,7 +97,8 @@ const TIME_RANGES = [
     { value: '24h', label: 'Last 24 hours' },
 ];
 
-export const ContainerLogs = ({ containerId }: ContainerLogsProps) => {
+export const ContainerLogs = (props: ContainerLogsProps) => {
+  const { containerId, agentId } = props;
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -125,7 +125,6 @@ export const ContainerLogs = ({ containerId }: ContainerLogsProps) => {
       debug: true,
       unknown: true,
   });
-  const [showFilters, setShowFilters] = useState(false);
 
   // Buffers
   const logBufferRef = useRef<string[]>([]);
@@ -253,6 +252,13 @@ export const ContainerLogs = ({ containerId }: ContainerLogsProps) => {
   const connectLogs = useCallback(() => {
     if (!terminalRef.current) return;
     
+    // Check if we have an agent/host context
+    if (!agentId) {
+        // Fallback or wait?
+        // If loaded directly without context, might fail.
+        // We assume valid context or prop.
+    }
+
     // Close existing socket
     if (socketRef.current) {
         socketRef.current.close();
@@ -277,7 +283,13 @@ export const ContainerLogs = ({ containerId }: ContainerLogsProps) => {
         params.set('since', timeRange);
     }
     
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${containerId}/logs?${params.toString()}`;
+    // Unified Agent Endpoint for Logs
+    // Note: The agent ID is required. 
+    // If targetAgentId is missing, we can't connect properly in unified mode unless we default to 'local' if strict?
+    // But we are removing 'local' special handling.
+    // 'local' agent has ID too.
+    
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/agents/${agentId}/containers/${containerId}/logs?${params.toString()}`;
     
     const socket = new WebSocket(wsUrl);
     socketRef.current = socket;

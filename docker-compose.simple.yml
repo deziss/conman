@@ -32,33 +32,29 @@ services:
       retries: 3
       start_period: 10s
 
-  # Optional: Agent for this host (connects back to server)
-  agent:
+  # Local Agent (manages the local docker socket)
+  local-agent:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.agent
+      context: ./agent
+      dockerfile: Dockerfile
     image: conman-agent:latest
-    container_name: conman-agent
+    container_name: conman-local-agent
     restart: unless-stopped
-    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /tmp/conman-stacks:/tmp/conman-stacks
     environment:
-      - AGENT_NAME=local-host
-      - CONMAN_SERVER_URL=http://localhost:5173
+      - AGENT_NAME=Local Agent
+      - CONMAN_SERVER_URL=http://conman-server:5173
       - AGENT_MODE=hybrid
       - COLLECT_INTERVAL=10s
       - SCRAPE_PORT=5073
+      - SCRAPE_ENABLED=true
+      - ADVERTISED_ADDRESS=conman-local-agent
     depends_on:
       conman-server:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-          cpus: '0.1'
-    profiles:
-      - agent  # Only starts if you run: docker compose --profile agent up
+        condition: service_started
+
 
 volumes:
   conman_data:

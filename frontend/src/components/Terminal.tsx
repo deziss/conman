@@ -5,9 +5,10 @@ import 'xterm/css/xterm.css';
 
 interface TerminalProps {
   containerId: string;
+  agentId?: string;
 }
 
-export const Terminal = ({ containerId }: TerminalProps) => {
+export const Terminal = ({ containerId, agentId }: TerminalProps) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
 
@@ -36,7 +37,11 @@ export const Terminal = ({ containerId }: TerminalProps) => {
     // Connect to WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem('token');
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${containerId}/exec?token=${token}`;
+    
+    let wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${containerId}/exec?token=${token}`;
+    if (agentId) {
+        wsUrl = `${protocol}//${window.location.host}/api/v1/agents/${agentId}/containers/${containerId}/exec?token=${token}`;
+    }
     
     const socket = new WebSocket(wsUrl);
 

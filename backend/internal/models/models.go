@@ -102,3 +102,12 @@ type Agent struct {
 	HostInfo      []byte // JSON encoded host info
 	ScrapeURL     string
 }
+
+type Stack struct {
+	gorm.Model
+	Name           string `gorm:"uniqueIndex"`
+	ComposeContent string // content of docker-compose.yml
+	EnvContent     string // content of .env
+	Status         string // "active", "stopped", "error"
+    Message        string // Last error or status message
+}
