@@ -1,12 +1,17 @@
 package main
 
 import (
+	"conman-backend/internal/alerts"
 	"conman-backend/internal/api"
 	"conman-backend/internal/authz"
 	"conman-backend/internal/config"
+	"conman-backend/internal/metrics"
 	"conman-backend/internal/middleware"
+	"conman-backend/internal/observability"
 	"conman-backend/internal/models"
 	"conman-backend/internal/service"
+	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +22,7 @@ import (
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -29,14 +35,28 @@ func main() {
 	service.InitDockerClient()
     service.InitStatsCollector()
 
-	// 3. Init Database
-	db, err := gorm.Open(sqlite.Open(config.AppConfig.DatabaseURL), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+	// 3. Init Database (supports SQLite and PostgreSQL)
+	var (
+		db  *gorm.DB
+		err error
+	)
+	switch config.AppConfig.DatabaseDriver {
+	case "postgres":
+		db, err = gorm.Open(postgres.Open(config.AppConfig.DatabaseDSN), &gorm.Config{})
+		if err != nil {
+			log.Fatal("Failed to connect to PostgreSQL:", err)
+		}
+		log.Println("Connected to PostgreSQL database")
+	default:
+		db, err = gorm.Open(sqlite.Open(config.AppConfig.DatabaseURL), &gorm.Config{})
+		if err != nil {
+			log.Fatal("Failed to connect to SQLite database:", err)
+		}
+		log.Println("Connected to SQLite database:", config.AppConfig.DatabaseURL)
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -72,7 +92,13 @@ func main() {
         log.Printf("Updated admin user credentials for: %s", adminEmail)
     }
 
-    // 4. Init Casbin (Database Adapter)
+    // 4. Init Metrics Store
+    metricsStore := metrics.NewMetricsStore(db, config.AppConfig.DatabaseDriver)
+    if err := metricsStore.InitSchema(); err != nil {
+        log.Printf("Warning: metrics schema init failed: %v", err)
+    }
+
+    // 5. Init Casbin (Database Adapter)
     authz.InitCasbin(db)
 
 	// 5. Setup Router (Chi)
@@ -81,16 +107,20 @@ func main() {
     // Middleware
     r.Use(chiMiddleware.Logger)
     r.Use(chiMiddleware.Recoverer)
+    r.Use(observability.ChiMiddleware)
 
 	// CORS
     r.Use(cors.Handler(cors.Options{
         AllowedOrigins:   config.AppConfig.CorsOrigins,
         AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
-        AllowedHeaders:   []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Master-Key", "X-API-Key"},
+        AllowedHeaders:   []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Master-Key", "X-API-Key", "X-Agent-Token"},
         ExposedHeaders:   []string{"Content-Length"},
         AllowCredentials: true,
         MaxAge:           300,
     }))
+
+	// Handlers (hoisted for use by alert evaluator)
+	agentHandler := api.NewAgentHandler(db, metricsStore)
 
 	// API v1 Group
 	r.Route("/api/v1", func(r chi.Router) {
@@ -102,7 +132,6 @@ func main() {
         networkHandler := api.NewNetworkHandler()
         volumeHandler := api.NewVolumeHandler()
         environmentHandler := api.NewEnvironmentHandler(db)
-        agentHandler := api.NewAgentHandler(db)
         
         // Middleware Instance
         mw := middleware.NewMiddleware(db)
@@ -110,8 +139,11 @@ func main() {
         // Public Routes
 		r.Post("/auth/login", authHandler.Login)
         
-        // Public Agent Routes (registration, heartbeat, report - no auth required)
-        agentHandler.RegisterPublicRoutes(r)
+        // Agent Routes (registration, heartbeat, report - secured with agent PSK)
+        r.Group(func(r chi.Router) {
+            r.Use(middleware.AgentAuthMiddleware)
+            agentHandler.RegisterPublicRoutes(r)
+        })
 
         // Protected Routes
         r.Group(func(r chi.Router) {
@@ -235,14 +267,61 @@ func main() {
 
             // Agent Management (Multi-Host)
             agentHandler.RegisterRoutes(r)
+
+            // Alert Management
+            alertHandler := api.NewAlertHandler(db)
+            alertHandler.RegisterRoutes(r)
         })
 	})
 
 	// Health Check endpoint (public)
 	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		status := "healthy"
+		checks := map[string]string{}
+
+		// Check database connectivity
+		sqlDB, err := db.DB()
+		if err != nil {
+			status = "unhealthy"
+			checks["database"] = "error: " + err.Error()
+		} else if err := sqlDB.Ping(); err != nil {
+			status = "unhealthy"
+			checks["database"] = "error: " + err.Error()
+		} else {
+			checks["database"] = "ok"
+		}
+
+		// Check Docker daemon connectivity
+		dockerClient := service.GetDockerClient()
+		if dockerClient == nil {
+			if status == "healthy" {
+				status = "degraded"
+			}
+			checks["docker"] = "error: client not initialized"
+		} else if _, err := dockerClient.Ping(r.Context()); err != nil {
+			if status == "healthy" {
+				status = "degraded"
+			}
+			checks["docker"] = "error: " + err.Error()
+		} else {
+			checks["docker"] = "ok"
+		}
+
+		httpStatus := http.StatusOK
+		if status == "unhealthy" {
+			httpStatus = http.StatusServiceUnavailable
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"healthy"}`))
+		w.WriteHeader(httpStatus)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": status,
+			"checks": checks,
+		})
 	})
+
+	// Prometheus metrics endpoint (public)
+	r.Handle("/metrics", observability.MetricsHandler())
 
 	// Serve static frontend files if STATIC_DIR is set
 	if config.AppConfig.StaticDir != "" {
@@ -273,6 +352,10 @@ func main() {
 			http.NotFound(w, r)
 		})
 	}
+
+	// Start Alert Evaluator (background)
+	alertEvaluator := alerts.NewEvaluator(db, agentHandler)
+	go alertEvaluator.Run(context.Background())
 
 	// Start Server
 	log.Printf("Server running on port %s", config.AppConfig.Port)

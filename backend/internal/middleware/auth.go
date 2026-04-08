@@ -102,6 +102,34 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// AgentAuthMiddleware validates the agent pre-shared key on agent-facing endpoints.
+// If AGENT_TOKEN is not configured, all agent requests are rejected (secure by default).
+func AgentAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := config.AppConfig.AgentToken
+		if token == "" {
+			api.ErrorJSON(w, http.StatusForbidden, "Agent authentication not configured on server")
+			return
+		}
+
+		// Check X-Agent-Token header first, then fall back to Authorization: Bearer
+		agentToken := r.Header.Get("X-Agent-Token")
+		if agentToken == "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				agentToken = authHeader[7:]
+			}
+		}
+
+		if agentToken != token {
+			api.ErrorJSON(w, http.StatusUnauthorized, "Invalid agent token")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // RequirePermission Middleware using Casbin
 func (m *Middleware) RequirePermission(obj, act string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

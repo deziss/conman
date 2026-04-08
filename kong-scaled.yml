@@ -1,0 +1,33 @@
+_format_version: "3.0"
+
+services:
+  - name: conman-backend
+    url: http://conman-backend:5173
+    routes:
+      - name: conman-api
+        paths:
+          - /api
+        strip_path: false
+      - name: conman-metrics
+        paths:
+          - /metrics
+        strip_path: false
+      - name: conman-frontend
+        paths:
+          - /
+        strip_path: false
+
+upstreams:
+  - name: conman-backend
+    targets:
+      - target: conman-backend:5173
+        weight: 100
+    healthchecks:
+      active:
+        http_path: /api/v1/health
+        healthy:
+          interval: 10
+          successes: 2
+        unhealthy:
+          interval: 10
+          http_failures: 3
