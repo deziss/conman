@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -54,7 +55,10 @@ func (d *DockerProvider) Info(ctx context.Context) (*protocol.HostInfo, error) {
 		KernelVersion:  info.KernelVersion,
 		CPUs:           info.NCPU,
 		MemoryTotal:    info.MemTotal,
-		DockerVersion:  version.Version,
+		RuntimeType:    "docker",
+		RuntimeVersion: version.Version,
+		RuntimeRootDir: info.DockerRootDir,
+		DockerVersion:  version.Version, // backward compat
 		DockerRootDir:  info.DockerRootDir,
 		StorageDriver:  info.Driver,
 		ContainerCount: info.Containers,
@@ -468,7 +472,241 @@ func (d *DockerProvider) RemoveStack(ctx context.Context, project string) error 
 	return nil
 }
 
-// Client exposes the underlying Docker client for advanced operations (exec, logs streaming, etc.)
+// --- Container lifecycle ---
+
+func (d *DockerProvider) ContainerStart(ctx context.Context, id string) error {
+	return d.cli.ContainerStart(ctx, id, container.StartOptions{})
+}
+
+func (d *DockerProvider) ContainerStop(ctx context.Context, id string, timeout *int) error {
+	opts := container.StopOptions{}
+	if timeout != nil {
+		t := *timeout
+		opts.Timeout = &t
+	}
+	return d.cli.ContainerStop(ctx, id, opts)
+}
+
+func (d *DockerProvider) ContainerRestart(ctx context.Context, id string, timeout *int) error {
+	opts := container.StopOptions{}
+	if timeout != nil {
+		t := *timeout
+		opts.Timeout = &t
+	}
+	return d.cli.ContainerRestart(ctx, id, opts)
+}
+
+// --- Streaming ---
+
+func (d *DockerProvider) ContainerLogs(ctx context.Context, id string, opts LogsOptions) (io.ReadCloser, error) {
+	dockerOpts := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     opts.Follow,
+		Timestamps: opts.Timestamps,
+		Tail:       opts.Tail,
+		Since:      opts.Since,
+	}
+	return d.cli.ContainerLogs(ctx, id, dockerOpts)
+}
+
+func (d *DockerProvider) ContainerStatsStream(ctx context.Context, id string) (io.ReadCloser, error) {
+	resp, err := d.cli.ContainerStats(ctx, id, true)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
+func (d *DockerProvider) ExecInteractive(ctx context.Context, id string, cmd []string) (ExecSession, error) {
+	execCfg := types.ExecConfig{
+		Cmd:          cmd,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
+	}
+	execID, err := d.cli.ContainerExecCreate(ctx, id, execCfg)
+	if err != nil {
+		return nil, fmt.Errorf("exec create failed: %w", err)
+	}
+
+	resp, err := d.cli.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{Tty: true})
+	if err != nil {
+		return nil, fmt.Errorf("exec attach failed: %w", err)
+	}
+
+	return &dockerExecSession{
+		conn:   resp.Conn,
+		reader: resp.Reader,
+		cli:    d.cli,
+		execID: execID.ID,
+	}, nil
+}
+
+type dockerExecSession struct {
+	conn   io.WriteCloser
+	reader io.Reader
+	cli    *client.Client
+	execID string
+}
+
+func (s *dockerExecSession) Read(p []byte) (int, error)  { return s.reader.Read(p) }
+func (s *dockerExecSession) Write(p []byte) (int, error) { return s.conn.Write(p) }
+func (s *dockerExecSession) Close() error                { return s.conn.Close() }
+func (s *dockerExecSession) Resize(rows, cols uint) error {
+	return s.cli.ContainerExecResize(context.Background(), s.execID, container.ResizeOptions{
+		Height: rows,
+		Width:  cols,
+	})
+}
+
+func (d *DockerProvider) ListContainerFiles(ctx context.Context, id string, path string) ([]FileEntry, error) {
+	if path == "" {
+		path = "/"
+	}
+	// Use exec to list files
+	execCfg := types.ExecConfig{
+		Cmd:          []string{"ls", "-la", "--time-style=long-iso", path},
+		AttachStdout: true,
+		AttachStderr: true,
+	}
+	execID, err := d.cli.ContainerExecCreate(ctx, id, execCfg)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := d.cli.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Close()
+
+	output, _ := io.ReadAll(resp.Reader)
+	return parseLsOutput(string(output)), nil
+}
+
+func parseLsOutput(output string) []FileEntry {
+	var entries []FileEntry
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "total") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 8 {
+			continue
+		}
+		name := strings.Join(fields[7:], " ")
+		size := int64(0)
+		fmt.Sscanf(fields[4], "%d", &size)
+		entries = append(entries, FileEntry{
+			Name:    name,
+			Size:    size,
+			Mode:    fields[0],
+			ModTime: fields[5] + " " + fields[6],
+			IsDir:   fields[0][0] == 'd',
+		})
+	}
+	return entries
+}
+
+func (d *DockerProvider) DownloadContainerFile(ctx context.Context, id string, path string) (io.ReadCloser, error) {
+	reader, _, err := d.cli.CopyFromContainer(ctx, id, path)
+	if err != nil {
+		return nil, err
+	}
+	return reader, nil
+}
+
+// --- Networks ---
+
+func (d *DockerProvider) CreateNetwork(ctx context.Context, name string, driver string) (string, error) {
+	if driver == "" {
+		driver = "bridge"
+	}
+	resp, err := d.cli.NetworkCreate(ctx, name, types.NetworkCreate{Driver: driver})
+	if err != nil {
+		return "", err
+	}
+	return resp.ID, nil
+}
+
+func (d *DockerProvider) DuplicateNetwork(ctx context.Context, srcID string) (string, error) {
+	src, err := d.cli.NetworkInspect(ctx, srcID, types.NetworkInspectOptions{})
+	if err != nil {
+		return "", err
+	}
+	resp, err := d.cli.NetworkCreate(ctx, src.Name+"-copy", types.NetworkCreate{
+		Driver:     src.Driver,
+		Internal:   src.Internal,
+		Attachable: src.Attachable,
+		Labels:     src.Labels,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.ID, nil
+}
+
+// --- System ---
+
+func (d *DockerProvider) SystemDiskUsage(ctx context.Context) (*DiskUsage, error) {
+	du, err := d.cli.DiskUsage(ctx, types.DiskUsageOptions{})
+	if err != nil {
+		return nil, err
+	}
+	result := &DiskUsage{}
+	for _, c := range du.Containers {
+		result.ContainersSize += c.SizeRw
+	}
+	for _, img := range du.Images {
+		result.ImagesSize += img.Size
+	}
+	for _, v := range du.Volumes {
+		if v.UsageData != nil {
+			result.VolumesSize += v.UsageData.Size
+		}
+	}
+	result.BuildCacheSize = du.BuilderSize
+	return result, nil
+}
+
+func (d *DockerProvider) WatchEvents(ctx context.Context) (<-chan protocol.ContainerEvent, <-chan error) {
+	eventsCh := make(chan protocol.ContainerEvent, 100)
+	errsCh := make(chan error, 1)
+
+	dockerEvents, dockerErrs := d.cli.Events(ctx, types.EventsOptions{})
+
+	go func() {
+		defer close(eventsCh)
+		defer close(errsCh)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-dockerErrs:
+				if err != nil {
+					errsCh <- err
+				}
+				return
+			case event := <-dockerEvents:
+				if event.Type == "container" {
+					eventsCh <- protocol.ContainerEvent{
+						ContainerID:   event.Actor.ID,
+						ContainerName: event.Actor.Attributes["name"],
+						Action:        string(event.Action),
+						Timestamp:     time.Unix(event.Time, event.TimeNano),
+						Attributes:    event.Actor.Attributes,
+					}
+				}
+			}
+		}
+	}()
+
+	return eventsCh, errsCh
+}
+
+// Client exposes the underlying Docker client for advanced operations.
 func (d *DockerProvider) Client() *client.Client {
 	return d.cli
 }

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -52,9 +53,9 @@ func (p *PodmanProvider) Ping(ctx context.Context) error {
 
 func (p *PodmanProvider) Info(ctx context.Context) (*protocol.HostInfo, error) {
 	if p.useCLI {
-		// In a real implementation, we would parse 'podman info --format json'
 		return &protocol.HostInfo{
-			OS: "Linux (Podman CLI)",
+			OS:          "Linux (Podman CLI)",
+			RuntimeType: "podman",
 		}, nil
 	}
 	
@@ -242,6 +243,117 @@ func (p *PodmanProvider) RemoveStack(ctx context.Context, project string) error 
 		return fmt.Errorf("podman compose down failed: %w, output: %s", err, string(output))
 	}
 	return nil
+}
+
+// --- Container lifecycle (delegate to Docker-compatible API) ---
+
+func (p *PodmanProvider) ContainerStart(ctx context.Context, id string) error {
+	if p.useCLI {
+		return exec.CommandContext(ctx, "podman", "start", id).Run()
+	}
+	return (&DockerProvider{cli: p.cli}).ContainerStart(ctx, id)
+}
+
+func (p *PodmanProvider) ContainerStop(ctx context.Context, id string, timeout *int) error {
+	if p.useCLI {
+		args := []string{"stop"}
+		if timeout != nil {
+			args = append(args, fmt.Sprintf("--time=%d", *timeout))
+		}
+		args = append(args, id)
+		return exec.CommandContext(ctx, "podman", args...).Run()
+	}
+	return (&DockerProvider{cli: p.cli}).ContainerStop(ctx, id, timeout)
+}
+
+func (p *PodmanProvider) ContainerRestart(ctx context.Context, id string, timeout *int) error {
+	if p.useCLI {
+		args := []string{"restart"}
+		if timeout != nil {
+			args = append(args, fmt.Sprintf("--time=%d", *timeout))
+		}
+		args = append(args, id)
+		return exec.CommandContext(ctx, "podman", args...).Run()
+	}
+	return (&DockerProvider{cli: p.cli}).ContainerRestart(ctx, id, timeout)
+}
+
+// --- Streaming (delegate to Docker-compatible API, CLI mode returns ErrNotSupported) ---
+
+func (p *PodmanProvider) ContainerLogs(ctx context.Context, id string, opts LogsOptions) (io.ReadCloser, error) {
+	if p.useCLI {
+		return nil, ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).ContainerLogs(ctx, id, opts)
+}
+
+func (p *PodmanProvider) ContainerStatsStream(ctx context.Context, id string) (io.ReadCloser, error) {
+	if p.useCLI {
+		return nil, ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).ContainerStatsStream(ctx, id)
+}
+
+func (p *PodmanProvider) ExecInteractive(ctx context.Context, id string, cmd []string) (ExecSession, error) {
+	if p.useCLI {
+		return nil, ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).ExecInteractive(ctx, id, cmd)
+}
+
+func (p *PodmanProvider) ListContainerFiles(ctx context.Context, id string, path string) ([]FileEntry, error) {
+	if p.useCLI {
+		return nil, ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).ListContainerFiles(ctx, id, path)
+}
+
+func (p *PodmanProvider) DownloadContainerFile(ctx context.Context, id string, path string) (io.ReadCloser, error) {
+	if p.useCLI {
+		return nil, ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).DownloadContainerFile(ctx, id, path)
+}
+
+// --- Networks ---
+
+func (p *PodmanProvider) CreateNetwork(ctx context.Context, name string, driver string) (string, error) {
+	if p.useCLI {
+		out, err := exec.CommandContext(ctx, "podman", "network", "create", name).Output()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+	return (&DockerProvider{cli: p.cli}).CreateNetwork(ctx, name, driver)
+}
+
+func (p *PodmanProvider) DuplicateNetwork(ctx context.Context, srcID string) (string, error) {
+	if p.useCLI {
+		return "", ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).DuplicateNetwork(ctx, srcID)
+}
+
+// --- System ---
+
+func (p *PodmanProvider) SystemDiskUsage(ctx context.Context) (*DiskUsage, error) {
+	if p.useCLI {
+		return nil, ErrNotSupported
+	}
+	return (&DockerProvider{cli: p.cli}).SystemDiskUsage(ctx)
+}
+
+func (p *PodmanProvider) WatchEvents(ctx context.Context) (<-chan protocol.ContainerEvent, <-chan error) {
+	if p.useCLI {
+		ch := make(chan protocol.ContainerEvent)
+		errCh := make(chan error, 1)
+		errCh <- ErrNotSupported
+		close(ch)
+		close(errCh)
+		return ch, errCh
+	}
+	return (&DockerProvider{cli: p.cli}).WatchEvents(ctx)
 }
 
 // Client exposes the underlying Docker-compatible client for advanced operations.

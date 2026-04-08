@@ -62,6 +62,9 @@ type Config struct {
 	CollectMetrics    bool `json:"collect_metrics"`
 	CollectEvents     bool `json:"collect_events"`
 	
+	// containerd-specific
+	ContainerdNamespace string `json:"containerd_namespace"` // default "default"
+
 	// Networking
 	AdvertisedAddress string `json:"advertised_address"`
 }
@@ -82,9 +85,10 @@ func LoadConfig() (*Config, error) {
 		ScrapePort:        parseInt(getEnv("SCRAPE_PORT", "5073")),
 		PushEnabled:       parseBool(getEnv("PUSH_ENABLED", "true")),
 		PushBatchSize:     parseInt(getEnv("PUSH_BATCH_SIZE", "100")),
-		RuntimeType:       getEnv("RUNTIME_TYPE", "docker"),
-		RuntimeSocketPath: getEnv("RUNTIME_SOCKET_PATH", "unix:///var/run/docker.sock"),
-		RuntimeUseCLI:     parseBool(getEnv("RUNTIME_USE_CLI", "false")),
+		RuntimeType:        getEnv("RUNTIME_TYPE", "auto"),
+		RuntimeSocketPath:  getEnv("RUNTIME_SOCKET_PATH", ""),
+		RuntimeUseCLI:      parseBool(getEnv("RUNTIME_USE_CLI", "false")),
+		ContainerdNamespace: getEnv("CONTAINERD_NAMESPACE", "default"),
 		CollectContainers: parseBool(getEnv("COLLECT_CONTAINERS", "true")),
 		CollectImages:     parseBool(getEnv("COLLECT_IMAGES", "true")),
 		CollectNetworks:   parseBool(getEnv("COLLECT_NETWORKS", "true")),
@@ -92,6 +96,18 @@ func LoadConfig() (*Config, error) {
 		CollectMetrics:    parseBool(getEnv("COLLECT_METRICS", "true")),
 		CollectEvents:     parseBool(getEnv("COLLECT_EVENTS", "true")),
 		AdvertisedAddress: getEnv("ADVERTISED_ADDRESS", ""),
+	}
+
+	// Auto-detect runtime if set to "auto" or socket path is empty
+	if cfg.RuntimeType == "auto" || cfg.RuntimeSocketPath == "" {
+		detectedType, detectedSocket := detectRuntime()
+		if cfg.RuntimeType == "auto" {
+			cfg.RuntimeType = detectedType
+			log.Printf("Auto-detected container runtime: %s at %s", detectedType, detectedSocket)
+		}
+		if cfg.RuntimeSocketPath == "" {
+			cfg.RuntimeSocketPath = detectedSocket
+		}
 	}
 
 	// Auto-generate agent ID if not provided, persisting to disk for restart stability
@@ -110,6 +126,35 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// detectRuntime probes well-known socket paths to find an available container runtime.
+func detectRuntime() (runtimeType string, socketPath string) {
+	// 1. Docker socket
+	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+		return "docker", "unix:///var/run/docker.sock"
+	}
+
+	// 2. Podman socket (rootful)
+	if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
+		return "podman", "/run/podman/podman.sock"
+	}
+
+	// 3. Podman socket (rootless)
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		sock := xdg + "/podman/podman.sock"
+		if _, err := os.Stat(sock); err == nil {
+			return "podman", sock
+		}
+	}
+
+	// 4. containerd socket
+	if _, err := os.Stat("/run/containerd/containerd.sock"); err == nil {
+		return "containerd", "/run/containerd/containerd.sock"
+	}
+
+	// Fallback to Docker default
+	return "docker", "unix:///var/run/docker.sock"
 }
 
 // loadOrGenerateAgentID reads a persisted agent ID from disk, or generates a new one and saves it.

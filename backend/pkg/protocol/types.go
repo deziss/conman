@@ -16,7 +16,7 @@ type AgentReport struct {
 	Volumes    []Volume          `json:"volumes,omitempty"`
 }
 
-// HostInfo contains information about the Docker host
+// HostInfo contains information about the container runtime host
 type HostInfo struct {
 	Hostname       string `json:"hostname"`
 	OS             string `json:"os"`
@@ -24,8 +24,12 @@ type HostInfo struct {
 	KernelVersion  string `json:"kernel_version"`
 	CPUs           int    `json:"cpus"`
 	MemoryTotal    int64  `json:"memory_total"`
-	DockerVersion  string `json:"docker_version"`
-	DockerRootDir  string `json:"docker_root_dir"`
+	RuntimeType    string `json:"runtime_type"`              // "docker", "podman", "containerd"
+	RuntimeVersion string `json:"runtime_version"`           // Version of the container runtime
+	RuntimeRootDir string `json:"runtime_root_dir"`          // Root directory of the runtime
+	Namespace      string `json:"namespace,omitempty"`       // containerd namespace (empty for docker/podman)
+	DockerVersion  string `json:"docker_version,omitempty"`  // Deprecated: use RuntimeVersion
+	DockerRootDir  string `json:"docker_root_dir,omitempty"` // Deprecated: use RuntimeRootDir
 	StorageDriver  string `json:"storage_driver"`
 	ContainerCount int    `json:"container_count"`
 	ImageCount     int    `json:"image_count"`
@@ -177,13 +181,14 @@ type AgentHeartbeat struct {
 
 // AgentRegistration is sent when agent first connects to server
 type AgentRegistration struct {
-	AgentID   string    `json:"agent_id"`
-	AgentName string    `json:"agent_name"`
-	HostInfo  *HostInfo `json:"host_info"`
-	Version   string    `json:"version"`
-	Mode      string    `json:"mode"` // push, scrape, hybrid
-	ScrapeURL string    `json:"scrape_url,omitempty"` // URL for server to scrape (if scrape mode)
-	Timestamp time.Time `json:"timestamp"`
+	AgentID     string    `json:"agent_id"`
+	AgentName   string    `json:"agent_name"`
+	HostInfo    *HostInfo `json:"host_info"`
+	Version     string    `json:"version"`
+	Mode        string    `json:"mode"`                    // push, scrape, hybrid
+	RuntimeType string    `json:"runtime_type,omitempty"`  // "docker", "podman", "containerd"
+	ScrapeURL   string    `json:"scrape_url,omitempty"`    // URL for server to scrape (if scrape mode)
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // AgentRegistrationResponse is returned by server after registration
