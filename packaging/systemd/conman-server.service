@@ -1,0 +1,27 @@
+[Unit]
+Description=Conman Server - Container Management Platform
+Documentation=https://github.com/deziss/conman
+After=network-online.target docker.service containerd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=conman
+Group=conman
+EnvironmentFile=-/etc/conman/server.env
+ExecStart=/usr/bin/conman-server
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/conman /var/log/conman
+ProtectHome=true
+
+# Allow Docker socket access
+SupplementaryGroups=docker
+
+[Install]
+WantedBy=multi-user.target
