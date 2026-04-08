@@ -48,6 +48,7 @@ type AgentState struct {
 	Status        string                 `json:"status"`
 	Mode          string                 `json:"mode"`
 	ScrapeURL     string                         `json:"scrape_url,omitempty"`
+	RuntimeType   string                          `json:"runtime_type,omitempty"`
 	Tags          []string                       `json:"tags,omitempty"`
 	Containers    []protocol.Container           `json:"containers,omitempty"`
 	Metrics       map[string]protocol.ContainerMetrics `json:"metrics,omitempty"` // Added field
@@ -267,6 +268,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Status:        "healthy",
 		LastHeartbeat: time.Now(),
 		Mode:          reg.Mode,
+		RuntimeType:   reg.RuntimeType,
 		HostInfo:      hostInfoJSON,
 		ScrapeURL:     reg.ScrapeURL,
 		Approved:      true, // Auto-approve for now
@@ -293,6 +295,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		LastHeartbeat: time.Now(),
 		Status:        "healthy",
 		Mode:          reg.Mode,
+		RuntimeType:   reg.RuntimeType,
 		ScrapeURL:     reg.ScrapeURL,
 		Events:        make([]protocol.ContainerEvent, 0),
 	}
@@ -313,9 +316,10 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListAgents returns all registered agents. Supports ?tag= query param for filtering.
+// ListAgents returns all registered agents. Supports ?tag= and ?runtime= query params for filtering.
 func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	filterTag := r.URL.Query().Get("tag")
+	filterRuntime := r.URL.Query().Get("runtime")
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -327,6 +331,11 @@ func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 			agent.Status = "offline"
 		} else if time.Since(agent.LastHeartbeat) > time.Minute {
 			agent.Status = "degraded"
+		}
+
+		// Filter by runtime if specified
+		if filterRuntime != "" && agent.RuntimeType != filterRuntime {
+			continue
 		}
 
 		// Filter by tag if specified

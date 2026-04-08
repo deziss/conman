@@ -49,6 +49,7 @@ func New(cfg *Config) (*Agent, error) {
 		Type:       runtime.RuntimeType(cfg.RuntimeType),
 		SocketPath: cfg.RuntimeSocketPath,
 		UseCLI:     cfg.RuntimeUseCLI,
+		Namespace:  cfg.ContainerdNamespace,
 	}
 
 	runtimeProvider, err := runtime.NewRuntime(runtimeCfg)

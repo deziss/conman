@@ -30,11 +30,14 @@ interface Host {
     host_info?: {
         hostname?: string;
         os?: string;
+        runtime_type?: string;
+        runtime_version?: string;
         docker_version?: string;
         kernel_version?: string;
         cpus?: number;
         memory_total?: number;
     };
+    runtime_type?: string;
     status: string;
     last_heartbeat?: string;
     last_report?: string;
@@ -178,6 +181,15 @@ export const Hosts = () => {
                                             )}
                                             {host.status}
                                         </span>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                                            (host.runtime_type || host.host_info?.runtime_type || 'docker') === 'containerd'
+                                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                                : (host.runtime_type || host.host_info?.runtime_type || 'docker') === 'podman'
+                                                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                                                    : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                                        }`}>
+                                            {host.runtime_type || host.host_info?.runtime_type || 'docker'}
+                                        </span>
                                     </div>
 
                                     {/* Stats Summary */}
@@ -227,8 +239,8 @@ export const Hosts = () => {
                                                 <p className="text-slate-300">{host.host_info?.os || 'Unknown'}</p>
                                             </div>
                                             <div>
-                                                <p className="text-slate-500">Docker Version</p>
-                                                <p className="text-slate-300">{host.host_info?.docker_version || 'Unknown'}</p>
+                                                <p className="text-slate-500">Runtime</p>
+                                                <p className="text-slate-300">{host.host_info?.runtime_version || host.host_info?.docker_version || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Kernel</p>

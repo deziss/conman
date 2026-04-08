@@ -101,6 +101,7 @@ type Agent struct {
 	Approved      bool   // For potential approval workflow
 	HostInfo      []byte // JSON encoded host info
 	ScrapeURL     string
+	RuntimeType   string // "docker", "podman", "containerd"
 	Tags          []byte // JSON array of string tags for fleet filtering (e.g. ["prod","us-east"])
 }
 

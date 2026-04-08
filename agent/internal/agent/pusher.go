@@ -164,12 +164,13 @@ func (a *Agent) registerWithServer(ctx context.Context) error {
 	a.mu.RUnlock()
 
 	registration := protocol.AgentRegistration{
-		AgentID:   a.cfg.AgentID,
-		AgentName: a.cfg.AgentName,
-		HostInfo:  hostInfo,
-		Version:   "1.0.0",
-		Mode:      string(a.cfg.Mode),
-		Timestamp: time.Now(),
+		AgentID:     a.cfg.AgentID,
+		AgentName:   a.cfg.AgentName,
+		HostInfo:    hostInfo,
+		Version:     "1.0.0",
+		Mode:        string(a.cfg.Mode),
+		RuntimeType: a.cfg.RuntimeType,
+		Timestamp:   time.Now(),
 	}
 
 	if a.cfg.ScrapeEnabled {
