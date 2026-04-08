@@ -1,16 +1,18 @@
 package api
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
-	"os"
+	"strconv"
 	"sync"
 	"time"
 
+	"conman-backend/internal/alerts"
+	"conman-backend/internal/metrics"
 	"conman-backend/internal/models"
+	"conman-backend/internal/observability"
 	"conman-backend/pkg/protocol"
 
 	"github.com/go-chi/chi/v5"
@@ -20,10 +22,19 @@ import (
 
 // AgentHandler handles agent-related API endpoints
 
+// persistJob represents an async DB write operation queued by report ingestion.
+type persistJob struct {
+	agentID string
+	state   *AgentState                // snapshot to persist (nil = heartbeat-only)
+	metrics []protocol.ContainerMetrics // metrics to write (nil = skip)
+}
+
 type AgentHandler struct {
-	mu     sync.RWMutex
-	agents map[string]*AgentState
-	DB     *gorm.DB
+	mu           sync.RWMutex
+	agents       map[string]*AgentState
+	DB           *gorm.DB
+	MetricsStore *metrics.MetricsStore
+	writeQueue   chan persistJob
 }
 
 // AgentState holds the current state of a registered agent
@@ -37,6 +48,7 @@ type AgentState struct {
 	Status        string                 `json:"status"`
 	Mode          string                 `json:"mode"`
 	ScrapeURL     string                         `json:"scrape_url,omitempty"`
+	Tags          []string                       `json:"tags,omitempty"`
 	Containers    []protocol.Container           `json:"containers,omitempty"`
 	Metrics       map[string]protocol.ContainerMetrics `json:"metrics,omitempty"` // Added field
 	Images        []protocol.Image               `json:"images,omitempty"`
@@ -45,14 +57,45 @@ type AgentState struct {
 	Events        []protocol.ContainerEvent      `json:"events,omitempty"`
 }
 
-// NewAgentHandler creates a new agent handler
-func NewAgentHandler(db *gorm.DB) *AgentHandler {
+const writeQueueSize = 256
+const writeWorkers = 4
+
+// NewAgentHandler creates a new agent handler with a background write queue.
+func NewAgentHandler(db *gorm.DB, metricsStore *metrics.MetricsStore) *AgentHandler {
 	h := &AgentHandler{
-		agents: make(map[string]*AgentState),
-		DB:     db,
+		agents:       make(map[string]*AgentState),
+		DB:           db,
+		MetricsStore: metricsStore,
+		writeQueue:   make(chan persistJob, writeQueueSize),
 	}
 	h.loadAgents()
+
+	// Start write workers
+	for i := 0; i < writeWorkers; i++ {
+		go h.writeWorker()
+	}
+
 	return h
+}
+
+// writeWorker processes persist jobs from the write queue.
+func (h *AgentHandler) writeWorker() {
+	for job := range h.writeQueue {
+		// Persist agent timestamp
+		h.DB.Model(&models.Agent{}).Where("agent_id = ?", job.agentID).Update("last_report", time.Now())
+
+		// Persist snapshot
+		if job.state != nil {
+			h.persistSnapshot(job.agentID, job.state)
+		}
+
+		// Write metrics
+		if h.MetricsStore != nil && len(job.metrics) > 0 {
+			if err := h.MetricsStore.WriteMetrics(job.agentID, job.metrics); err != nil {
+				log.Printf("Write worker: failed to write metrics for agent %s: %v", job.agentID, err)
+			}
+		}
+	}
 }
 
 func (h *AgentHandler) loadAgents() {
@@ -62,13 +105,37 @@ func (h *AgentHandler) loadAgents() {
 		return
 	}
 
+	// Load snapshots indexed by agent ID for fast lookup
+	var snapshots []models.AgentSnapshot
+	h.DB.Find(&snapshots)
+	snapshotMap := make(map[string]*models.AgentSnapshot, len(snapshots))
+	for i := range snapshots {
+		snapshotMap[snapshots[i].AgentID] = &snapshots[i]
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	for _, a := range dbAgents {
+		// Try to restore full state from snapshot first
+		if snap, ok := snapshotMap[a.AgentID]; ok && len(snap.ReportJSON) > 0 {
+			var state AgentState
+			if err := json.Unmarshal(snap.ReportJSON, &state); err == nil {
+				state.Status = "offline" // Assume offline until heartbeat arrives
+				h.agents[a.AgentID] = &state
+				log.Printf("Restored agent from snapshot: %s (%s)", state.Name, a.AgentID)
+				continue
+			}
+		}
+
+		// Fallback: minimal state from Agent table
 		var hostInfo *protocol.HostInfo
 		if len(a.HostInfo) > 0 {
 			json.Unmarshal(a.HostInfo, &hostInfo)
+		}
+		var tags []string
+		if len(a.Tags) > 0 {
+			json.Unmarshal(a.Tags, &tags)
 		}
 
 		h.agents[a.AgentID] = &AgentState{
@@ -77,12 +144,38 @@ func (h *AgentHandler) loadAgents() {
 			HostInfo:      hostInfo,
 			LastHeartbeat: a.LastHeartbeat,
 			LastReport:    a.LastReport,
-			Status:        "offline", // Assume offline on startup until heartbeat
+			Status:        "offline",
 			Mode:          a.Mode,
 			ScrapeURL:     a.ScrapeURL,
+			Tags:          tags,
 			Events:        make([]protocol.ContainerEvent, 0),
 		}
-		log.Printf("Loaded agent from DB: %s (%s)", a.Name, a.AgentID)
+		log.Printf("Loaded agent from DB (no snapshot): %s (%s)", a.Name, a.AgentID)
+	}
+}
+
+// persistSnapshot saves the current AgentState to the database as a JSON snapshot.
+func (h *AgentHandler) persistSnapshot(agentID string, state *AgentState) {
+	data, err := json.Marshal(state)
+	if err != nil {
+		log.Printf("Failed to marshal agent snapshot for %s: %v", agentID, err)
+		return
+	}
+
+	snapshot := models.AgentSnapshot{
+		AgentID:    agentID,
+		ReportJSON: data,
+		Timestamp:  time.Now(),
+	}
+
+	// Upsert: update if exists, create if not
+	var existing models.AgentSnapshot
+	if err := h.DB.Where("agent_id = ?", agentID).First(&existing).Error; err == nil {
+		existing.ReportJSON = data
+		existing.Timestamp = time.Now()
+		h.DB.Save(&existing)
+	} else {
+		h.DB.Create(&snapshot)
 	}
 }
 
@@ -91,6 +184,7 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
 	// Agent endpoints (protected)
 	r.Get("/agents", h.ListAgents)
 	r.Get("/agents/{id}", h.GetAgent)
+	r.Put("/agents/{id}/tags", h.UpdateAgentTags)
 	r.Delete("/agents/{id}", h.DeleteAgent)
 	r.Get("/agents/{id}/containers", h.GetAgentContainers)
 	r.Get("/agents/{id}/containers", h.GetAgentContainers)
@@ -143,6 +237,10 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
     r.Get("/agents/{id}/stacks", h.ProxyListStacks)
     r.Post("/agents/{id}/stacks", h.ProxyCreateStack)
     r.Delete("/agents/{id}/stacks/{stackName}", h.ProxyRemoveStack)
+
+	// Historical Metrics
+	r.Get("/metrics/containers/{containerId}", h.QueryContainerMetrics)
+	r.Get("/agents/{id}/metrics", h.QueryAgentMetrics)
 }
 
 // RegisterPublicRoutes registers agent API routes that don't require auth (for agent self-registration)
@@ -188,8 +286,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		h.DB.Create(&dbAgent)
 	}
 
-	h.mu.Lock()
-	h.agents[reg.AgentID] = &AgentState{
+	state := &AgentState{
 		ID:            reg.AgentID,
 		Name:          reg.AgentName,
 		HostInfo:      reg.HostInfo,
@@ -199,7 +296,13 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		ScrapeURL:     reg.ScrapeURL,
 		Events:        make([]protocol.ContainerEvent, 0),
 	}
+
+	h.mu.Lock()
+	h.agents[reg.AgentID] = state
 	h.mu.Unlock()
+
+	// Persist snapshot to DB (async)
+	go h.persistSnapshot(reg.AgentID, state)
 
 	log.Printf("Agent registered and persisted: %s (%s)", reg.AgentName, reg.AgentID)
 
@@ -210,8 +313,10 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ListAgents returns all registered agents
+// ListAgents returns all registered agents. Supports ?tag= query param for filtering.
 func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
+	filterTag := r.URL.Query().Get("tag")
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -223,6 +328,21 @@ func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		} else if time.Since(agent.LastHeartbeat) > time.Minute {
 			agent.Status = "degraded"
 		}
+
+		// Filter by tag if specified
+		if filterTag != "" {
+			found := false
+			for _, t := range agent.Tags {
+				if t == filterTag {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
 		agents = append(agents, agent)
 	}
 
@@ -256,6 +376,39 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	h.DB.Where("agent_id = ?", id).Delete(&models.Agent{})
 
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "Agent removed"})
+}
+
+// UpdateAgentTags updates the tags for an agent.
+// PUT /api/v1/agents/{id}/tags with body {"tags": ["prod", "us-east"]}
+func (h *AgentHandler) UpdateAgentTags(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var body struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Update in-memory state
+	h.mu.Lock()
+	agent, exists := h.agents[id]
+	if exists {
+		agent.Tags = body.Tags
+	}
+	h.mu.Unlock()
+
+	if !exists {
+		ErrorJSON(w, http.StatusNotFound, "Agent not found")
+		return
+	}
+
+	// Persist to DB
+	tagsJSON, _ := json.Marshal(body.Tags)
+	h.DB.Model(&models.Agent{}).Where("agent_id = ?", id).Update("tags", tagsJSON)
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{"message": "Tags updated", "tags": body.Tags})
 }
 
 // Heartbeat handles agent heartbeat
@@ -320,20 +473,11 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	var bodyBytes []byte
-	if r.Body != nil {
-		bodyBytes, _ = io.ReadAll(r.Body)
-	}
-	// Restore the io.ReadCloser to its original state
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	// Write to file for debug
-	if err := os.WriteFile("agent_report_dump.json", bodyBytes, 0644); err != nil {
-		log.Printf("Failed to write report dump: %v", err)
-	}
+	observability.ReportIngestTotal.Inc()
 
 	var report protocol.AgentReport
-	if err := json.NewDecoder(bytes.NewBuffer(bodyBytes)).Decode(&report); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+		observability.ReportIngestErrors.Inc()
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -394,10 +538,20 @@ func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Persist LastReport timestamp
-	go func() {
-		h.DB.Model(&models.Agent{}).Where("agent_id = ?", id).Update("last_report", time.Now())
-	}()
+	// Enqueue DB writes via worker pool (non-blocking)
+	h.mu.RLock()
+	snapshotAgent := h.agents[id]
+	h.mu.RUnlock()
+
+	select {
+	case h.writeQueue <- persistJob{
+		agentID: id,
+		state:   snapshotAgent,
+		metrics: report.Metrics,
+	}:
+	default:
+		log.Printf("Write queue full, dropping persist job for agent %s", id)
+	}
 
 	WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
@@ -492,6 +646,24 @@ func (h *AgentHandler) GetAgentVolumes(w http.ResponseWriter, r *http.Request) {
 }
 
 
+// GetAgentStates implements alerts.AgentStateProvider for the alert evaluator.
+func (h *AgentHandler) GetAgentStates() map[string]alerts.AgentInfo {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	result := make(map[string]alerts.AgentInfo, len(h.agents))
+	for id, agent := range h.agents {
+		result[id] = alerts.AgentInfo{
+			ID:            agent.ID,
+			Name:          agent.Name,
+			Status:        agent.Status,
+			LastHeartbeat: agent.LastHeartbeat,
+			Containers:    len(agent.Containers),
+		}
+	}
+	return result
+}
+
 // ListHosts returns all hosts (same as agents for now)
 func (h *AgentHandler) ListHosts(w http.ResponseWriter, r *http.Request) {
 	h.ListAgents(w, r)
@@ -505,6 +677,79 @@ func (h *AgentHandler) GetHostContainers(w http.ResponseWriter, r *http.Request)
 // GetHostImages returns images from a specific host
 func (h *AgentHandler) GetHostImages(w http.ResponseWriter, r *http.Request) {
 	h.GetAgentImages(w, r)
+}
+
+// QueryContainerMetrics returns historical metrics for a specific container.
+// GET /api/v1/metrics/containers/{containerId}?from=&to=&limit=&agent_id=
+func (h *AgentHandler) QueryContainerMetrics(w http.ResponseWriter, r *http.Request) {
+	containerID := chi.URLParam(r, "containerId")
+
+	if h.MetricsStore == nil {
+		ErrorJSON(w, http.StatusServiceUnavailable, "Metrics store not available")
+		return
+	}
+
+	params := h.parseMetricsQuery(r)
+	params.ContainerID = containerID
+
+	results, err := h.MetricsStore.QueryMetrics(params)
+	if err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Failed to query metrics: "+err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, results)
+}
+
+// QueryAgentMetrics returns historical metrics for all containers on an agent.
+// GET /api/v1/agents/{id}/metrics?from=&to=&limit=&container_id=
+func (h *AgentHandler) QueryAgentMetrics(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "id")
+
+	if h.MetricsStore == nil {
+		ErrorJSON(w, http.StatusServiceUnavailable, "Metrics store not available")
+		return
+	}
+
+	params := h.parseMetricsQuery(r)
+	params.AgentID = agentID
+
+	results, err := h.MetricsStore.QueryMetrics(params)
+	if err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Failed to query metrics: "+err.Error())
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, results)
+}
+
+// parseMetricsQuery extracts common query parameters for metrics endpoints.
+func (h *AgentHandler) parseMetricsQuery(r *http.Request) metrics.QueryParams {
+	params := metrics.QueryParams{}
+
+	if v := r.URL.Query().Get("agent_id"); v != "" {
+		params.AgentID = v
+	}
+	if v := r.URL.Query().Get("container_id"); v != "" {
+		params.ContainerID = v
+	}
+	if v := r.URL.Query().Get("from"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			params.From = t
+		}
+	}
+	if v := r.URL.Query().Get("to"); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			params.To = t
+		}
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			params.Limit = n
+		}
+	}
+
+	return params
 }
 
 // ProxyStreamExec proxies usage of the exec-stream to an agent

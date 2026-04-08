@@ -73,7 +73,7 @@ func (a *Agent) handleStreamExec(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	if _, err := a.docker.ContainerInspect(context.Background(), id); err != nil {
+	if _, err := a.dockerClient().ContainerInspect(context.Background(), id); err != nil {
 		ws.WriteJSON(map[string]string{"error": "Container not found"})
 		return
 	}
@@ -86,7 +86,7 @@ func (a *Agent) handleStreamExec(w http.ResponseWriter, r *http.Request) {
 		Cmd:          []string{"/bin/sh"},
 	}
 
-	execIDResp, err := a.docker.ContainerExecCreate(context.Background(), id, execConfig)
+	execIDResp, err := a.dockerClient().ContainerExecCreate(context.Background(), id, execConfig)
 	if err != nil {
 		ws.WriteJSON(map[string]string{"error": err.Error()})
 		return
@@ -95,7 +95,7 @@ func (a *Agent) handleStreamExec(w http.ResponseWriter, r *http.Request) {
 	attachConfig := types.ExecStartCheck{
 		Tty: true,
 	}
-	resp, err := a.docker.ContainerExecAttach(context.Background(), execIDResp.ID, attachConfig)
+	resp, err := a.dockerClient().ContainerExecAttach(context.Background(), execIDResp.ID, attachConfig)
 	if err != nil {
 		ws.WriteJSON(map[string]string{"error": err.Error()})
 		return
@@ -119,7 +119,7 @@ func (a *Agent) handleStreamExec(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if execMsg.Type == "resize" {
-			_ = a.docker.ContainerExecResize(context.Background(), execIDResp.ID, container.ResizeOptions{
+			_ = a.dockerClient().ContainerExecResize(context.Background(), execIDResp.ID, container.ResizeOptions{
 				Height: uint(execMsg.Rows),
 				Width:  uint(execMsg.Cols),
 			})
@@ -157,13 +157,13 @@ func (a *Agent) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		Cmd:          []string{"ls", "-lan", path},
 	}
 
-	execIDResp, err := a.docker.ContainerExecCreate(context.Background(), id, execConfig)
+	execIDResp, err := a.dockerClient().ContainerExecCreate(context.Background(), id, execConfig)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp, err := a.docker.ContainerExecAttach(context.Background(), execIDResp.ID, types.ExecStartCheck{})
+	resp, err := a.dockerClient().ContainerExecAttach(context.Background(), execIDResp.ID, types.ExecStartCheck{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -254,7 +254,7 @@ func (a *Agent) handleStreamLogs(w http.ResponseWriter, r *http.Request) {
     }
 
     // Connect to Docker logs
-    reader, err := a.docker.ContainerLogs(context.Background(), id, opts)
+    reader, err := a.dockerClient().ContainerLogs(context.Background(), id, opts)
     if err != nil {
         ws.WriteMessage(websocket.TextMessage, []byte("Error getting logs: "+err.Error()))
         return
@@ -292,7 +292,7 @@ func (a *Agent) handleStreamStats(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	stats, err := a.docker.ContainerStats(context.Background(), id, true)
+	stats, err := a.dockerClient().ContainerStats(context.Background(), id, true)
 	if err != nil {
 		ws.WriteMessage(websocket.TextMessage, []byte("Error getting stats: "+err.Error()))
 		return
@@ -315,7 +315,7 @@ func (a *Agent) handleInspectContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := a.docker.ContainerInspect(context.Background(), id)
+	info, err := a.dockerClient().ContainerInspect(context.Background(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -333,7 +333,7 @@ func (a *Agent) handleInspectImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, _, err := a.docker.ImageInspectWithRaw(context.Background(), id)
+	info, _, err := a.dockerClient().ImageInspectWithRaw(context.Background(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -351,7 +351,7 @@ func (a *Agent) handleInspectNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := a.docker.NetworkInspect(context.Background(), id, types.NetworkInspectOptions{})
+	info, err := a.dockerClient().NetworkInspect(context.Background(), id, types.NetworkInspectOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -369,7 +369,7 @@ func (a *Agent) handleInspectVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := a.docker.VolumeInspect(context.Background(), name)
+	info, err := a.dockerClient().VolumeInspect(context.Background(), name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -381,7 +381,7 @@ func (a *Agent) handleInspectVolume(w http.ResponseWriter, r *http.Request) {
 
 // handleSystemDF returns system disk usage
 func (a *Agent) handleSystemDF(w http.ResponseWriter, r *http.Request) {
-	usage, err := a.docker.DiskUsage(context.Background(), types.DiskUsageOptions{})
+	usage, err := a.dockerClient().DiskUsage(context.Background(), types.DiskUsageOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -398,7 +398,7 @@ func (a *Agent) handleDuplicateNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.Background()
-	source, err := a.docker.NetworkInspect(ctx, id, types.NetworkInspectOptions{})
+	source, err := a.dockerClient().NetworkInspect(ctx, id, types.NetworkInspectOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -431,7 +431,7 @@ func (a *Agent) handleDuplicateNetwork(w http.ResponseWriter, r *http.Request) {
 	
 	newName := source.Name + "-copy"
 	
-	resp, err := a.docker.NetworkCreate(ctx, newName, createOpts)
+	resp, err := a.dockerClient().NetworkCreate(ctx, newName, createOpts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -458,7 +458,7 @@ func (a *Agent) handleConnectNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("ConnectNetwork: connecting container %s to network %s", req.ContainerID, id)
 
-	err := a.docker.NetworkConnect(context.Background(), id, req.ContainerID, nil)
+	err := a.dockerClient().NetworkConnect(context.Background(), id, req.ContainerID, nil)
 	if err != nil {
 		log.Printf("ConnectNetwork: failed: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -478,7 +478,7 @@ func (a *Agent) handleRemoveContainer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Force remove? Usually good for UI.
-	err := a.docker.ContainerRemove(context.Background(), id, container.RemoveOptions{Force: true})
+	err := a.dockerClient().ContainerRemove(context.Background(), id, container.RemoveOptions{Force: true})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -495,7 +495,7 @@ func (a *Agent) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := a.docker.ImageRemove(context.Background(), id, image.RemoveOptions{Force: true})
+	_, err := a.dockerClient().ImageRemove(context.Background(), id, image.RemoveOptions{Force: true})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -512,7 +512,7 @@ func (a *Agent) handleRemoveNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.docker.NetworkRemove(context.Background(), id)
+	err := a.dockerClient().NetworkRemove(context.Background(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -529,7 +529,7 @@ func (a *Agent) handleRemoveVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.docker.VolumeRemove(context.Background(), name, true)
+	err := a.dockerClient().VolumeRemove(context.Background(), name, true)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -547,7 +547,7 @@ func (a *Agent) handleCheckImageUpdate(w http.ResponseWriter, r *http.Request) {
     }
 
     // Inspect local image to get repo tag
-    info, _, err := a.docker.ImageInspectWithRaw(context.Background(), id)
+    info, _, err := a.dockerClient().ImageInspectWithRaw(context.Background(), id)
     if err != nil {
         http.Error(w, fmt.Sprintf("Failed to inspect image: %v", err), http.StatusNotFound)
         return
@@ -579,7 +579,7 @@ func (a *Agent) handleCheckImageUpdate(w http.ResponseWriter, r *http.Request) {
     // It compares the image on the registry with the local one? 
     // No, it gets metadata from registry.
     
-    dist, err := a.docker.DistributionInspect(context.Background(), tag, "")
+    dist, err := a.dockerClient().DistributionInspect(context.Background(), tag, "")
     if err != nil {
         // This often fails for private repos without auth or rate limits
         w.Header().Set("Content-Type", "application/json")
@@ -636,7 +636,7 @@ func (a *Agent) handlePullImage(w http.ResponseWriter, r *http.Request) {
 
     // Pull the image
     // Note: ImagePull usually streams output.
-    out, err := a.docker.ImagePull(context.Background(), req.Image, image.PullOptions{})
+    out, err := a.dockerClient().ImagePull(context.Background(), req.Image, image.PullOptions{})
     if err != nil {
         http.Error(w, fmt.Sprintf("Failed to pull image: %v", err), http.StatusInternalServerError)
         return
@@ -656,7 +656,7 @@ func (a *Agent) handlePullImage(w http.ResponseWriter, r *http.Request) {
 // we will instead list containers and group them by "com.docker.compose.project" label.
 // This is more robust for "discovery" of existing stacks.
 func (a *Agent) handleListStacks(w http.ResponseWriter, r *http.Request) {
-    containers, err := a.docker.ContainerList(context.Background(), container.ListOptions{All: true})
+    containers, err := a.dockerClient().ContainerList(context.Background(), container.ListOptions{All: true})
     if err != nil {
         http.Error(w, fmt.Sprintf("Failed to list containers: %v", err), http.StatusInternalServerError)
         return

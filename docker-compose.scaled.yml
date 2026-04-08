@@ -1,0 +1,107 @@
+# =============================================================================
+# CONMAN - Horizontally Scaled Deployment
+# PostgreSQL + multiple backend instances behind Kong API Gateway
+#
+# Usage:
+#   docker compose -f docker-compose.scaled.yml up -d
+#   # Scale backend instances:
+#   docker compose -f docker-compose.scaled.yml up -d --scale conman-backend=3
+# =============================================================================
+
+services:
+  # PostgreSQL (required for multi-instance backend)
+  conman-db:
+    image: postgres:16-alpine
+    container_name: conman-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: conman
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-conman}
+      POSTGRES_DB: conman
+    volumes:
+      - conman_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conman"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - conman-net
+
+  # Backend (stateless, horizontally scalable)
+  conman-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.unified
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PORT: "5173"
+      DATABASE_DRIVER: postgres
+      DATABASE_DSN: host=conman-db port=5432 user=conman password=${POSTGRES_PASSWORD:-conman} dbname=conman sslmode=disable
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      AGENT_TOKEN: ${AGENT_TOKEN:-conman-agent-psk}
+      STATIC_DIR: /app/static
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+    depends_on:
+      conman-db:
+        condition: service_healthy
+    networks:
+      - conman-net
+    # No ports exposed — Kong handles external traffic
+
+  # Kong API Gateway (load balancer + rate limiting)
+  kong:
+    image: kong:3.9-alpine
+    container_name: conman-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8080"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_LOG_LEVEL: info
+    volumes:
+      - ./kong-scaled.yml:/etc/kong/kong.yml:ro
+    ports:
+      - "8080:8080"   # Proxy (frontend + API)
+      - "8001:8001"   # Admin API
+    depends_on:
+      - conman-backend
+    networks:
+      - conman-net
+
+  # Agent (connects to Kong, which routes to backend instances)
+  conman-agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /tmp/conman-stacks:/tmp/conman-stacks
+      - conman_agent_data:/var/lib/conman-agent
+    environment:
+      AGENT_NAME: "local-agent"
+      CONMAN_SERVER_URL: http://kong:8080
+      CONMAN_SERVER_TOKEN: ${AGENT_TOKEN:-conman-agent-psk}
+      AGENT_MODE: hybrid
+      COLLECT_INTERVAL: 10s
+      SCRAPE_PORT: 5073
+      SCRAPE_ENABLED: "true"
+      ADVERTISED_ADDRESS: conman-agent
+    depends_on:
+      - kong
+    networks:
+      - conman-net
+
+volumes:
+  conman_pgdata:
+  conman_agent_data:
+
+networks:
+  conman-net:
+    driver: bridge

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"math/rand/v2"
 	"net/http"
 	"time"
 
@@ -14,16 +16,53 @@ import (
 	"github.com/docker/docker/api/types"
 )
 
-// runPushClient runs the push client that sends data to the central server
+const (
+	backoffBase    = 5 * time.Second
+	backoffMax     = 60 * time.Second
+	registerMaxWait = 5 * time.Minute
+)
+
+// backoffDuration returns exponential backoff with jitter for the given attempt number.
+func backoffDuration(attempt int) time.Duration {
+	d := time.Duration(float64(backoffBase) * math.Pow(2, float64(attempt)))
+	if d > backoffMax {
+		d = backoffMax
+	}
+	// Add jitter: 0.5x to 1.5x
+	jitter := 0.5 + rand.Float64()
+	return time.Duration(float64(d) * jitter)
+}
+
+// runPushClient runs the push client that sends data to the central server.
+// Blocks on registration with exponential backoff before starting the push loop.
 func (a *Agent) runPushClient(ctx context.Context) {
-	// First, register with the server
-	if err := a.registerWithServer(ctx); err != nil {
-		log.Printf("Warning: Failed to register with server: %v", err)
+	// Block until registered with exponential backoff
+	deadline := time.Now().Add(registerMaxWait)
+	for attempt := 0; ; attempt++ {
+		if err := a.registerWithServer(ctx); err != nil {
+			if time.Now().After(deadline) {
+				log.Printf("Failed to register after %v, continuing without registration: %v", registerMaxWait, err)
+				break
+			}
+			wait := backoffDuration(attempt)
+			log.Printf("Registration attempt %d failed: %v (retrying in %v)", attempt+1, err, wait)
+			select {
+			case <-ctx.Done():
+				return
+			case <-a.stopCh:
+				return
+			case <-time.After(wait):
+				continue
+			}
+		} else {
+			break
+		}
 	}
 
 	ticker := time.NewTicker(a.cfg.CollectInterval)
 	defer ticker.Stop()
 
+	consecutiveFailures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -32,17 +71,29 @@ func (a *Agent) runPushClient(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := a.pushReport(ctx); err != nil {
-				log.Printf("Failed to push report: %v", err)
+				consecutiveFailures++
+				wait := backoffDuration(consecutiveFailures)
+				log.Printf("Failed to push report (attempt %d): %v (next retry backoff: %v)", consecutiveFailures, err, wait)
+				// Buffer the failed report for later retry
+				a.mu.RLock()
+				report := a.buildReport()
+				a.mu.RUnlock()
+				a.buffer.Enqueue(*report)
+			} else {
+				consecutiveFailures = 0
+				// Drain any buffered reports on success
+				a.drainBuffer(ctx)
 			}
 		}
 	}
 }
 
-// runHeartbeat sends periodic heartbeats to the server
+// runHeartbeat sends periodic heartbeats to the server with backoff on failure.
 func (a *Agent) runHeartbeat(ctx context.Context) {
 	ticker := time.NewTicker(a.cfg.HeartbeatInterval)
 	defer ticker.Stop()
 
+	consecutiveFailures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -51,7 +102,11 @@ func (a *Agent) runHeartbeat(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := a.sendHeartbeat(ctx); err != nil {
-				log.Printf("Failed to send heartbeat: %v", err)
+				consecutiveFailures++
+				wait := backoffDuration(consecutiveFailures)
+				log.Printf("Failed to send heartbeat (attempt %d): %v (next retry backoff: %v)", consecutiveFailures, err, wait)
+			} else {
+				consecutiveFailures = 0
 			}
 		}
 	}
@@ -59,7 +114,7 @@ func (a *Agent) runHeartbeat(ctx context.Context) {
 
 // runEventWatcher watches for Docker events and pushes them to server
 func (a *Agent) runEventWatcher(ctx context.Context) {
-	eventsCh, errsCh := a.docker.Events(ctx, types.EventsOptions{})
+	eventsCh, errsCh := a.dockerClient().Events(ctx, types.EventsOptions{})
 
 	for {
 		select {
@@ -72,7 +127,7 @@ func (a *Agent) runEventWatcher(ctx context.Context) {
 				log.Printf("Docker events error: %v", err)
 				// Retry after delay
 				time.Sleep(5 * time.Second)
-				eventsCh, errsCh = a.docker.Events(ctx, types.EventsOptions{})
+				eventsCh, errsCh = a.dockerClient().Events(ctx, types.EventsOptions{})
 			}
 		case event := <-eventsCh:
 			// Only handle container events
@@ -139,6 +194,7 @@ func (a *Agent) registerWithServer(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	if a.cfg.ServerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.cfg.ServerToken)
+		req.Header.Set("X-Agent-Token", a.cfg.ServerToken)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -180,6 +236,7 @@ func (a *Agent) pushReport(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	if a.cfg.ServerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.cfg.ServerToken)
+		req.Header.Set("X-Agent-Token", a.cfg.ServerToken)
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
@@ -242,6 +299,7 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	if a.cfg.ServerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.cfg.ServerToken)
+		req.Header.Set("X-Agent-Token", a.cfg.ServerToken)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -286,6 +344,7 @@ func (a *Agent) pushEvent(ctx context.Context, event protocol.ContainerEvent) er
 	req.Header.Set("Content-Type", "application/json")
 	if a.cfg.ServerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+a.cfg.ServerToken)
+		req.Header.Set("X-Agent-Token", a.cfg.ServerToken)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -300,4 +359,41 @@ func (a *Agent) pushEvent(ctx context.Context, event protocol.ContainerEvent) er
 	}
 
 	return nil
+}
+
+// drainBuffer sends any buffered reports that failed to push earlier.
+func (a *Agent) drainBuffer(ctx context.Context) {
+	reports := a.buffer.Drain()
+	for _, report := range reports {
+		data, err := json.Marshal(report)
+		if err != nil {
+			continue
+		}
+
+		url := fmt.Sprintf("%s/api/v1/agents/%s/report", a.cfg.ServerURL, a.cfg.AgentID)
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(data))
+		if err != nil {
+			continue
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		if a.cfg.ServerToken != "" {
+			req.Header.Set("Authorization", "Bearer "+a.cfg.ServerToken)
+			req.Header.Set("X-Agent-Token", a.cfg.ServerToken)
+		}
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Failed to send buffered report: %v", err)
+			// Re-buffer the remaining reports and stop
+			a.buffer.Enqueue(report)
+			return
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+			log.Printf("Buffered report rejected with status %d, discarding", resp.StatusCode)
+		}
+	}
 }
