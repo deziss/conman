@@ -1,0 +1,48 @@
+name: conman-agent
+arch: amd64
+platform: linux
+version: "1.0.0"
+version_schema: semver
+maintainer: "Conman Team"
+description: "Conman Agent - Lightweight container monitoring agent (Docker, Podman, containerd)"
+homepage: "https://github.com/deziss/conman"
+license: "MIT"
+
+depends:
+  - ca-certificates
+
+contents:
+  # Binary
+  - src: ./dist/conman-agent
+    dst: /usr/bin/conman-agent
+    file_info:
+      mode: 0755
+
+  # Environment config
+  - src: ./packaging/agent.env
+    dst: /etc/conman-agent/agent.env
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+  # Systemd service
+  - src: ./packaging/systemd/conman-agent.service
+    dst: /usr/lib/systemd/system/conman-agent.service
+
+  # Agent data directory (persistent agent ID, report buffer)
+  - dst: /var/lib/conman-agent
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: ./packaging/scripts/agent-postinstall.sh
+  preremove: ./packaging/scripts/agent-preremove.sh
+
+overrides:
+  rpm:
+    depends:
+      - ca-certificates
+  deb:
+    depends:
+      - ca-certificates

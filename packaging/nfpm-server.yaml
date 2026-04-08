@@ -1,0 +1,71 @@
+name: conman-server
+arch: amd64
+platform: linux
+version: "1.0.0"
+version_schema: semver
+maintainer: "Conman Team"
+description: "Conman Server - Multi-host container management platform with web dashboard"
+homepage: "https://github.com/deziss/conman"
+license: "MIT"
+
+depends:
+  - ca-certificates
+
+recommends:
+  - docker-ce-cli
+  - postgresql
+
+contents:
+  # Binary
+  - src: ./dist/conman-server
+    dst: /usr/bin/conman-server
+    file_info:
+      mode: 0755
+
+  # Frontend static files
+  - src: ./frontend/dist/
+    dst: /usr/share/conman/static/
+
+  # Casbin RBAC policy
+  - src: ./backend/internal/authz/model.conf
+    dst: /etc/conman/authz/model.conf
+    type: config
+
+  # Environment config
+  - src: ./packaging/server.env
+    dst: /etc/conman/server.env
+    type: config|noreplace
+    file_info:
+      mode: 0640
+
+  # Systemd service
+  - src: ./packaging/systemd/conman-server.service
+    dst: /usr/lib/systemd/system/conman-server.service
+
+  # Empty directories
+  - dst: /var/lib/conman
+    type: dir
+    file_info:
+      mode: 0750
+      owner: conman
+      group: conman
+
+  - dst: /var/log/conman
+    type: dir
+    file_info:
+      mode: 0750
+      owner: conman
+      group: conman
+
+scripts:
+  preinstall: ./packaging/scripts/server-preinstall.sh
+  postinstall: ./packaging/scripts/server-postinstall.sh
+  preremove: ./packaging/scripts/server-preremove.sh
+
+overrides:
+  rpm:
+    depends:
+      - ca-certificates
+  deb:
+    depends:
+      - ca-certificates

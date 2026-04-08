@@ -1,0 +1,17 @@
+[Unit]
+Description=Conman Agent - Container Monitoring Agent
+Documentation=https://github.com/deziss/conman
+After=network-online.target docker.service containerd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=-/etc/conman-agent/agent.env
+ExecStart=/usr/bin/conman-agent
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
