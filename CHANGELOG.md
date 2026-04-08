@@ -4,6 +4,44 @@ All notable changes to the Conman project are documented in this file.
 
 ## [Unreleased] - 2026-04-08
 
+### Added (Native containerd Support)
+
+#### ContainerdProvider
+- New `agent/internal/runtime/containerd.go` — full `ContainerRuntime` implementation for containerd
+- Connects via gRPC to `/run/containerd/containerd.sock` with namespace support (`CONTAINERD_NAMESPACE`)
+- Full support: Ping, Info, ListContainers, InspectContainer, RemoveContainer, ListImages, PullImage, RemoveImage, WatchEvents
+- Stub support: Networks (returns empty — containerd uses CNI), Volumes, Logs/Exec/Stats streaming (ErrNotSupported)
+- Best-effort compose via `nerdctl compose` if available in PATH
+
+#### Runtime Auto-Detection
+- Agent auto-detects available runtime when `RUNTIME_TYPE=auto` (new default)
+- Detection order: Docker socket -> Podman socket -> containerd socket -> fallback Docker
+- `CONTAINERD_NAMESPACE` env var for selecting containerd namespace (default "default")
+
+#### Extended ContainerRuntime Interface
+- Added 12 new methods: ContainerStart/Stop/Restart, ContainerLogs, ContainerStatsStream, ExecInteractive, ListContainerFiles, DownloadContainerFile, SystemDiskUsage, CreateNetwork, DuplicateNetwork, WatchEvents
+- Added supporting types: LogsOptions, ExecSession, FileEntry, DiskUsage
+- Added `ErrNotSupported` sentinel error for graceful degradation
+- Docker and Podman providers implement all new methods
+
+#### Protocol Changes
+- `HostInfo` now has `runtime_type`, `runtime_version`, `runtime_root_dir`, `namespace` fields
+- `AgentRegistration` includes `runtime_type` for backend tracking
+- `DockerVersion`/`DockerRootDir` kept as deprecated backward-compat aliases
+
+#### Backend
+- `Agent` model has new `RuntimeType` field (auto-migrated)
+- `AgentState` includes `RuntimeType` in API responses
+- `GET /agents?runtime=containerd` filter support
+- Registration stores and serves runtime type
+
+#### Frontend
+- Runtime selector buttons (Docker / Podman / Containerd) in AddHostModal
+- Containerd shows binary download + systemd service install commands (no Docker required)
+- Runtime badge on Hosts page with color-coded styling (blue=Docker, purple=Podman, amber=Containerd)
+- System info shows "Runtime" instead of "Docker Version"
+- HostContext types updated with runtime fields
+
 ### Added
 
 #### Multi-Runtime Support (Agent)

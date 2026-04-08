@@ -4,6 +4,8 @@ import api from '../services/api';
 interface HostInfo {
     hostname?: string;
     os?: string;
+    runtime_type?: string;
+    runtime_version?: string;
     docker_version?: string;
     kernel?: string;
     cpu_count?: number;
