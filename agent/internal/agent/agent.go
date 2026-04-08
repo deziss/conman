@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"conman-agent/internal/runtime"
 	"conman-agent/pkg/protocol"
 
 	"github.com/docker/docker/client"
@@ -17,7 +18,7 @@ import (
 // Agent is the main agent struct
 type Agent struct {
 	cfg        *Config
-	docker     *client.Client
+	runtime    runtime.ContainerRuntime
 	httpServer *http.Server
 
 	// State
@@ -36,34 +37,53 @@ type Agent struct {
 	// Channels
 	eventsCh chan protocol.ContainerEvent
 	stopCh   chan struct{}
+
+	// Report buffer for offline resilience
+	buffer *ReportBuffer
 }
 
 // New creates a new agent instance
 func New(cfg *Config) (*Agent, error) {
-	// Create Docker client
-	dockerClient, err := client.NewClientWithOpts(
-		client.WithHost(cfg.DockerHost),
-		client.WithAPIVersionNegotiation(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+	// Create runtime provider based on configuration
+	runtimeCfg := runtime.RuntimeConfig{
+		Type:       runtime.RuntimeType(cfg.RuntimeType),
+		SocketPath: cfg.RuntimeSocketPath,
+		UseCLI:     cfg.RuntimeUseCLI,
 	}
 
-	// Verify Docker connection
+	runtimeProvider, err := runtime.NewRuntime(runtimeCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create runtime provider: %w", err)
+	}
+
+	// Verify runtime connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	
-	_, err = dockerClient.Ping(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	if err := runtimeProvider.Ping(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect to runtime (%s): %w", cfg.RuntimeType, err)
 	}
 
 	return &Agent{
 		cfg:      cfg,
-		docker:   dockerClient,
+		runtime:  runtimeProvider,
 		eventsCh: make(chan protocol.ContainerEvent, 100),
 		stopCh:   make(chan struct{}),
+		buffer:   NewReportBuffer(),
 	}, nil
+}
+
+// dockerClient returns the underlying Docker-compatible API client from the runtime provider.
+// Used by api.go for advanced operations (exec, logs streaming, stats streaming) that require
+// direct Docker SDK access. Returns nil if the runtime doesn't expose a Docker client.
+func (a *Agent) dockerClient() *client.Client {
+	type clientProvider interface {
+		Client() *client.Client
+	}
+	if cp, ok := a.runtime.(clientProvider); ok {
+		return cp.Client()
+	}
+	return nil
 }
 
 // Run starts the agent
@@ -143,9 +163,9 @@ func (a *Agent) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	if a.docker != nil {
-		if err := a.docker.Close(); err != nil {
-			return fmt.Errorf("failed to close Docker client: %w", err)
+	if a.runtime != nil {
+		if err := a.runtime.Close(); err != nil {
+			return fmt.Errorf("failed to close runtime provider: %w", err)
 		}
 	}
 
@@ -256,6 +276,9 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
     mux.HandleFunc("/api/stacks/remove", a.handleRemoveStack)
 
 	mux.HandleFunc("/api/system/df", a.handleSystemDF)
+
+	// Prometheus-compatible operational metrics for the agent itself
+	mux.HandleFunc("/prom/metrics", a.handlePromMetrics)
 	
     // Remove Endpoints
     mux.HandleFunc("/api/containers/remove", a.handleRemoveContainer)
@@ -372,4 +395,29 @@ func (a *Agent) buildReport() *protocol.AgentReport {
 		Networks:   a.networks,
 		Volumes:    a.volumes,
 	}
+}
+
+// handlePromMetrics returns Prometheus-text-format operational metrics for the agent.
+func (a *Agent) handlePromMetrics(w http.ResponseWriter, r *http.Request) {
+	a.mu.RLock()
+	containersCollected := len(a.containers)
+	registered := a.registered
+	bufferSize := a.buffer.Size()
+	a.mu.RUnlock()
+
+	regVal := 0
+	if registered {
+		regVal = 1
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	fmt.Fprintf(w, "# HELP conman_agent_containers_collected Number of containers currently collected.\n")
+	fmt.Fprintf(w, "# TYPE conman_agent_containers_collected gauge\n")
+	fmt.Fprintf(w, "conman_agent_containers_collected %d\n", containersCollected)
+	fmt.Fprintf(w, "# HELP conman_agent_registered Whether the agent is registered with the server.\n")
+	fmt.Fprintf(w, "# TYPE conman_agent_registered gauge\n")
+	fmt.Fprintf(w, "conman_agent_registered %d\n", regVal)
+	fmt.Fprintf(w, "# HELP conman_agent_buffer_size Number of reports buffered for retry.\n")
+	fmt.Fprintf(w, "# TYPE conman_agent_buffer_size gauge\n")
+	fmt.Fprintf(w, "conman_agent_buffer_size %d\n", bufferSize)
 }

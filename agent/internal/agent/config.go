@@ -1,12 +1,18 @@
 package agent
 
 import (
+	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+const agentIDDir = "/var/lib/conman-agent"
+const agentIDFile = "agent-id"
 
 // AgentMode defines how the agent communicates
 type AgentMode string
@@ -43,8 +49,10 @@ type Config struct {
 	PushEnabled   bool `json:"push_enabled"`
 	PushBatchSize int  `json:"push_batch_size"`
 
-	// Docker settings
-	DockerHost string `json:"docker_host"`
+	// Container runtime settings
+	RuntimeType       string `json:"runtime_type"`        // "docker" or "podman"
+	RuntimeSocketPath string `json:"runtime_socket_path"` // e.g., "/var/run/docker.sock" or "/run/user/1000/podman/podman.sock"
+	RuntimeUseCLI     bool   `json:"runtime_use_cli"`     // Fallback to CLI if socket unavailable
 
 	// Features
 	CollectContainers bool `json:"collect_containers"`
@@ -74,7 +82,9 @@ func LoadConfig() (*Config, error) {
 		ScrapePort:        parseInt(getEnv("SCRAPE_PORT", "5073")),
 		PushEnabled:       parseBool(getEnv("PUSH_ENABLED", "true")),
 		PushBatchSize:     parseInt(getEnv("PUSH_BATCH_SIZE", "100")),
-		DockerHost:        getEnv("DOCKER_HOST", "unix:///var/run/docker.sock"),
+		RuntimeType:       getEnv("RUNTIME_TYPE", "docker"),
+		RuntimeSocketPath: getEnv("RUNTIME_SOCKET_PATH", "unix:///var/run/docker.sock"),
+		RuntimeUseCLI:     parseBool(getEnv("RUNTIME_USE_CLI", "false")),
 		CollectContainers: parseBool(getEnv("COLLECT_CONTAINERS", "true")),
 		CollectImages:     parseBool(getEnv("COLLECT_IMAGES", "true")),
 		CollectNetworks:   parseBool(getEnv("COLLECT_NETWORKS", "true")),
@@ -84,9 +94,9 @@ func LoadConfig() (*Config, error) {
 		AdvertisedAddress: getEnv("ADVERTISED_ADDRESS", ""),
 	}
 
-	// Auto-generate agent ID if not provided
+	// Auto-generate agent ID if not provided, persisting to disk for restart stability
 	if cfg.AgentID == "" {
-		cfg.AgentID = uuid.New().String()
+		cfg.AgentID = loadOrGenerateAgentID()
 	}
 
 	// Use hostname if agent name not provided
@@ -100,6 +110,37 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// loadOrGenerateAgentID reads a persisted agent ID from disk, or generates a new one and saves it.
+func loadOrGenerateAgentID() string {
+	idPath := filepath.Join(agentIDDir, agentIDFile)
+
+	// Try to read existing ID
+	data, err := os.ReadFile(idPath)
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+		if id != "" {
+			log.Printf("Loaded persisted agent ID: %s", id)
+			return id
+		}
+	}
+
+	// Generate new ID
+	id := uuid.New().String()
+
+	// Attempt to persist (best-effort — may fail if dir is not writable)
+	if err := os.MkdirAll(agentIDDir, 0755); err != nil {
+		log.Printf("Warning: could not create agent ID directory %s: %v", agentIDDir, err)
+		return id
+	}
+	if err := os.WriteFile(idPath, []byte(id), 0644); err != nil {
+		log.Printf("Warning: could not persist agent ID to %s: %v", idPath, err)
+	} else {
+		log.Printf("Generated and persisted new agent ID: %s", id)
+	}
+
+	return id
 }
 
 func getEnv(key, defaultVal string) string {

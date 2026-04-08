@@ -122,6 +122,14 @@ type VolumeUsage struct {
 	RefCount int64 `json:"ref_count"`
 }
 
+// ImageUpdate represents the result of checking for image updates
+type ImageUpdate struct {
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	HasUpdate  bool   `json:"has_update"`
+	NewDigest  string `json:"new_digest,omitempty"`
+}
+
 // ContainerMetrics represents real-time container metrics
 type ContainerMetrics struct {
 	ContainerID   string    `json:"container_id"`

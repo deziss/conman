@@ -19,10 +19,13 @@ services:
       - conman_data:/app/data
     environment:
       - PORT=5173
+      - DATABASE_DRIVER=${DATABASE_DRIVER:-sqlite}
       - DATABASE_URL=/app/data/app.db
+      - DATABASE_DSN=host=conman-db port=5432 user=conman password=${POSTGRES_PASSWORD:-conman} dbname=conman sslmode=disable
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - AGENT_TOKEN=${AGENT_TOKEN:-}
       - STATIC_DIR=/app/static
       - CORS_ORIGINS=http://localhost:5173
     healthcheck:
@@ -46,6 +49,7 @@ services:
     environment:
       - AGENT_NAME=Local Agent
       - CONMAN_SERVER_URL=http://conman-server:5173
+      - CONMAN_SERVER_TOKEN=${AGENT_TOKEN:-}
       - AGENT_MODE=hybrid
       - COLLECT_INTERVAL=10s
       - SCRAPE_PORT=5073
@@ -56,5 +60,25 @@ services:
         condition: service_started
 
 
+  # PostgreSQL (optional - set DATABASE_DRIVER=postgres to use)
+  conman-db:
+    image: postgres:16-alpine
+    container_name: conman-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=conman
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-conman}
+      - POSTGRES_DB=conman
+    volumes:
+      - conman_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conman"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - postgres
+
 volumes:
   conman_data:
+  conman_pgdata:

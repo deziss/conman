@@ -101,6 +101,7 @@ type Agent struct {
 	Approved      bool   // For potential approval workflow
 	HostInfo      []byte // JSON encoded host info
 	ScrapeURL     string
+	Tags          []byte // JSON array of string tags for fleet filtering (e.g. ["prod","us-east"])
 }
 
 type Stack struct {
@@ -109,5 +110,42 @@ type Stack struct {
 	ComposeContent string // content of docker-compose.yml
 	EnvContent     string // content of .env
 	Status         string // "active", "stopped", "error"
-    Message        string // Last error or status message
+	Message        string // Last error or status message
+}
+
+// AlertRule defines an alert condition that is periodically evaluated.
+type AlertRule struct {
+	gorm.Model
+	Name    string `gorm:"uniqueIndex"`
+	Type    string // "agent_offline", "container_stopped", "resource_threshold"
+	Config  []byte // JSON config for the rule (thresholds, filters, etc.)
+	Enabled bool   `gorm:"default:true"`
+}
+
+// AlertChannel defines a notification destination for fired alerts.
+type AlertChannel struct {
+	gorm.Model
+	Name   string `gorm:"uniqueIndex"`
+	Type   string // "webhook", "slack", "email"
+	Config []byte // JSON config (url, headers, etc.)
+}
+
+// AlertEvent records a fired alert instance.
+type AlertEvent struct {
+	gorm.Model
+	RuleID    uint
+	Rule      AlertRule
+	AgentID   string
+	Message   string
+	FiredAt   time.Time
+	Resolved  bool
+}
+
+// AgentSnapshot stores the latest full report from an agent, persisted to DB
+// so agent state survives backend restarts and can be shared across instances.
+type AgentSnapshot struct {
+	gorm.Model
+	AgentID    string    `gorm:"uniqueIndex"`
+	ReportJSON []byte    `gorm:"type:bytes"` // Compressed JSON of full AgentState
+	Timestamp  time.Time // When this snapshot was last updated
 }
