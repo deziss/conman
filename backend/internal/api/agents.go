@@ -180,6 +180,26 @@ func (h *AgentHandler) persistSnapshot(agentID string, state *AgentState) {
 	}
 }
 
+// updateGauges refreshes Prometheus gauge values for agents and containers.
+func (h *AgentHandler) updateGauges() {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	healthy, offline := 0, 0
+	containers := 0
+	for _, a := range h.agents {
+		if time.Since(a.LastHeartbeat) > 2*time.Minute {
+			offline++
+		} else {
+			healthy++
+		}
+		containers += len(a.Containers)
+	}
+	observability.AgentsTotal.WithLabelValues("healthy").Set(float64(healthy))
+	observability.AgentsTotal.WithLabelValues("offline").Set(float64(offline))
+	observability.ContainersTotal.Set(float64(containers))
+}
+
 // RegisterRoutes registers agent API routes (protected - requires auth)
 func (h *AgentHandler) RegisterRoutes(r chi.Router) {
 	// Agent endpoints (protected)
@@ -188,9 +208,7 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
 	r.Put("/agents/{id}/tags", h.UpdateAgentTags)
 	r.Delete("/agents/{id}", h.DeleteAgent)
 	r.Get("/agents/{id}/containers", h.GetAgentContainers)
-	r.Get("/agents/{id}/containers", h.GetAgentContainers)
 	r.Get("/agents/{id}/images", h.GetAgentImages)
-	r.Get("/agents/{id}/networks", h.GetAgentNetworks)
 	r.Get("/agents/{id}/networks", h.GetAgentNetworks)
 	r.Get("/agents/{id}/volumes", h.GetAgentVolumes)
 	
@@ -316,6 +334,50 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RegisterLocalAgent registers an agent programmatically (no HTTP request). Used for auto-detecting
+// the local host when the server starts on a machine with a container runtime.
+func (h *AgentHandler) RegisterLocalAgent(reg protocol.AgentRegistration) {
+	hostInfoJSON, _ := json.Marshal(reg.HostInfo)
+	dbAgent := models.Agent{
+		AgentID:       reg.AgentID,
+		Name:          reg.AgentName,
+		Status:        "healthy",
+		LastHeartbeat: time.Now(),
+		Mode:          reg.Mode,
+		RuntimeType:   reg.RuntimeType,
+		HostInfo:      hostInfoJSON,
+		Approved:      true,
+	}
+
+	var existing models.Agent
+	if err := h.DB.Where("agent_id = ?", reg.AgentID).First(&existing).Error; err == nil {
+		existing.Name = dbAgent.Name
+		existing.LastHeartbeat = dbAgent.LastHeartbeat
+		existing.HostInfo = dbAgent.HostInfo
+		existing.Status = "healthy"
+		h.DB.Save(&existing)
+	} else {
+		h.DB.Create(&dbAgent)
+	}
+
+	state := &AgentState{
+		ID:            reg.AgentID,
+		Name:          reg.AgentName,
+		HostInfo:      reg.HostInfo,
+		LastHeartbeat: time.Now(),
+		Status:        "healthy",
+		Mode:          reg.Mode,
+		RuntimeType:   reg.RuntimeType,
+		Events:        make([]protocol.ContainerEvent, 0),
+	}
+
+	h.mu.Lock()
+	h.agents[reg.AgentID] = state
+	h.mu.Unlock()
+
+	go h.persistSnapshot(reg.AgentID, state)
+}
+
 // ListAgents returns all registered agents. Supports ?tag= and ?runtime= query params for filtering.
 func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	filterTag := r.URL.Query().Get("tag")
@@ -326,11 +388,12 @@ func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 
 	agents := make([]*AgentState, 0, len(h.agents))
 	for _, agent := range h.agents {
-		// Update status based on last heartbeat
+		// Compute display status without mutating (avoid write under RLock)
+		displayStatus := agent.Status
 		if time.Since(agent.LastHeartbeat) > 2*time.Minute {
-			agent.Status = "offline"
+			displayStatus = "offline"
 		} else if time.Since(agent.LastHeartbeat) > time.Minute {
-			agent.Status = "degraded"
+			displayStatus = "degraded"
 		}
 
 		// Filter by runtime if specified
@@ -352,7 +415,10 @@ func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		agents = append(agents, agent)
+		// Return a copy with computed status to avoid data races
+		agentCopy := *agent
+		agentCopy.Status = displayStatus
+		agents = append(agents, &agentCopy)
 	}
 
 	WriteJSON(w, http.StatusOK, agents)
@@ -374,7 +440,7 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, agent)
 }
 
-// DeleteAgent removes an agent
+// DeleteAgent removes an agent and all associated data.
 func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -382,7 +448,13 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	delete(h.agents, id)
 	h.mu.Unlock()
 
+	// Clean up all associated data
 	h.DB.Where("agent_id = ?", id).Delete(&models.Agent{})
+	h.DB.Where("agent_id = ?", id).Delete(&models.AgentSnapshot{})
+	h.DB.Where("agent_id = ?", id).Delete(&models.AlertEvent{})
+	if h.MetricsStore != nil {
+		h.MetricsStore.DeleteByAgent(id)
+	}
 
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "Agent removed"})
 }
@@ -475,6 +547,7 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
+	h.updateGauges()
 	WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -562,6 +635,7 @@ func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Write queue full, dropping persist job for agent %s", id)
 	}
 
+	h.updateGauges()
 	WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 

@@ -18,6 +18,7 @@ import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { clsx } from 'clsx';
 
 interface Image {
@@ -118,11 +119,16 @@ export const Images = () => {
     }
   };
 
-  const handleRemoveImage = async (id: string) => {
-      if (!confirm('Are you sure you want to remove this image?')) return;
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+
+  const handleRemoveImage = (id: string) => {
+      setConfirmDelete({ isOpen: true, id });
+  };
+
+  const executeRemoveImage = async () => {
       try {
           if (!currentHost) return;
-          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
+          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(confirmDelete.id)}`);
           toast.success('Image removed');
           fetchImages();
       } catch (error: any) {
@@ -576,12 +582,22 @@ export const Images = () => {
         )}
       </div>
 
-      <InspectModal 
-        isOpen={inspectModalOpen} 
-        onClose={() => setInspectModalOpen(false)} 
-        title="Image Details" 
-        data={inspectData} 
+      <InspectModal
+        isOpen={inspectModalOpen}
+        onClose={() => setInspectModalOpen(false)}
+        title="Image Details"
+        data={inspectData}
       />
+
+            <ConfirmModal
+                isOpen={confirmDelete.isOpen}
+                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onConfirm={executeRemoveImage}
+                title="Remove Image"
+                message="Are you sure you want to remove this image? This cannot be undone."
+                confirmText="Remove"
+                isDestructive={true}
+            />
     </div>
   );
 };

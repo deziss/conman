@@ -43,4 +43,12 @@ func LoadConfig() {
 		log.Fatal("Error loading config:", err)
 	}
 	AppConfig = config
+
+	// Security warnings
+	if config.AgentToken == "" {
+		log.Println("WARNING: AGENT_TOKEN not set. Agent endpoints will reject all connections.")
+	}
+	if config.SecretKey == "your-secret-key-here" {
+		log.Println("WARNING: Using default SECRET_KEY. Change it before running in production.")
+	}
 }

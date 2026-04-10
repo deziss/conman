@@ -136,6 +136,11 @@ func (s *MetricsStore) QueryMetrics(params QueryParams) ([]MetricPoint, error) {
 	return results, nil
 }
 
+// DeleteByAgent removes all metrics for a specific agent.
+func (s *MetricsStore) DeleteByAgent(agentID string) error {
+	return s.db.Where("agent_id = ?", agentID).Delete(&MetricPoint{}).Error
+}
+
 // Cleanup removes metrics older than the given retention period.
 func (s *MetricsStore) Cleanup(retention time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-retention)

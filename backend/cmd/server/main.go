@@ -15,8 +15,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
@@ -53,6 +56,13 @@ func main() {
 			log.Fatal("Failed to connect to SQLite database:", err)
 		}
 		log.Println("Connected to SQLite database:", config.AppConfig.DatabaseURL)
+	}
+
+	// Configure connection pool
+	if sqlDB, poolErr := db.DB(); poolErr == nil {
+		sqlDB.SetMaxOpenConns(25)
+		sqlDB.SetMaxIdleConns(5)
+		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	}
 
 	// Auto Migrate
@@ -97,6 +107,20 @@ func main() {
     if err := metricsStore.InitSchema(); err != nil {
         log.Printf("Warning: metrics schema init failed: %v", err)
     }
+
+    // Metrics cleanup job (every 6 hours, retain 30 days)
+    go func() {
+        ticker := time.NewTicker(6 * time.Hour)
+        defer ticker.Stop()
+        for range ticker.C {
+            rows, err := metricsStore.Cleanup(30 * 24 * time.Hour)
+            if err != nil {
+                log.Printf("Metrics cleanup error: %v", err)
+            } else if rows > 0 {
+                log.Printf("Cleaned up %d old metric points", rows)
+            }
+        }
+    }()
 
     // 5. Init Casbin (Database Adapter)
     authz.InitCasbin(db)
@@ -353,13 +377,39 @@ func main() {
 		})
 	}
 
-	// Start Alert Evaluator (background)
-	alertEvaluator := alerts.NewEvaluator(db, agentHandler)
-	go alertEvaluator.Run(context.Background())
+	// Graceful shutdown context
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	// Start Server
-	log.Printf("Server running on port %s", config.AppConfig.Port)
-	if err := http.ListenAndServe(":"+config.AppConfig.Port, r); err != nil {
-		log.Fatal("Failed to run server:", err)
+	// Start Alert Evaluator (background, respects shutdown)
+	alertEvaluator := alerts.NewEvaluator(db, agentHandler)
+	go alertEvaluator.Run(ctx)
+
+	// Auto-detect local host
+	go service.DetectAndRegisterLocalAgent(db, agentHandler)
+
+	// Start Server with timeouts
+	srv := &http.Server{
+		Addr:         ":" + config.AppConfig.Port,
+		Handler:      r,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	go func() {
+		log.Printf("Server running on port %s", config.AppConfig.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server error:", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("Shutting down gracefully...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Shutdown error: %v", err)
+	}
+	log.Println("Server stopped")
 }

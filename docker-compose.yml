@@ -28,7 +28,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - backend_data:/app/data
-    privileged: true
     environment:
       - DATABASE_URL=./data/app.db
       - SECRET_KEY=your-secret-key-here
