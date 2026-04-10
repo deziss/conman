@@ -26,6 +26,13 @@ interface FileBrowserProps {
     agentId?: string;
 }
 
+const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+};
+
 export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
     const [createPath, setPath] = useState('/');
     const [files, setFiles] = useState<FileEntry[]>([]);
@@ -138,7 +145,7 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                                     <span className="truncate font-mono text-sm">{file.name}</span>
                                 </div>
                                 <div className="col-span-1 text-right font-mono text-xs text-slate-500">
-                                    {file.is_dir ? '-' : (file.size > 0 ? file.size : '0')}
+                                    {file.is_dir ? '-' : formatFileSize(file.size)}
                                 </div>
                                 <div className="col-span-2 text-center font-mono text-xs text-slate-500 truncate">
                                     {file.mode}
