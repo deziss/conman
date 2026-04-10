@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { 
-    CubeIcon, 
-    ArrowLeftIcon, 
-    TrashIcon, 
-    ClockIcon, 
-    HashtagIcon, 
+import {
+    CubeIcon,
+    ArrowLeftIcon,
+    TrashIcon,
+    ClockIcon,
+    HashtagIcon,
     CommandLineIcon,
     ServerIcon,
     CpuChipIcon,
@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 
 // Reusable Glass Card Component
 const GlassCard = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -74,8 +75,13 @@ export const ImageDetailsPage = () => {
         fetchImage();
     }, [id, navigate]);
 
-    const handleRemove = async () => {
-        if (!confirm('Are you sure you want to remove this image? This cannot be undone.')) return;
+    const [showConfirm, setShowConfirm] = useState(false);
+
+    const handleRemove = () => {
+        setShowConfirm(true);
+    };
+
+    const executeRemove = async () => {
         try {
             await api.delete(`/docker/images/${id}`);
             toast.success("Image removed successfully");
@@ -274,6 +280,16 @@ export const ImageDetailsPage = () => {
                     <p className="text-slate-500 text-sm italic">No environment variables defined.</p>
                 )}
             </GlassCard>
+
+            <ConfirmModal
+                isOpen={showConfirm}
+                onClose={() => setShowConfirm(false)}
+                onConfirm={executeRemove}
+                title="Remove Image"
+                message="Are you sure? This image will be permanently deleted."
+                confirmText="Remove"
+                isDestructive
+            />
         </div>
     );
 };

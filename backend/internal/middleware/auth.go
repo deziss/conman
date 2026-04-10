@@ -6,6 +6,7 @@ import (
 	"conman-backend/internal/config"
 	"conman-backend/internal/models"
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -29,7 +30,7 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 1. Check Master API Key
 		masterKey := r.Header.Get("X-Master-Key")
-		if masterKey != "" && masterKey == config.AppConfig.MasterAPIKey {
+		if masterKey != "" && subtle.ConstantTimeCompare([]byte(masterKey), []byte(config.AppConfig.MasterAPIKey)) == 1 {
 			ctx := context.WithValue(r.Context(), models.RoleContextKey, "admin")
 			ctx = context.WithValue(ctx, models.UserContextKey, &models.User{Role: "admin", FullName: "System Admin"})
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -121,7 +122,7 @@ func AgentAuthMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		if agentToken != token {
+		if subtle.ConstantTimeCompare([]byte(agentToken), []byte(token)) != 1 {
 			api.ErrorJSON(w, http.StatusUnauthorized, "Invalid agent token")
 			return
 		}

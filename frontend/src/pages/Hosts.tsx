@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { 
     ServerStackIcon, 
     ArrowPathIcon, 
@@ -71,10 +72,15 @@ export const Hosts = () => {
         return () => clearInterval(interval);
     }, []);
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to remove this host?')) return;
+    const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+
+    const handleDelete = (id: string) => {
+        setConfirmDelete({ isOpen: true, id });
+    };
+
+    const executeDelete = async () => {
         try {
-            await api.delete(`/agents/${id}`);
+            await api.delete(`/agents/${confirmDelete.id}`);
             toast.success("Host removed");
             fetchHosts();
         } catch (error) {
@@ -311,6 +317,16 @@ export const Hosts = () => {
             <div className="text-xs text-slate-500 text-center">
                 Showing {hosts.length} host(s) • Auto-refresh every 15s
             </div>
+
+            <ConfirmModal
+                isOpen={confirmDelete.isOpen}
+                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onConfirm={executeDelete}
+                title="Remove Host"
+                message="Are you sure you want to remove this host? All associated data (snapshots, metrics, alerts) will be deleted."
+                confirmText="Remove"
+                isDestructive={true}
+            />
         </div>
     );
 };

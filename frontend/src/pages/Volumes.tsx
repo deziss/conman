@@ -15,6 +15,7 @@ import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { FileBrowser } from '../components/FileBrowser';
@@ -142,11 +143,16 @@ export const Volumes = () => {
       }
   };
 
-  const handleRemoveVolume = async (name: string) => {
-      if (!confirm('Are you sure you want to remove this volume? Action is irreversible.')) return;
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+
+  const handleRemoveVolume = (name: string) => {
+      setConfirmDelete({ isOpen: true, id: name });
+  };
+
+  const executeRemoveVolume = async () => {
       try {
           if (!currentHost) return;
-          await api.delete(`/agents/${currentHost.id}/volumes/${name}`);
+          await api.delete(`/agents/${currentHost.id}/volumes/${confirmDelete.id}`);
           toast.success('Volume removed');
           fetchVolumes(true);
       } catch (error) {
@@ -455,6 +461,16 @@ export const Volumes = () => {
             </div>
         </Dialog>
       </Transition.Root>
+
+            <ConfirmModal
+                isOpen={confirmDelete.isOpen}
+                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onConfirm={executeRemoveVolume}
+                title="Remove Volume"
+                message="Are you sure you want to remove this volume? This action is irreversible."
+                confirmText="Remove"
+                isDestructive={true}
+            />
 
       {/* Browse Modal */}
       <Transition.Root show={browseModalOpen} as={Fragment}>
