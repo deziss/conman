@@ -4,6 +4,18 @@ All notable changes to the Conman project are documented in this file.
 
 ## [Unreleased] - 2026-04-08
 
+### Added (Linux Packaging)
+- `.deb` and `.rpm` packages for both server and agent via nfpm
+- Systemd service files: `conman-server.service`, `conman-agent.service`
+- Environment config files: `/etc/conman/server.env`, `/etc/conman-agent/agent.env`
+- Pre/post install scripts (user creation, service enable, directory permissions)
+- Build script: `packaging/build-packages.sh` for one-command package generation
+
+### Added (Documentation)
+- `docs/INSTALLATION.md` -- Complete installation guide for packages, Docker, and source builds
+- `docs/CONFIGURATION.md` -- Full environment variable reference for server and agent
+- `docs/API.md` -- Complete REST API reference with request/response examples
+
 ### Added (Native containerd Support)
 
 #### ContainerdProvider
