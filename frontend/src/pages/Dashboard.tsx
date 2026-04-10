@@ -195,7 +195,9 @@ export const Dashboard = () => {
              try {
                 // Fetch all agents for environment list
                 const envRes = await api.get('/agents').catch(() => ({ data: [] }));
-                setRemoteEnvs(envRes.data || []);
+                // Sort by ID for stable rendering order (prevents card shuffling on refresh)
+                const sorted = (envRes.data || []).sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
+                setRemoteEnvs(sorted);
 
                 if (currentHost?.id) {
                      // Unified Fetch: Always use Agent API

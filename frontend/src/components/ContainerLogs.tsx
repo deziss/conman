@@ -252,11 +252,10 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   const connectLogs = useCallback(() => {
     if (!terminalRef.current) return;
     
-    // Check if we have an agent/host context
+    // Require agent/host context for WebSocket connection
     if (!agentId) {
-        // Fallback or wait?
-        // If loaded directly without context, might fail.
-        // We assume valid context or prop.
+        console.warn('ContainerLogs: agentId is required');
+        return;
     }
 
     // Close existing socket
