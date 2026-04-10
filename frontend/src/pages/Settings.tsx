@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { Tab } from '@headlessui/react';
-import { Cog6ToothIcon, ServerStackIcon, InformationCircleIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, BellIcon, InformationCircleIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { GeneralSettings } from '../components/settings/GeneralSettings';
-import { HostSettings } from '../components/settings/HostSettings';
+import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { AboutTab } from '../components/settings/AboutTab';
 import { PageTransition } from '../components/ui/PageTransition';
 
 export const Settings = () => {
     const categories = [
         { name: 'General', icon: AdjustmentsHorizontalIcon, component: GeneralSettings },
-        { name: 'Hosts', icon: ServerStackIcon, component: HostSettings },
+        { name: 'Notifications', icon: BellIcon, component: NotificationSettings },
         { name: 'About', icon: InformationCircleIcon, component: AboutTab },
     ];
 
