@@ -46,6 +46,12 @@ services:
       AGENT_TOKEN: ${AGENT_TOKEN:-conman-agent-psk}
       STATIC_DIR: /app/static
       CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     depends_on:
       conman-db:
         condition: service_healthy

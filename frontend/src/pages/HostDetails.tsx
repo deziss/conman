@@ -71,7 +71,7 @@ export const HostDetails = () => {
 
     useEffect(() => {
         fetchAgent();
-        const interval = setInterval(fetchAgent, 3000); // Poll every 3s
+        const interval = setInterval(fetchAgent, 10000); // Poll every 10s
         return () => clearInterval(interval);
     }, [id]);
 

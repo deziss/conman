@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import { useHost } from '../contexts/HostContext';
 
 import { GlassCard } from '../components/ui/GlassCard';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { clsx } from 'clsx';
 
 const Badge = ({ children, className }: { children: React.ReactNode; className?: string }) => (
@@ -69,8 +70,13 @@ export const NetworkDetailsPage = () => {
         fetchNetwork();
     }, [id, navigate, currentHost]);
 
-    const handleRemove = async () => {
-        if (!confirm('Are you sure you want to remove this network?')) return;
+    const [showConfirm, setShowConfirm] = useState(false);
+
+    const handleRemove = () => {
+        setShowConfirm(true);
+    };
+
+    const executeRemove = async () => {
         if (!currentHost) return;
         try {
             await api.delete(`/agents/${currentHost.id}/networks/${id}`);
@@ -204,6 +210,16 @@ export const NetworkDetailsPage = () => {
                     </div>
                 )}
             </GlassCard>
+
+            <ConfirmModal
+                isOpen={showConfirm}
+                onClose={() => setShowConfirm(false)}
+                onConfirm={executeRemove}
+                title="Remove Network"
+                message="Are you sure you want to remove this network?"
+                confirmText="Remove"
+                isDestructive
+            />
         </div>
     );
 };

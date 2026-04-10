@@ -17,6 +17,7 @@ import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
@@ -151,11 +152,16 @@ export const Networks = () => {
       toast.success("ID copied to clipboard");
   };
 
-  const handleRemoveNetwork = async (id: string) => {
-      if (!confirm('Are you sure you want to remove this network?')) return;
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+
+  const handleRemoveNetwork = (id: string) => {
+      setConfirmDelete({ isOpen: true, id });
+  };
+
+  const executeRemoveNetwork = async () => {
       try {
           if (!currentHost) return;
-          await api.delete(`/agents/${currentHost.id}/networks/${id}`);
+          await api.delete(`/agents/${currentHost.id}/networks/${confirmDelete.id}`);
           toast.success('Network removed');
           fetchNetworks();
       } catch (error) {
@@ -410,6 +416,16 @@ export const Networks = () => {
             </div>
         </Dialog>
       </Transition.Root>
+
+            <ConfirmModal
+                isOpen={confirmDelete.isOpen}
+                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onConfirm={executeRemoveNetwork}
+                title="Remove Network"
+                message="Are you sure you want to remove this network?"
+                confirmText="Remove"
+                isDestructive={true}
+            />
 
       {/* Connect Modal */}
       <Transition.Root show={connectModalOpen} as={Fragment}>

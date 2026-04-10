@@ -5,6 +5,7 @@ import { PlusIcon, PlayIcon, StopIcon, TrashIcon, DocumentTextIcon, CodeBracketI
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useHost } from '../contexts/HostContext';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 
 interface Stack {
     Name: string;
@@ -41,8 +42,8 @@ export const Stacks = () => {
 
     useEffect(() => {
         fetchStacks();
-        // Poll status every 5s
-        const interval = setInterval(fetchStacks, 5000);
+        // Poll status every 10s
+        const interval = setInterval(fetchStacks, 10000);
         return () => clearInterval(interval);
     }, [currentHost]);
 
@@ -74,11 +75,16 @@ export const Stacks = () => {
     // Current Agent implementation only has `handleRemoveStack` (Down).
     // I will implement handleDelete calling Remove. I will hide Stop for now as technically `down` stops and removes containers.
 
-    const handleDelete = async (name: string) => {
-        if (!confirm('Are you sure? This will run "docker compose down" removing containers and networks.')) return;
+    const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+
+    const handleDelete = (name: string) => {
+        setConfirmDelete({ isOpen: true, id: name });
+    };
+
+    const executeDelete = async () => {
         if (!currentHost) return;
         try {
-            await api.delete(`/agents/${currentHost.id}/stacks/${encodeURIComponent(name)}`);
+            await api.delete(`/agents/${currentHost.id}/stacks/${encodeURIComponent(confirmDelete.id)}`);
             toast.success('Stack removed');
             fetchStacks();
         } catch (error: any) {
@@ -206,6 +212,16 @@ export const Stacks = () => {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={confirmDelete.isOpen}
+                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onConfirm={executeDelete}
+                title="Remove Stack"
+                message="This will run compose down, removing all containers and networks for this stack."
+                confirmText="Remove Stack"
+                isDestructive
+            />
         </div>
     );
 };
