@@ -480,7 +480,7 @@ export const ContainerDetails = () => {
     const isRunning = container.State.Running;
 
     return (
-        <div className="h-full flex flex-col space-y-6">
+        <div className="flex flex-col space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
@@ -548,9 +548,9 @@ export const ContainerDetails = () => {
                 ))}
             </div>
 
-            <div className="flex-1 overflow-hidden min-h-0">
+            <div className="flex-1 min-h-0">
                 {activeTab === 'overview' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full overflow-y-auto pr-2 pb-20">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-8">
                          {/* Stats Column */}
                          <div className="space-y-6">
                             <GlassCard className="p-4">

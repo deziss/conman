@@ -106,11 +106,11 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                     <div className="grid grid-cols-1 gap-2">
                          {/* Header */}
                          <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-slate-500 border-b border-white/5 uppercase tracking-wider">
-                             <div className="col-span-1 border-r border-transparent"></div> {/* Icon */}
                              <div className="col-span-5">Name</div>
-                             <div className="col-span-2 text-right">Size</div>
+                             <div className="col-span-1 text-right">Size</div>
+                             <div className="col-span-2 text-center">Permissions</div>
                              <div className="col-span-2 text-right">Modified</div>
-                             <div className="col-span-1 text-right">Actions</div>
+                             <div className="col-span-2 text-right">Actions</div>
                          </div>
 
                         {files.length === 0 && (
@@ -129,7 +129,7 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                                     file.is_dir ? "text-slate-200" : "text-slate-400"
                                 )}
                             >
-                                <div className="col-span-6 flex items-center space-x-3 overflow-hidden">
+                                <div className="col-span-5 flex items-center space-x-3 overflow-hidden">
                                     {file.is_dir ? (
                                         <FolderIcon className="w-5 h-5 text-amber-400 flex-shrink-0" />
                                     ) : (
@@ -137,28 +137,29 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                                     )}
                                     <span className="truncate font-mono text-sm">{file.name}</span>
                                 </div>
-                                <div className="col-span-2 text-right font-mono text-xs text-slate-500">
+                                <div className="col-span-1 text-right font-mono text-xs text-slate-500">
                                     {file.is_dir ? '-' : (file.size > 0 ? file.size : '0')}
                                 </div>
-                                <div className="col-span-2 font-mono text-xs text-slate-500 truncate">
+                                <div className="col-span-2 text-center font-mono text-xs text-slate-500 truncate">
                                     {file.mode}
                                 </div>
                                 <div className="col-span-2 text-right text-xs text-slate-500 truncate">
                                     {file.mod_time || '-'}
                                 </div>
-                                <div className="col-span-1 text-right">
+                                <div className="col-span-2 flex justify-end">
                                     {!file.is_dir && (
-                                        <button 
+                                        <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 const path = createPath === '/' ? `/${file.name}` : `${createPath}/${file.name}`;
                                                 const url = `${api.defaults.baseURL}/agents/${targetAgentId}/containers/${containerId}/files/download?path=${encodeURIComponent(path)}`;
                                                 window.location.href = url;
                                             }}
-                                            className="p-1 text-slate-500 hover:text-indigo-400 hover:bg-white/10 rounded transition-colors"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-400 hover:text-indigo-400 bg-slate-800/50 hover:bg-white/10 border border-white/5 rounded-md transition-colors"
                                             title="Download"
                                         >
-                                            <ArrowDownTrayIcon className="w-4 h-4" />
+                                            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                            <span>Download</span>
                                         </button>
                                     )}
                                 </div>

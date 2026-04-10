@@ -38,10 +38,13 @@ export const Terminal = ({ containerId, agentId }: TerminalProps) => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = localStorage.getItem('token');
     
-    let wsUrl = `${protocol}//${window.location.host}/api/v1/docker/containers/${containerId}/exec?token=${token}`;
-    if (agentId) {
-        wsUrl = `${protocol}//${window.location.host}/api/v1/agents/${agentId}/containers/${containerId}/exec?token=${token}`;
+    if (!agentId) {
+        term.write('\r\n\x1b[31mError: No host selected. Please select a host from the sidebar.\x1b[0m\r\n');
+        xtermRef.current = term;
+        return;
     }
+
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/agents/${agentId}/containers/${containerId}/exec?token=${token}`;
     
     const socket = new WebSocket(wsUrl);
 
