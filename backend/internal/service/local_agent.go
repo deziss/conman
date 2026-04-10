@@ -26,8 +26,15 @@ type LocalAgentRegistrar interface {
 // on the same host as the server. If found and no agent is registered for this
 // hostname, it auto-registers a "local" agent so the server can manage its own host.
 func DetectAndRegisterLocalAgent(db *gorm.DB, registrar LocalAgentRegistrar) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Local agent detect: panic recovered: %v", r)
+		}
+	}()
+
 	// Small delay to let the server fully start
 	time.Sleep(3 * time.Second)
+	log.Println("Local agent detect: starting runtime detection...")
 
 	hostname, err := os.Hostname()
 	if err != nil {
