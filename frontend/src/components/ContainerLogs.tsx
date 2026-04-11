@@ -113,6 +113,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   const grepTermRef = useRef('');
   const levelFiltersRef = useRef<Record<string, boolean>>({ error: true, warn: true, info: true, debug: true, unknown: true });
   const showTimestampsRef = useRef(true);
+  const [termReady, setTermReady] = useState(false);
   
   // Options
   const [showTimestamps, setShowTimestamps] = useState(true);
@@ -254,11 +255,8 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
 
   // Reconnect WebSocket when tail/timeRange changes
   const connectLogs = useCallback(() => {
-    if (!terminalRef.current) return;
-    
-    // Require agent/host context for WebSocket connection
-    if (!agentId) {
-        console.warn('ContainerLogs: agentId is required');
+    // Need both xterm and agentId to proceed
+    if (!xtermRef.current || !agentId) {
         return;
     }
 
@@ -361,7 +359,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
         xtermRef.current?.write(`\r\n${ANSI.RED}--- Log Stream Closed ---${ANSI.RESET}\r\n`);
     };
 
-  }, [containerId, tailCount, timeRange, agentId]);
+  }, [containerId, tailCount, timeRange, agentId, termReady]);
 
   // Initialize XTerm
   useEffect(() => {
@@ -396,6 +394,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
+    setTermReady(true);
 
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
