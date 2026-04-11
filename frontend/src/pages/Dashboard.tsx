@@ -18,6 +18,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { useHost } from '../contexts/HostContext';
+import { AddHostModal } from '../components/AddHostModal';
 
 // -- Linear Progress Bar Component --
 const LinearProgress = ({ percent, color }: { percent: number, color: string }) => {
@@ -187,7 +188,8 @@ export const Dashboard = () => {
     // View state
     const [containers, setContainers] = useState<any[]>([]);
     const [images, setImages] = useState<any[]>([]);
-    const [remoteEnvs, setRemoteEnvs] = useState<any[]>([]); 
+    const [remoteEnvs, setRemoteEnvs] = useState<any[]>([]);
+    const [showAddHost, setShowAddHost] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -267,7 +269,7 @@ export const Dashboard = () => {
                         Dashboard
                     </h1>
                      <p className="text-slate-500 dark:text-slate-400">
-                        Managing {currentHost?.name || 'Environment'}
+                        Managing {currentHost?.name || 'Host'}
                      </p>
                 </div>
                 {/* 
@@ -276,11 +278,11 @@ export const Dashboard = () => {
                 */}
             </div>
 
-            {/* Environments Section */}
+            {/* Hosts Section */}
             <div>
-                <SectionHeader 
-                    title="Environments" 
-                    subTitle="Docker hosts with real-time resource monitoring"
+                <SectionHeader
+                    title="Hosts"
+                    subTitle="Connected agents with real-time resource monitoring"
                     actions={
                         <button onClick={() => navigate('/hosts')} className="text-xs text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 font-medium flex items-center">
                             Manage <span className="ml-1">→</span>
@@ -307,17 +309,17 @@ export const Dashboard = () => {
                         />
                     ))}
                     
-                    {/* Add Environment Card */}
-                    <GlassCard 
+                    {/* Add Host Card */}
+                    <GlassCard
                         className="p-5 cursor-pointer transition-all hover:scale-[1.02] border-dashed border-2 border-slate-300 dark:border-white/10 hover:border-cyan-500/50 dark:hover:border-cyan-500/30 flex items-center justify-center min-h-[200px]"
-                        onClick={() => navigate('/hosts')}
+                        onClick={() => setShowAddHost(true)}
                     >
                         <div className="text-center">
                             <div className="w-12 h-12 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3">
                                 <span className="text-2xl text-slate-500 dark:text-slate-400">+</span>
                             </div>
-                            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Add Environment</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-600 mt-1">Connect a remote Docker host</p>
+                            <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Add Host</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-600 mt-1">Connect a Docker, Podman, or containerd host</p>
                         </div>
                     </GlassCard>
                 </div>
@@ -433,6 +435,12 @@ export const Dashboard = () => {
                 </div>
 
             </div>
+
+            <AddHostModal
+                isOpen={showAddHost}
+                onClose={() => setShowAddHost(false)}
+                onHostAdded={() => { setShowAddHost(false); }}
+            />
         </div>
     );
 };
