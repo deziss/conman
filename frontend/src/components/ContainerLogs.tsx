@@ -107,8 +107,12 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   
   // State
   const [isPlaying, setIsPlaying] = useState(true);
+  const isPlayingRef = useRef(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [grepTerm, setGrepTerm] = useState('');
+  const grepTermRef = useRef('');
+  const levelFiltersRef = useRef<Record<string, boolean>>({ error: true, warn: true, info: true, debug: true, unknown: true });
+  const showTimestampsRef = useRef(true);
   
   // Options
   const [showTimestamps, setShowTimestamps] = useState(true);
@@ -313,8 +317,8 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                  logBufferRef.current = logBufferRef.current.slice(-50000);
             }
 
-            // Real-time render
-            if (isPlaying) {
+            // Real-time render (use ref to avoid stale closure)
+            if (isPlayingRef.current) {
                 lines.forEach(rawLine => {
                     if (!rawLine.trim()) return;
                     
@@ -323,16 +327,16 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                     if (match) message = match[2];
                     
                     const level = detectLogLevel(message);
-                    if (!levelFilters[level]) return;
-                    
-                    if (grepTerm && !rawLine.toLowerCase().includes(grepTerm.toLowerCase())) return;
+                    if (!levelFiltersRef.current[level]) return;
+
+                    if (grepTermRef.current && !rawLine.toLowerCase().includes(grepTermRef.current.toLowerCase())) return;
                     
                     let timestamp = "";
                     if (match) { timestamp = match[1]; message = match[2]; }
                     const color = getLevelColor(level);
                     
                     let outputLine = "";
-                    if (showTimestamps && timestamp) {
+                    if (showTimestampsRef.current && timestamp) {
                         outputLine += `${ANSI.GRAY}${formatTimestamp(timestamp)}${ANSI.RESET} `;
                     }
                     outputLine += `${color}${message}${ANSI.RESET}`;
@@ -357,7 +361,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
         xtermRef.current?.write(`\r\n${ANSI.RED}--- Log Stream Closed ---${ANSI.RESET}\r\n`);
     };
 
-  }, [containerId, tailCount, timeRange, isPlaying, grepTerm, showTimestamps, levelFilters]);
+  }, [containerId, tailCount, timeRange, agentId]);
 
   // Initialize XTerm
   useEffect(() => {
@@ -451,7 +455,9 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   };
 
   const togglePause = () => {
-      setIsPlaying(!isPlaying);
+      const next = !isPlaying;
+      setIsPlaying(next);
+      isPlayingRef.current = next;
       if (!isPlaying) {
           // Resuming - refresh display
           renderLogs();
@@ -573,7 +579,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                     type="text" 
                     placeholder="Filter logs (grep)..." 
                     value={grepTerm}
-                    onChange={(e) => setGrepTerm(e.target.value)}
+                    onChange={(e) => { setGrepTerm(e.target.value); grepTermRef.current = e.target.value; }}
                     className="w-full bg-slate-800 border border-slate-700/50 rounded text-xs text-emerald-100 pl-9 pr-2 py-1.5 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
                  />
             </div>
