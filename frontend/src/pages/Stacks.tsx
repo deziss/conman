@@ -99,17 +99,17 @@ export const Stacks = () => {
                     <DocumentTextIcon className="w-8 h-8 text-indigo-500" />
                     Compose Stacks
                 </h1>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                     {currentHost && (
-                         <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                         <span className="inline-flex items-center text-xs px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-white/10">
                              Agent: {currentHost.name}
                          </span>
                     )}
-                    <button 
+                    <button
                         onClick={() => setIsModalOpen(true)}
-                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-lg shadow-indigo-500/30"
+                        className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
                     >
-                        <PlusIcon className="w-5 h-5" />
+                        <PlusIcon className="w-4 h-4" />
                         New Stack
                     </button>
                 </div>
