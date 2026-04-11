@@ -366,12 +366,18 @@ func main() {
 				return
 			}
 			
-			// For SPA routing: if path doesn't start with /api, serve index.html
+			// Static assets (JS/CSS/images) that don't exist should 404, not serve index.html
+			if strings.HasPrefix(path, "/assets/") {
+				http.NotFound(w, r)
+				return
+			}
+
+			// For SPA routing: all other non-API paths serve index.html
 			if !strings.HasPrefix(path, "/api") {
 				http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 				return
 			}
-			
+
 			// API route not found
 			http.NotFound(w, r)
 		})
