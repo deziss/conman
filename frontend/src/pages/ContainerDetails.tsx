@@ -558,7 +558,7 @@ export const ContainerDetails = () => {
                                     <CpuChipIcon className="w-4 h-4" />
                                     <span>CPU Usage</span>
                                 </h3>
-                                <div className="h-40">
+                                <div>
                                     <StatsChart data={cpuData} color="#818cf8" unit="%" label="CPU" />
                                 </div>
                             </GlassCard>
@@ -567,7 +567,7 @@ export const ContainerDetails = () => {
                                     <CircleStackIcon className="w-4 h-4" />
                                     <span>Memory Usage</span>
                                 </h3>
-                                <div className="h-40">
+                                <div>
                                     <StatsChart data={memData} color="#34d399" unit="MB" label="Memory" />
                                 </div>
                             </GlassCard>
@@ -576,7 +576,7 @@ export const ContainerDetails = () => {
                                     <GlobeAltIcon className="w-4 h-4" />
                                     <span>Network I/O</span>
                                 </h3>
-                                <div className="h-40">
+                                <div>
                                     <StatsChart data={netData} color="#f472b6" unit="KB/s" label="Network" />
                                 </div>
                             </GlassCard>
