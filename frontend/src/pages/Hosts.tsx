@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { AddHostModal } from '../components/AddHostModal';
+import { PlusIcon } from '@heroicons/react/24/outline';
 import { 
     ServerStackIcon, 
     ArrowPathIcon, 
@@ -73,6 +75,7 @@ export const Hosts = () => {
     }, []);
 
     const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+    const [showAddHost, setShowAddHost] = useState(false);
 
     const handleDelete = (id: string) => {
         setConfirmDelete({ isOpen: true, id });
@@ -134,6 +137,13 @@ export const Hosts = () => {
                         <ArrowPathIcon className="w-4 h-4" />
                         <span>Refresh</span>
                     </GlassCard>
+                    <button
+                        onClick={() => setShowAddHost(true)}
+                        className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+                    >
+                        <PlusIcon className="w-4 h-4" />
+                        Add Host
+                    </button>
                 </div>
             </div>
 
@@ -326,6 +336,12 @@ export const Hosts = () => {
                 message="Are you sure you want to remove this host? All associated data (snapshots, metrics, alerts) will be deleted."
                 confirmText="Remove"
                 isDestructive={true}
+            />
+
+            <AddHostModal
+                isOpen={showAddHost}
+                onClose={() => setShowAddHost(false)}
+                onHostAdded={() => { setShowAddHost(false); fetchHosts(); }}
             />
         </div>
     );
