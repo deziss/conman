@@ -137,6 +137,18 @@ func (h *AgentHandler) ProxyCreateStack(w http.ResponseWriter, r *http.Request) 
     h.proxyRequest(w, r, "POST", "/api/stacks")
 }
 
+func (h *AgentHandler) ProxyUpStack(w http.ResponseWriter, r *http.Request) {
+    stackName := chi.URLParam(r, "stackName")
+    path := fmt.Sprintf("/api/stacks/up?name=%s", stackName)
+    h.proxyRequest(w, r, "POST", path)
+}
+
+func (h *AgentHandler) ProxyRestartStack(w http.ResponseWriter, r *http.Request) {
+    stackName := chi.URLParam(r, "stackName")
+    path := fmt.Sprintf("/api/stacks/restart?name=%s", stackName)
+    h.proxyRequest(w, r, "POST", path)
+}
+
 func (h *AgentHandler) ProxyRemoveStack(w http.ResponseWriter, r *http.Request) {
     stackName := chi.URLParam(r, "stackName")
     path := fmt.Sprintf("/api/stacks/remove?name=%s", stackName)
@@ -225,4 +237,25 @@ func (h *AgentHandler) ProxyInspectVolume(w http.ResponseWriter, r *http.Request
 
 func (h *AgentHandler) ProxySystemDF(w http.ResponseWriter, r *http.Request) {
     h.proxyRequest(w, r, "GET", "/api/system/df")
+}
+
+// Prune Proxies
+func (h *AgentHandler) ProxyPruneContainers(w http.ResponseWriter, r *http.Request) {
+    h.proxyRequest(w, r, "POST", "/api/containers/prune")
+}
+
+func (h *AgentHandler) ProxyPruneImages(w http.ResponseWriter, r *http.Request) {
+    h.proxyRequest(w, r, "POST", "/api/images/prune")
+}
+
+func (h *AgentHandler) ProxyPruneVolumes(w http.ResponseWriter, r *http.Request) {
+    h.proxyRequest(w, r, "POST", "/api/volumes/prune")
+}
+
+func (h *AgentHandler) ProxyPruneNetworks(w http.ResponseWriter, r *http.Request) {
+    h.proxyRequest(w, r, "POST", "/api/networks/prune")
+}
+
+func (h *AgentHandler) ProxySystemPrune(w http.ResponseWriter, r *http.Request) {
+    h.proxyRequest(w, r, "POST", "/api/system/prune")
 }

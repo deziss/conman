@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { HostProvider } from './contexts/HostContext';
+import { LicenseProvider } from './contexts/LicenseContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
@@ -48,6 +49,7 @@ function App() {
                 path="/*"
                 element={
                   <ProtectedRoute>
+                    <LicenseProvider>
                     <HostProvider>
                     <DashboardLayout>
                       <Suspense fallback={<Loading />}>
@@ -73,6 +75,7 @@ function App() {
                       </Suspense>
                     </DashboardLayout>
                     </HostProvider>
+                    </LicenseProvider>
                   </ProtectedRoute>
                 }
               />

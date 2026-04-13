@@ -12,6 +12,7 @@ import { PageTransition } from '../components/ui/PageTransition';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSettings } from '../contexts/SettingsContext';
+import { Pagination } from '../components/ui/Pagination';
 
 interface Container {
   id: string;
@@ -25,7 +26,16 @@ interface Container {
   cpu_usage: string;
   memory_usage: string;
   disk_io: string;
+  network_rx: number;
+  network_tx: number;
 }
+
+const formatNetBytes = (bytes: number): string => {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+};
 
 export const Containers = () => {
   const [containers, setContainers] = useState<Container[]>([]);
@@ -121,6 +131,16 @@ export const Containers = () => {
       }
   };
 
+  const handlePrune = async () => {
+      if (!currentHost) return;
+      try {
+          const { data } = await api.post(`/agents/${currentHost.id}/containers/prune`);
+          const count = data?.containers_deleted?.length || 0;
+          toast.success(`Pruned ${count} stopped containers`);
+          fetchContainers();
+      } catch { toast.error('Failed to prune containers'); }
+  };
+
   const handleActionClick = (id: string, action: 'start' | 'stop' | 'remove') => {
       if (action === 'remove' || action === 'stop') {
           setConfirmModal({
@@ -159,6 +179,9 @@ export const Containers = () => {
       return new Date(created * 1000).toLocaleString();
   }
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+
   const filteredContainers = containers
     .filter(c => filterStatus === 'all' || c.state === filterStatus)
     .sort((a, b) => {
@@ -168,6 +191,11 @@ export const Containers = () => {
       return (stateOrder[a.state as keyof typeof stateOrder] ?? 3) - (stateOrder[b.state as keyof typeof stateOrder] ?? 3);
     });
 
+  const paginatedContainers = filteredContainers.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [filterStatus, sortOrder]);
+
   return (
     <PageTransition>
     <div className="space-y-6">
@@ -175,18 +203,17 @@ export const Containers = () => {
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
           Containers
         </h2>
-        <div className="flex items-center space-x-3">
-          {currentHost && (
-           <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-            </span>
-            <span>Live Connection</span>
-           </GlassCard>
-          )}
-          <button onClick={() => fetchContainers()} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
-            <ArrowPathIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setConfirmModal({ isOpen: true, title: 'Prune Containers', message: 'Remove all stopped containers? This cannot be undone.', isDestructive: true, onConfirm: handlePrune })}
+            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+          >
+            <TrashIcon className="w-4 h-4" />
+            Prune
+          </button>
+          <button onClick={() => fetchContainers()} className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
+            <ArrowPathIcon className="w-4 h-4" />
+            Refresh
           </button>
         </div>
       </div>
@@ -239,7 +266,7 @@ export const Containers = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
       <AnimatePresence mode="popLayout">
-        {filteredContainers.map(container => (
+        {paginatedContainers.map(container => (
           <motion.div
             key={container.id}
             initial={{ opacity: 0, scale: 0.95 }}
@@ -326,7 +353,7 @@ export const Containers = () => {
                 </div>
                  <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net I/O</p>
-                    <p className="text-sm font-mono text-slate-400">Rx/Tx -- / --</p>
+                    <p className="text-sm font-mono text-slate-400">Rx/Tx {container.network_rx ? formatNetBytes(container.network_rx) : '--'} / {container.network_tx ? formatNetBytes(container.network_tx) : '--'}</p>
                 </div>
                  <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Block I/O</p>
@@ -343,6 +370,14 @@ export const Containers = () => {
         )}
       </AnimatePresence>
       </div>
+
+      <Pagination
+        currentPage={page}
+        totalItems={filteredContainers.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
 
       <InspectModal 
         isOpen={inspectModalOpen} 

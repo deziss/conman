@@ -17,7 +17,10 @@ type Config struct {
 	AdminEmail     string   `mapstructure:"ADMIN_EMAIL"`
 	AdminPassword  string   `mapstructure:"ADMIN_PASSWORD"`
 	StaticDir      string   `mapstructure:"STATIC_DIR"`    // Path to frontend build
-	AgentToken     string   `mapstructure:"AGENT_TOKEN"`   // Pre-shared key for agent authentication
+	AgentToken      string   `mapstructure:"AGENT_TOKEN"`       // Pre-shared key for agent authentication
+	LicenseKey      string   `mapstructure:"LICENSE_KEY"`       // License key for Keygen.sh (empty = Community tier)
+	KeygenAccountID string   `mapstructure:"KEYGEN_ACCOUNT_ID"` // Keygen.sh account ID
+	KeygenProductID string   `mapstructure:"KEYGEN_PRODUCT_ID"` // Keygen.sh product ID
 }
 
 var AppConfig *Config
@@ -34,7 +37,10 @@ func LoadConfig() {
     viper.SetDefault("ADMIN_EMAIL", "admin@example.com")
     viper.SetDefault("ADMIN_PASSWORD", "admin")
 	viper.SetDefault("STATIC_DIR", "") // Empty means static serving disabled
-	viper.SetDefault("AGENT_TOKEN", "") // Empty means agent auth disabled (insecure)
+	viper.SetDefault("AGENT_TOKEN", "")        // Empty means agent auth disabled (insecure)
+	viper.SetDefault("LICENSE_KEY", "")        // Empty means Community/Free tier
+	viper.SetDefault("KEYGEN_ACCOUNT_ID", "")  // Required for Keygen.sh API
+	viper.SetDefault("KEYGEN_PRODUCT_ID", "")  // Required for Keygen.sh API
 
 	viper.AutomaticEnv()
 

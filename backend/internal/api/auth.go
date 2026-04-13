@@ -51,7 +51,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"email": user.Email,
 		"name":  user.FullName,
 		"role":  user.Role,
-		"exp":   time.Now().Add(time.Minute * 30).Unix(),
+		"exp":   time.Now().Add(24 * time.Hour).Unix(),
 	})
 
 	tokenString, err := token.SignedString([]byte(config.AppConfig.SecretKey))

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -10,6 +12,8 @@ import (
 	"time"
 
 	"conman-backend/internal/alerts"
+	"conman-backend/internal/buildinfo"
+	"conman-backend/internal/license"
 	"conman-backend/internal/metrics"
 	"conman-backend/internal/models"
 	"conman-backend/internal/observability"
@@ -34,6 +38,7 @@ type AgentHandler struct {
 	agents       map[string]*AgentState
 	DB           *gorm.DB
 	MetricsStore *metrics.MetricsStore
+	License      *license.LicenseService
 	writeQueue   chan persistJob
 }
 
@@ -58,15 +63,81 @@ type AgentState struct {
 	Events        []protocol.ContainerEvent      `json:"events,omitempty"`
 }
 
+// AgentImageResponse is the API response for images with computed usage status.
+type AgentImageResponse struct {
+	ID              string            `json:"id"`
+	RepoTags        []string          `json:"repo_tags"`
+	RepoDigests     []string          `json:"repo_digests,omitempty"`
+	Created         int64             `json:"created"`
+	Size            int64             `json:"size"`
+	VirtualSize     int64             `json:"virtual_size"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	Containers      int               `json:"containers"`
+	Status          string            `json:"status"`
+	UpdateAvailable bool              `json:"update_available"`
+}
+
+// AgentContainerResponse is the API response for containers with merged metrics.
+type AgentContainerResponse struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Image       string            `json:"image"`
+	ImageID     string            `json:"image_id"`
+	Command     string            `json:"command"`
+	Created     int64             `json:"created"`
+	State       string            `json:"state"`
+	Status      string            `json:"status"`
+	Ports       []protocol.Port   `json:"ports,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	NetworkMode string            `json:"network_mode"`
+	Mounts      []protocol.Mount  `json:"mounts,omitempty"`
+	CPUUsage    string            `json:"cpu_usage"`
+	MemoryUsage string            `json:"memory_usage"`
+	DiskIO      string            `json:"disk_io"`
+	NetworkRx   uint64            `json:"network_rx"`
+	NetworkTx   uint64            `json:"network_tx"`
+}
+
+// formatMetricBytes formats a byte count into a human-readable string.
+func formatMetricBytes(bytes uint64) string {
+	if bytes == 0 {
+		return "0 B"
+	}
+	b := float64(bytes)
+	const k = 1024
+	sizes := []string{"B", "KB", "MB", "GB", "TB"}
+	i := 0
+	for b >= k && i < len(sizes)-1 {
+		b /= k
+		i++
+	}
+	return fmt.Sprintf("%.2f %s", b, sizes[i])
+}
+
+// computeUsedImageIDs builds a set of image IDs and names that are in use by containers.
+func computeUsedImageIDs(containers []protocol.Container) map[string]bool {
+	used := make(map[string]bool)
+	for _, c := range containers {
+		if c.ImageID != "" {
+			used[c.ImageID] = true
+		}
+		if c.Image != "" {
+			used[c.Image] = true
+		}
+	}
+	return used
+}
+
 const writeQueueSize = 256
 const writeWorkers = 4
 
 // NewAgentHandler creates a new agent handler with a background write queue.
-func NewAgentHandler(db *gorm.DB, metricsStore *metrics.MetricsStore) *AgentHandler {
+func NewAgentHandler(db *gorm.DB, metricsStore *metrics.MetricsStore, lic *license.LicenseService) *AgentHandler {
 	h := &AgentHandler{
 		agents:       make(map[string]*AgentState),
 		DB:           db,
 		MetricsStore: metricsStore,
+		License:      lic,
 		writeQueue:   make(chan persistJob, writeQueueSize),
 	}
 	h.loadAgents()
@@ -255,7 +326,16 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
     // Stack Management
     r.Get("/agents/{id}/stacks", h.ProxyListStacks)
     r.Post("/agents/{id}/stacks", h.ProxyCreateStack)
+    r.Post("/agents/{id}/stacks/{stackName}/up", h.ProxyUpStack)
+    r.Post("/agents/{id}/stacks/{stackName}/restart", h.ProxyRestartStack)
     r.Delete("/agents/{id}/stacks/{stackName}", h.ProxyRemoveStack)
+
+    // Prune
+    r.Post("/agents/{id}/containers/prune", h.ProxyPruneContainers)
+    r.Post("/agents/{id}/images/prune", h.ProxyPruneImages)
+    r.Post("/agents/{id}/volumes/prune", h.ProxyPruneVolumes)
+    r.Post("/agents/{id}/networks/prune", h.ProxyPruneNetworks)
+    r.Post("/agents/{id}/system/prune", h.ProxySystemPrune)
 
 	// Historical Metrics
 	r.Get("/metrics/containers/{containerId}", h.QueryContainerMetrics)
@@ -302,7 +382,14 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		existing.ScrapeURL = dbAgent.ScrapeURL
 		h.DB.Save(&existing)
 	} else {
-		// Create new
+		// Create new — check host limit
+		if h.License != nil && !h.License.CanAddHost() {
+			state := h.License.GetState()
+			ErrorJSON(w, http.StatusForbidden, fmt.Sprintf(
+				"Host limit reached. Your %s plan allows %d host(s). Upgrade to add more.",
+				state.Tier, state.MaxHosts))
+			return
+		}
 		h.DB.Create(&dbAgent)
 	}
 
@@ -330,7 +417,7 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, protocol.AgentRegistrationResponse{
 		Success:       true,
 		Message:       "Registration successful",
-		ServerVersion: "1.0.0",
+		ServerVersion: buildinfo.Version,
 	})
 }
 
@@ -664,7 +751,7 @@ func (h *AgentHandler) ReceiveEvent(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 
-// GetAgentContainers returns containers from a specific agent
+// GetAgentContainers returns containers from a specific agent with merged metrics.
 func (h *AgentHandler) GetAgentContainers(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -677,10 +764,46 @@ func (h *AgentHandler) GetAgentContainers(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, agent.Containers)
+	result := make([]AgentContainerResponse, 0, len(agent.Containers))
+	for _, c := range agent.Containers {
+		cpuUsage := "0.00%"
+		memUsage := "0 B"
+		diskIO := "0 B / 0 B"
+		var networkRx, networkTx uint64
+
+		if m, ok := agent.Metrics[c.ID]; ok {
+			cpuUsage = fmt.Sprintf("%.2f%%", m.CPUPercent)
+			memUsage = formatMetricBytes(m.MemoryUsage)
+			diskIO = fmt.Sprintf("%s / %s", formatMetricBytes(m.BlockRead), formatMetricBytes(m.BlockWrite))
+			networkRx = m.NetworkRx
+			networkTx = m.NetworkTx
+		}
+
+		result = append(result, AgentContainerResponse{
+			ID:          c.ID,
+			Name:        c.Name,
+			Image:       c.Image,
+			ImageID:     c.ImageID,
+			Command:     c.Command,
+			Created:     c.Created,
+			State:       c.State,
+			Status:      c.Status,
+			Ports:       c.Ports,
+			Labels:      c.Labels,
+			NetworkMode: c.NetworkMode,
+			Mounts:      c.Mounts,
+			CPUUsage:    cpuUsage,
+			MemoryUsage: memUsage,
+			DiskIO:      diskIO,
+			NetworkRx:   networkRx,
+			NetworkTx:   networkTx,
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, result)
 }
 
-// GetAgentImages returns images from a specific agent
+// GetAgentImages returns images from a specific agent with computed usage status.
 func (h *AgentHandler) GetAgentImages(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -693,7 +816,37 @@ func (h *AgentHandler) GetAgentImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, agent.Images)
+	usedImages := computeUsedImageIDs(agent.Containers)
+
+	result := make([]AgentImageResponse, 0, len(agent.Images))
+	for _, img := range agent.Images {
+		status := "unused"
+		if usedImages[img.ID] {
+			status = "used"
+		} else {
+			for _, tag := range img.RepoTags {
+				if usedImages[tag] {
+					status = "used"
+					break
+				}
+			}
+		}
+
+		result = append(result, AgentImageResponse{
+			ID:              img.ID,
+			RepoTags:        img.RepoTags,
+			RepoDigests:     img.RepoDigests,
+			Created:         img.Created,
+			Size:            img.Size,
+			VirtualSize:     img.VirtualSize,
+			Labels:          img.Labels,
+			Containers:      img.Containers,
+			Status:          status,
+			UpdateAvailable: false,
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, result)
 }
 
 // GetAgentNetworks returns networks from a specific agent
@@ -835,6 +988,20 @@ func (h *AgentHandler) parseMetricsQuery(r *http.Request) metrics.QueryParams {
 	return params
 }
 
+// scrapeURLtoWS converts an http/https scrape URL to a ws/wss WebSocket URL.
+func scrapeURLtoWS(scrapeURL string) string {
+	if len(scrapeURL) >= 8 && scrapeURL[:8] == "https://" {
+		return "wss://" + scrapeURL[8:]
+	}
+	if len(scrapeURL) >= 7 && scrapeURL[:7] == "http://" {
+		return "ws://" + scrapeURL[7:]
+	}
+	return "ws://" + scrapeURL
+}
+
+// wsDialer is a shared dialer with a sensible handshake timeout.
+var wsDialer = &websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+
 // ProxyStreamExec proxies usage of the exec-stream to an agent
 func (h *AgentHandler) ProxyStreamExec(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "id")
@@ -849,35 +1016,27 @@ func (h *AgentHandler) ProxyStreamExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construct Agent WebSocket URL
-	// ScrapeURL is usually http://ip:port. We need ws://ip:port/api/exec?id=...
-	base := agent.ScrapeURL
-	if base == "" {
-        // Fallback for demo/dev if not set
-        if agent.HostInfo != nil {
-             // Try to guess from remote address? Difficult without storage.
-             // Assuming ScrapeURL is properly set during registration/update.
-        }
+	// Local mode: serve directly from local Docker client (no remote agent)
+	if agent.Mode == "local" {
+		localHandler := &ContainerHandler{}
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", containerID)
+		req := r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		localHandler.StreamExec(w, req)
+		return
+	}
+
+	if agent.ScrapeURL == "" {
 		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
 		return
 	}
-    
-    // Convert http/https to ws/wss
-    targetScheme := "ws"
-    if len(base) >= 5 && base[:5] == "https" {
-        targetScheme = "wss"
-        base = base[8:]
-    } else if len(base) >= 4 && base[:4] == "http" {
-        base = base[7:]
-    }
-    
-    targetURL := targetScheme + "://" + base + "/api/exec?id=" + containerID
 
-	// Connect to Agent
-	agentConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	targetURL := scrapeURLtoWS(agent.ScrapeURL) + "/api/exec?id=" + containerID
+
+	agentConn, _, err := wsDialer.DialContext(r.Context(), targetURL, nil)
 	if err != nil {
-		log.Printf("Failed to dial agent %s: %v", targetURL, err)
-		http.Error(w, "Failed to connect to agent", http.StatusBadGateway)
+		log.Printf("ProxyStreamExec: dial failed: %v", err)
+		http.Error(w, "Failed to connect to agent: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer agentConn.Close()
@@ -967,9 +1126,11 @@ func (h *AgentHandler) ProxyListContainerFiles(w http.ResponseWriter, r *http.Re
 func (h *AgentHandler) ProxyStreamLogs(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "id")
 	containerID := chi.URLParam(r, "containerId")
-	
-	// Pass through query params (tail, since)
-	query := r.URL.Query().Encode()
+
+	// Pass through query params (tail, since) — strip the user JWT so it's not forwarded
+	params := r.URL.Query()
+	params.Del("token")
+	query := params.Encode()
 
 	h.mu.RLock()
 	agent, exists := h.agents[agentID]
@@ -980,57 +1141,62 @@ func (h *AgentHandler) ProxyStreamLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Local mode: serve directly from local Docker client (no remote agent)
+	if agent.Mode == "local" {
+		localHandler := &ContainerHandler{}
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", containerID)
+		req := r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		localHandler.StreamLogs(w, req)
+		return
+	}
+
 	if agent.ScrapeURL == "" {
 		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
 		return
 	}
 
-	// Construct Agent WebSocket URL
-	base := agent.ScrapeURL
-    targetScheme := "ws"
-    if len(base) >= 5 && base[:5] == "https" {
-        targetScheme = "wss"
-        base = base[8:]
-    } else if len(base) >= 4 && base[:4] == "http" {
-        base = base[7:]
-    }
-    
-    targetURL := targetScheme + "://" + base + "/api/logs?id=" + containerID + "&" + query
+	// Build target WebSocket URL — scrapeURL is http/https, convert to ws/wss
+	targetURL := scrapeURLtoWS(agent.ScrapeURL) + "/api/logs?id=" + containerID
+	if query != "" {
+		targetURL += "&" + query
+	}
 
-	// Connect to Agent
-	agentConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	log.Printf("ProxyStreamLogs: agent=%s container=%s -> %s", agentID, containerID, targetURL)
+
+	agentConn, _, err := wsDialer.DialContext(r.Context(), targetURL, nil)
 	if err != nil {
-		log.Printf("Failed to dial agent logs %s: %v", targetURL, err)
-		http.Error(w, "Failed to connect to agent", http.StatusBadGateway)
+		log.Printf("ProxyStreamLogs: dial failed: %v", err)
+		http.Error(w, "Failed to connect to agent: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer agentConn.Close()
 
-	// Upgrade Client Connection
+	// Upgrade client connection to WebSocket
 	clientConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Printf("ProxyStreamLogs: client upgrade failed: %v", err)
 		return
 	}
 	defer clientConn.Close()
 
-	// Pipe
+	// Bidirectional pipe — stop on first error in either direction
 	errCh := make(chan error, 2)
 
 	go func() {
 		for {
-			mt, message, err := agentConn.ReadMessage()
+			mt, msg, err := agentConn.ReadMessage()
 			if err != nil {
 				errCh <- err
 				return
 			}
-			if err := clientConn.WriteMessage(mt, message); err != nil {
+			if err := clientConn.WriteMessage(mt, msg); err != nil {
 				errCh <- err
 				return
 			}
 		}
 	}()
 
-	// Frontend shouldn't really write to logs, but keep pipe open to detect close
 	go func() {
 		for {
 			_, _, err := clientConn.ReadMessage()
@@ -1044,11 +1210,11 @@ func (h *AgentHandler) ProxyStreamLogs(w http.ResponseWriter, r *http.Request) {
 	<-errCh
 }
 
-// ProxyStreamStats proxies log streaming to an agent
+// ProxyStreamStats proxies stats streaming to an agent
 func (h *AgentHandler) ProxyStreamStats(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "id")
 	containerID := chi.URLParam(r, "containerId")
-	
+
 	h.mu.RLock()
 	agent, exists := h.agents[agentID]
 	h.mu.RUnlock()
@@ -1058,28 +1224,27 @@ func (h *AgentHandler) ProxyStreamStats(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Local mode: serve directly from local Docker client (no remote agent)
+	if agent.Mode == "local" {
+		localHandler := &ContainerHandler{}
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", containerID)
+		req := r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		localHandler.StreamStats(w, req)
+		return
+	}
+
 	if agent.ScrapeURL == "" {
 		http.Error(w, "Agent scrape URL not configured", http.StatusBadGateway)
 		return
 	}
 
-	// Construct Agent WebSocket URL
-	base := agent.ScrapeURL
-    targetScheme := "ws"
-    if len(base) >= 5 && base[:5] == "https" {
-        targetScheme = "wss"
-        base = base[8:]
-    } else if len(base) >= 4 && base[:4] == "http" {
-        base = base[7:]
-    }
-    
-    targetURL := targetScheme + "://" + base + "/api/stats?id=" + containerID
+	targetURL := scrapeURLtoWS(agent.ScrapeURL) + "/api/stats?id=" + containerID
 
-	// Connect to Agent
-	agentConn, _, err := websocket.DefaultDialer.Dial(targetURL, nil)
+	agentConn, _, err := wsDialer.DialContext(r.Context(), targetURL, nil)
 	if err != nil {
-		log.Printf("Failed to dial agent stats %s: %v", targetURL, err)
-		http.Error(w, "Failed to connect to agent", http.StatusBadGateway)
+		log.Printf("ProxyStreamStats: dial failed: %v", err)
+		http.Error(w, "Failed to connect to agent: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer agentConn.Close()

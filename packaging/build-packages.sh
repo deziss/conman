@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-VERSION="${VERSION:-1.0.0}"
+VERSION="${VERSION:-$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "1.0.0")}"
 DIST_DIR="$PROJECT_DIR/dist"
 
 echo "=== Building Conman packages v${VERSION} ==="
@@ -27,7 +27,7 @@ echo "Frontend built: $(du -sh dist | cut -f1)"
 echo "--- Building conman-server ---"
 cd "$PROJECT_DIR/backend"
 CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -X main.version=${VERSION}" \
+    -ldflags="-s -w -X conman-backend/internal/buildinfo.Version=${VERSION}" \
     -trimpath \
     -o "$DIST_DIR/conman-server" \
     ./cmd/server
@@ -37,7 +37,7 @@ echo "Server binary: $(du -sh "$DIST_DIR/conman-server" | cut -f1)"
 echo "--- Building conman-agent ---"
 cd "$PROJECT_DIR/agent"
 CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.version=${VERSION}" \
+    -ldflags="-s -w -X conman-agent/internal/buildinfo.Version=${VERSION}" \
     -trimpath \
     -o "$DIST_DIR/conman-agent" \
     ./cmd/agent

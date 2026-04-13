@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"conman-agent/internal/buildinfo"
 	"conman-agent/pkg/protocol"
 
 	"github.com/docker/docker/api/types"
@@ -167,7 +168,7 @@ func (a *Agent) registerWithServer(ctx context.Context) error {
 		AgentID:     a.cfg.AgentID,
 		AgentName:   a.cfg.AgentName,
 		HostInfo:    hostInfo,
-		Version:     "1.0.0",
+		Version:     buildinfo.Version,
 		Mode:        string(a.cfg.Mode),
 		RuntimeType: a.cfg.RuntimeType,
 		Timestamp:   time.Now(),

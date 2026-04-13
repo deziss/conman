@@ -16,6 +16,7 @@ import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { Pagination } from '../components/ui/Pagination';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { FileBrowser } from '../components/FileBrowser';
@@ -144,9 +145,20 @@ export const Volumes = () => {
   };
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+  const [confirmPrune, setConfirmPrune] = useState(false);
 
   const handleRemoveVolume = (name: string) => {
       setConfirmDelete({ isOpen: true, id: name });
+  };
+
+  const handlePruneVolumes = async () => {
+      if (!currentHost) return;
+      try {
+          const { data } = await api.post(`/agents/${currentHost.id}/volumes/prune`);
+          const count = data?.volumes_deleted?.length || 0;
+          toast.success(`Pruned ${count} unused volumes`);
+          fetchVolumes(true);
+      } catch { toast.error('Failed to prune volumes'); }
   };
 
   const executeRemoveVolume = async () => {
@@ -244,6 +256,12 @@ export const Volumes = () => {
       });
   }, [volumes, sortField, sortDirection]);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
+  const paginatedVolumes = sortedVolumes.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => { setPage(1); }, [sortField, sortDirection]);
+
   const SortIcon = ({ field }: { field: SortField }) => {
       if (sortField !== field) return <div className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-50" />;
       return sortDirection === 'asc' ? 
@@ -266,26 +284,36 @@ export const Volumes = () => {
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-600 dark:from-amber-400 dark:to-orange-400">
           Volumes
         </h2>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-3">
              {currentHost && (
-                <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
+                <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-white/10">
                     <ServerStackIcon className="w-4 h-4" />
-                    <span>{currentHost.name}</span>
-                </GlassCard>
+                    {currentHost.name}
+                </span>
             )}
-            
-             <button 
+
+             <button
                 onClick={() => setCreateModalOpen(true)}
-                className="flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-amber-500/20"
+                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
             >
-                <PlusIcon className="w-5 h-5" />
-                <span>Create Volume</span>
+                <PlusIcon className="w-4 h-4" />
+                Create Volume
             </button>
-            
-            <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-amber-600 dark:text-amber-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={() => fetchVolumes(true)}>
+
+            <button
+                onClick={() => setConfirmPrune(true)}
+                className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+            >
+                <TrashIcon className="w-4 h-4" />
+                Prune
+            </button>
+            <button
+                onClick={() => fetchVolumes(true)}
+                className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+            >
                 <ArrowPathIcon className="w-4 h-4" />
-                <span>Refresh</span>
-            </GlassCard>
+                Refresh
+            </button>
         </div>
       </div>
 
@@ -322,7 +350,7 @@ export const Volumes = () => {
                     ) : sortedVolumes.length === 0 ? (
                         <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">No volumes found.</td></tr>
                     ) : (
-                        sortedVolumes.map((vol) => (
+                        paginatedVolumes.map((vol) => (
                             <tr key={vol.name} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                 <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-200">
                                     <div className="flex items-center space-x-3">
@@ -402,9 +430,17 @@ export const Volumes = () => {
           </div>
       </GlassCard>
 
-      <InspectModal 
-        isOpen={inspectModalOpen} 
-        onClose={() => setInspectModalOpen(false)} 
+      <Pagination
+        currentPage={page}
+        totalItems={sortedVolumes.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
+
+      <InspectModal
+        isOpen={inspectModalOpen}
+        onClose={() => setInspectModalOpen(false)}
         title="Volume Details" 
         data={inspectData} 
       />
@@ -469,6 +505,15 @@ export const Volumes = () => {
                 title="Remove Volume"
                 message="Are you sure you want to remove this volume? This action is irreversible."
                 confirmText="Remove"
+                isDestructive={true}
+            />
+            <ConfirmModal
+                isOpen={confirmPrune}
+                onClose={() => setConfirmPrune(false)}
+                onConfirm={handlePruneVolumes}
+                title="Prune Volumes"
+                message="Remove all unused volumes? All data in unused volumes will be lost."
+                confirmText="Prune"
                 isDestructive={true}
             />
 

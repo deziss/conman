@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"conman-backend/internal/buildinfo"
 	"conman-backend/pkg/protocol"
 
 	"github.com/docker/docker/api/types"
@@ -112,7 +113,7 @@ func (a *Agent) registerWithServer(ctx context.Context) error {
 		AgentID:   a.cfg.AgentID,
 		AgentName: a.cfg.AgentName,
 		HostInfo:  hostInfo,
-		Version:   "1.0.0",
+		Version:   buildinfo.Version,
 		Mode:      string(a.cfg.Mode),
 		Timestamp: time.Now(),
 	}

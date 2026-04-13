@@ -25,6 +25,11 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+    // License-gated feature: tag the error so UI can show upgrade prompt
+    if (error.response?.status === 403 && error.response?.data?.license_required) {
+      error.isLicenseError = true;
+      error.requiredFeature = error.response.data.feature;
+    }
     return Promise.reject(error);
   }
 );

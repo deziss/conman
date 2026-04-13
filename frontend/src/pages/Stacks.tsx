@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { PlusIcon, PlayIcon, StopIcon, TrashIcon, DocumentTextIcon, CodeBracketIcon, EyeIcon } from '@heroicons/react/24/solid';
+import { PlusIcon, PlayIcon, ArrowPathIcon, TrashIcon, DocumentTextIcon, CodeBracketIcon, EyeIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { useLicense } from '../contexts/LicenseContext';
+import { UpgradePrompt } from '../components/ui/UpgradePrompt';
 
 interface Stack {
     Name: string;
@@ -16,6 +18,11 @@ interface Stack {
 }
 
 export const Stacks = () => {
+    const { hasFeature } = useLicense();
+    if (!hasFeature('stacks')) {
+        return <UpgradePrompt feature="Stack Management" requiredTier="pro" />;
+    }
+
     const { currentHost } = useHost();
     const [stacks, setStacks] = useState<Stack[]>([]);
     const [loading, setLoading] = useState(true);
@@ -92,6 +99,28 @@ export const Stacks = () => {
         }
     };
 
+    const handleUp = async (name: string) => {
+        if (!currentHost) return;
+        try {
+            await api.post(`/agents/${currentHost.id}/stacks/${encodeURIComponent(name)}/up`);
+            toast.success('Stack starting...');
+            fetchStacks();
+        } catch (error: any) {
+            toast.error(`Failed to start stack: ${error.response?.data || error.message}`);
+        }
+    };
+
+    const handleRestart = async (name: string) => {
+        if (!currentHost) return;
+        try {
+            await api.post(`/agents/${currentHost.id}/stacks/${encodeURIComponent(name)}/restart`);
+            toast.success('Stack restarting...');
+            fetchStacks();
+        } catch (error: any) {
+            toast.error(`Failed to restart stack: ${error.response?.data || error.message}`);
+        }
+    };
+
     return (
         <div className="p-6 space-y-6 animate-fade-in">
              <div className="flex justify-between items-center">
@@ -148,11 +177,16 @@ export const Stacks = () => {
                             )}
 
                             <div className="flex justify-end gap-2 border-t border-slate-100 dark:border-white/5 pt-4">
-                               {/* 
-                                <button onClick={() => navigate(`/stacks/${stack.Name}`)} title="View Config / Details" className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg transition-colors">
-                                    <EyeIcon className="w-5 h-5" />
-                                </button>
-                                */}
+                                {(stack.Status === 'exited' || stack.Status === 'partial') && (
+                                    <button onClick={() => handleUp(stack.Name)} title="Start (Up)" className="p-2 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-colors">
+                                        <PlayIcon className="w-5 h-5" />
+                                    </button>
+                                )}
+                                {stack.Status === 'active' && (
+                                    <button onClick={() => handleRestart(stack.Name)} title="Restart" className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-colors">
+                                        <ArrowPathIcon className="w-5 h-5" />
+                                    </button>
+                                )}
                                 <button onClick={() => handleDelete(stack.Name)} title="Remove (Down)" className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors">
                                     <TrashIcon className="w-5 h-5" />
                                 </button>
