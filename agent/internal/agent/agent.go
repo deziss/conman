@@ -274,14 +274,24 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
             case "POST": a.handleCreateStack(w, r)
         }
     })
+    mux.HandleFunc("/api/stacks/up", a.handleUpStack)
+    mux.HandleFunc("/api/stacks/restart", a.handleRestartStack)
     mux.HandleFunc("/api/stacks/remove", a.handleRemoveStack)
 
 	mux.HandleFunc("/api/system/df", a.handleSystemDF)
+	mux.HandleFunc("/api/system/prune", a.handleSystemPrune)
+	mux.HandleFunc("/api/containers/prune", a.handlePruneContainers)
+	mux.HandleFunc("/api/images/prune", a.handlePruneImages)
+	mux.HandleFunc("/api/volumes/prune", a.handlePruneVolumes)
+	mux.HandleFunc("/api/networks/prune", a.handlePruneNetworks)
 
 	// Prometheus-compatible operational metrics for the agent itself
 	mux.HandleFunc("/prom/metrics", a.handlePromMetrics)
 	
-    // Remove Endpoints
+    // Container Lifecycle Endpoints
+    mux.HandleFunc("/api/containers/start", a.handleStartContainer)
+    mux.HandleFunc("/api/containers/stop", a.handleStopContainer)
+    mux.HandleFunc("/api/containers/restart", a.handleRestartContainer)
     mux.HandleFunc("/api/containers/remove", a.handleRemoveContainer)
     mux.HandleFunc("/api/images/remove", a.handleRemoveImage)
     mux.HandleFunc("/api/networks/remove", a.handleRemoveNetwork)
@@ -337,17 +347,97 @@ func (a *Agent) handleInfo(w http.ResponseWriter, r *http.Request) {
 func (a *Agent) handleContainers(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	
+
+	// Build a metrics lookup by container ID
+	metricsMap := make(map[string]*protocol.ContainerMetrics, len(a.metrics))
+	for i := range a.metrics {
+		metricsMap[a.metrics[i].ContainerID] = &a.metrics[i]
+	}
+
+	// Enrich containers with stats for the frontend
+	type enrichedContainer struct {
+		protocol.Container
+		CpuUsage    string `json:"cpu_usage"`
+		MemoryUsage string `json:"memory_usage"`
+		DiskIO      string `json:"disk_io"`
+		NetworkRx   uint64 `json:"network_rx"`
+		NetworkTx   uint64 `json:"network_tx"`
+	}
+
+	result := make([]enrichedContainer, 0, len(a.containers))
+	for _, c := range a.containers {
+		ec := enrichedContainer{Container: c}
+		if m, ok := metricsMap[c.ID]; ok {
+			ec.CpuUsage = fmt.Sprintf("%.1f%%", m.CPUPercent)
+			if m.MemoryUsage > 1024*1024*1024 {
+				ec.MemoryUsage = fmt.Sprintf("%.1f GB", float64(m.MemoryUsage)/(1024*1024*1024))
+			} else {
+				ec.MemoryUsage = fmt.Sprintf("%.1f MB", float64(m.MemoryUsage)/(1024*1024))
+			}
+			ec.DiskIO = fmt.Sprintf("%s / %s", formatBytesShort(m.BlockRead), formatBytesShort(m.BlockWrite))
+			ec.NetworkRx = m.NetworkRx
+			ec.NetworkTx = m.NetworkTx
+		}
+		result = append(result, ec)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(a.containers)
+	json.NewEncoder(w).Encode(result)
+}
+
+func formatBytesShort(b uint64) string {
+	switch {
+	case b >= 1024*1024*1024:
+		return fmt.Sprintf("%.1f GB", float64(b)/(1024*1024*1024))
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	case b >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 func (a *Agent) handleImages(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	
+
+	// Build a set of image IDs that are in use by containers
+	usedImages := make(map[string]int)
+	for _, c := range a.containers {
+		usedImages[c.Image]++
+		// Also match by image ID prefix (container.Image might be name:tag)
+		// We'll match by ImageID below
+	}
+
+	type enrichedImage struct {
+		protocol.Image
+		Status string `json:"status"`
+	}
+
+	result := make([]enrichedImage, 0, len(a.images))
+	for _, img := range a.images {
+		ei := enrichedImage{Image: img}
+		// Check if any container references this image by tag or ID
+		inUse := img.Containers > 0
+		if !inUse {
+			for _, tag := range img.RepoTags {
+				if usedImages[tag] > 0 {
+					inUse = true
+					break
+				}
+			}
+		}
+		if inUse {
+			ei.Status = "used"
+		} else {
+			ei.Status = "unused"
+		}
+		result = append(result, ei)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(a.images)
+	json.NewEncoder(w).Encode(result)
 }
 
 func (a *Agent) handleNetworks(w http.ResponseWriter, r *http.Request) {

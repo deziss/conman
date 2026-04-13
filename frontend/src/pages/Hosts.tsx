@@ -132,17 +132,20 @@ export const Hosts = () => {
                 <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-500">
                     Hosts
                 </h2>
-                <div className="flex items-center space-x-3">
-                    <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-400 cursor-pointer hover:bg-white/5 transition-colors" role="button" onClick={fetchHosts}>
-                        <ArrowPathIcon className="w-4 h-4" />
-                        <span>Refresh</span>
-                    </GlassCard>
+                <div className="flex items-center gap-3">
                     <button
                         onClick={() => setShowAddHost(true)}
-                        className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-cyan-500/20"
+                        className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
                     >
                         <PlusIcon className="w-4 h-4" />
                         Add Host
+                    </button>
+                    <button
+                        onClick={fetchHosts}
+                        className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                    >
+                        <ArrowPathIcon className="w-4 h-4" />
+                        Refresh
                     </button>
                 </div>
             </div>

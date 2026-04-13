@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { useHost } from '../contexts/HostContext';
 import { AddHostModal } from '../components/AddHostModal';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 
 // -- Linear Progress Bar Component --
 const LinearProgress = ({ percent, color }: { percent: number, color: string }) => {
@@ -244,9 +245,15 @@ export const Dashboard = () => {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
-    const handleAction = (action: string) => {
-         // Placeholder for bulk actions
-         toast(`Bulk action ${action} not yet implemented via Agent API`, { icon: '🚧' });
+    const [confirmPrune, setConfirmPrune] = useState(false);
+
+    const handleSystemPrune = async () => {
+        if (!currentHost) return;
+        try {
+            const { data } = await api.post(`/agents/${currentHost.id}/system/prune`);
+            const space = ((data?.containers_space || 0) + (data?.images_space || 0) + (data?.volumes_space || 0)) / 1024 / 1024;
+            toast.success(`System pruned, reclaimed ${space.toFixed(1)} MB`);
+        } catch { toast.error('Failed to system prune'); }
     };
 
     // Current Environment Card Data
@@ -272,10 +279,13 @@ export const Dashboard = () => {
                         Managing {currentHost?.name || 'Host'}
                      </p>
                 </div>
-                {/* 
-                  Bulk Actions Hidden until implemented in backend ops 
-                  or we can implement frontend loop
-                */}
+                <button
+                    onClick={() => setConfirmPrune(true)}
+                    className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+                >
+                    <TrashIcon className="w-4 h-4" />
+                    System Prune
+                </button>
             </div>
 
             {/* Hosts Section */}
@@ -440,6 +450,15 @@ export const Dashboard = () => {
                 isOpen={showAddHost}
                 onClose={() => setShowAddHost(false)}
                 onHostAdded={() => { setShowAddHost(false); }}
+            />
+            <ConfirmModal
+                isOpen={confirmPrune}
+                onClose={() => setConfirmPrune(false)}
+                onConfirm={handleSystemPrune}
+                title="System Prune"
+                message="Remove all unused containers, images, networks, and volumes? This cannot be undone and may reclaim significant disk space."
+                confirmText="Prune All"
+                isDestructive={true}
             />
         </div>
     );

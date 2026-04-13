@@ -1,7 +1,6 @@
 import { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-import { GlassCard } from './GlassCard';
 import clsx from 'clsx';
 
 interface ConfirmModalProps {
@@ -52,7 +51,7 @@ export const ConfirmModal = ({
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
               <Dialog.Panel className="relative transform overflow-hidden rounded-xl text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
-                <GlassCard className="p-6 border-slate-700/50 bg-slate-900/80">
+                <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 rounded-xl">
                   <div className="sm:flex sm:items-start">
                     {isDestructive && (
                       <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-500/10 sm:mx-0 sm:h-10 sm:w-10">
@@ -60,11 +59,11 @@ export const ConfirmModal = ({
                       </div>
                     )}
                     <div className={clsx("mt-3 text-center sm:mt-0 sm:text-left", isDestructive && "sm:ml-4")}>
-                      <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-100">
+                      <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-900 dark:text-slate-100">
                         {title}
                       </Dialog.Title>
                       <div className="mt-2">
-                        <p className="text-sm text-slate-400">
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
                           {message}
                         </p>
                       </div>
@@ -88,13 +87,13 @@ export const ConfirmModal = ({
                     </button>
                     <button
                       type="button"
-                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white/5 px-3 py-2 text-sm font-semibold text-slate-300 shadow-sm ring-1 ring-inset ring-white/10 hover:bg-white/10 sm:mt-0 sm:w-auto transition-all"
+                      className="mt-3 inline-flex w-full justify-center rounded-md bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-white/10 hover:bg-slate-200 dark:hover:bg-white/10 sm:mt-0 sm:w-auto transition-all"
                       onClick={onClose}
                     >
                       {cancelText}
                     </button>
                   </div>
-                </GlassCard>
+                </div>
               </Dialog.Panel>
             </Transition.Child>
           </div>

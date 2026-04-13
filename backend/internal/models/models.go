@@ -9,8 +9,9 @@ import (
 type ContextKey string
 
 const (
-	UserContextKey ContextKey = "user"
-	RoleContextKey ContextKey = "role"
+	UserContextKey    ContextKey = "user"
+	RoleContextKey    ContextKey = "role"
+	LicenseContextKey ContextKey = "license"
 )
 
 type User struct {

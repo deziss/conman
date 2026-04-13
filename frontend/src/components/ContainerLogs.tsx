@@ -113,7 +113,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   const grepTermRef = useRef('');
   const levelFiltersRef = useRef<Record<string, boolean>>({ error: true, warn: true, info: true, debug: true, unknown: true });
   const showTimestampsRef = useRef(true);
-  const [termReady, setTermReady] = useState(false);
+  const termReadyRef = useRef(false);
   
   // Options
   const [showTimestamps, setShowTimestamps] = useState(true);
@@ -143,223 +143,200 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       error: 0, warn: 0, info: 0, debug: 0, unknown: 0
   });
 
-  // Toggle level filter
+  // Stable refs for filter state — read in renderLogs without stale closures
+  const dedupRef = useRef(false);
+  const viewModeRef = useRef<'raw' | 'table'>('raw');
+
+  // Toggle level filter — updates both state (for display) and ref (for renderLogs)
   const toggleLevel = (level: LogLevel) => {
-      setLevelFilters(prev => ({ ...prev, [level]: !prev[level] }));
+      setLevelFilters(prev => {
+          const next = { ...prev, [level]: !prev[level] };
+          levelFiltersRef.current = next;
+          reRenderLogs(next);
+          return next;
+      });
   };
 
-  // Render logs to xterm
-  const renderLogs = useCallback(() => {
+  // renderLogs: reads filter state from refs so it's always current.
+  // Called ONLY explicitly (filter changes, resume from pause). Never auto-fires.
+  const reRenderLogs = (overrideLevelFilters?: Record<string, boolean>) => {
       if (!xtermRef.current) return;
-      
-      xtermRef.current.clear();
+
       const term = xtermRef.current;
+      term.clear();
       processedBufferRef.current.clear();
 
+      const filters = overrideLevelFilters ?? levelFiltersRef.current;
       const buffer = logBufferRef.current;
       let renderedCount = 0;
       const counts: Record<LogLevel, number> = { error: 0, warn: 0, info: 0, debug: 0, unknown: 0 };
-      
-      for (let i = 0; i < buffer.length; i++) {
-          const rawLine = buffer[i];
+
+      for (const rawLine of buffer) {
           if (!rawLine.trim()) continue;
 
-          // Extract message for level detection
           let message = rawLine;
-          const match = rawLine.match(/^(\d{4}-\d{2}-\d{2}T.*?) (.*)/);
+          const match = rawLine.match(/^(\d{4}-\d{2}-\d{2}T\S+) ([\s\S]*)/);
           if (match) message = match[2];
-          
+
           const level = detectLogLevel(message);
           counts[level]++;
 
-          // 1. Level Filter
-          if (!levelFilters[level]) continue;
-
-          // 2. Filter (Grep)
-          if (grepTerm && !rawLine.toLowerCase().includes(grepTerm.toLowerCase())) {
-              continue;
-          }
-
-          // 3. Dedup
-          if (dedup) {
+          if (!filters[level]) continue;
+          if (grepTermRef.current && !rawLine.toLowerCase().includes(grepTermRef.current.toLowerCase())) continue;
+          if (dedupRef.current) {
               const content = rawLine.substring(31);
               if (processedBufferRef.current.has(content)) continue;
               processedBufferRef.current.add(content);
           }
 
-          // 4. Format & Colorize
-          let timestamp = "";
-          if (match) {
-             timestamp = match[1];
-             message = match[2];
+          let outputLine = '';
+          if (showTimestampsRef.current && match) {
+              outputLine += `${ANSI.GRAY}${formatTimestamp(match[1])}${ANSI.RESET} `;
           }
-
-          const color = getLevelColor(level);
-          let outputLine = "";
-          
-          if (showTimestamps && timestamp) {
-              const formattedTs = formatTimestamp(timestamp);
-              outputLine += `${ANSI.GRAY}${formattedTs}${ANSI.RESET} `;
-          }
-          
-          outputLine += `${color}${message}${ANSI.RESET}`;
+          outputLine += `${getLevelColor(level)}${message}${ANSI.RESET}`;
           term.writeln(outputLine);
           renderedCount++;
       }
-      
+
       setTotalLines(buffer.length);
       setVisibleLines(renderedCount);
       setLevelCounts(counts);
-      
-  }, [grepTerm, showTimestamps, dedup, levelFilters]); 
 
-  // Sync React State for Table Viewer
-  const updateFilteredLogs = useCallback(() => {
-     if (viewMode !== 'table') return;
+      // Update table view too
+      if (viewModeRef.current === 'table') {
+          setFilteredLogs(buffer.filter(rawLine => {
+              if (!rawLine.trim()) return false;
+              let message = rawLine;
+              const match = rawLine.match(/^(\d{4}-\d{2}-\d{2}T\S+) ([\s\S]*)/);
+              if (match) message = match[2];
+              const level = detectLogLevel(message);
+              if (!filters[level]) return false;
+              if (grepTermRef.current && !rawLine.toLowerCase().includes(grepTermRef.current.toLowerCase())) return false;
+              return true;
+          }));
+      }
+  };
 
-     const buffer = logBufferRef.current;
-     const nextLogs: string[] = [];
-     const seen = new Set<string>();
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'closed' | 'error'>('connecting');
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track current connection params so reconnect uses latest values
+  const connectParamsRef = useRef({ containerId, tailCount, timeRange, agentId });
 
-     for (const rawLine of buffer) {
-          if (!rawLine.trim()) continue;
-          
-          let message = rawLine;
-          const match = rawLine.match(/^(\d{4}-\d{2}-\d{2}T.*?) (.*)/);
-          if (match) message = match[2];
-          
-          const level = detectLogLevel(message);
-          if (!levelFilters[level]) continue;
-          
-          if (grepTerm && !rawLine.toLowerCase().includes(grepTerm.toLowerCase())) continue;
-          
-          if (dedup) {
-              const content = rawLine.substring(31); 
-              if (seen.has(content)) continue;
-              seen.add(content);
-          }
-           
-          nextLogs.push(rawLine);
-     }
-     setFilteredLogs(nextLogs);
-  }, [grepTerm, dedup, viewMode, levelFilters]);
-
-  // Trigger render on filter changes
+  // Keep params ref in sync without causing reconnect
   useEffect(() => {
-      renderLogs();
-  }, [renderLogs]);
+    connectParamsRef.current = { containerId, tailCount, timeRange, agentId };
+  });
 
-  useEffect(() => {
-      updateFilteredLogs();
-  }, [updateFilteredLogs]);
-
-  // Reconnect WebSocket when tail/timeRange changes
   const connectLogs = useCallback(() => {
-    // Need both xterm and agentId to proceed
-    if (!xtermRef.current || !agentId) {
-        return;
+    if (!termReadyRef.current) return;
+
+    const { containerId: cid, tailCount: tail, timeRange: tr, agentId: aid } = connectParamsRef.current;
+    if (!aid || !cid) return;
+
+    // Cancel any pending reconnect
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
     }
 
-    // Close existing socket
-    if (socketRef.current) {
-        socketRef.current.close();
+    // Close existing socket cleanly
+    if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) {
+      socketRef.current.onclose = null; // prevent reconnect loop from old socket
+      socketRef.current.close();
     }
-    
-    // Clear existing terminal
-    if (xtermRef.current) {
-        xtermRef.current.clear();
-    }
-    logBufferRef.current = [];
-    setTotalLines(0);
-    setVisibleLines(0);
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const token = localStorage.getItem('token');
-    
-    // Build query params
-    const params = new URLSearchParams();
-    params.set('token', token || '');
-    params.set('tail', tailCount);
-    if (timeRange) {
-        params.set('since', timeRange);
+    setWsStatus('connecting');
+
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const token = localStorage.getItem('token') || '';
+
+    const params = new URLSearchParams({ token, tail });
+    if (tr) params.set('since', tr);
+
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/agents/${aid}/containers/${cid}/logs?${params}`;
+    let socket: WebSocket;
+
+    try {
+      socket = new WebSocket(wsUrl);
+    } catch (err) {
+      xtermRef.current?.writeln(`${ANSI.RED}--- Failed to open WebSocket: ${err} ---${ANSI.RESET}`);
+      setWsStatus('error');
+      return;
     }
-    
-    // Unified Agent Endpoint for Logs
-    // Note: The agent ID is required. 
-    // If targetAgentId is missing, we can't connect properly in unified mode unless we default to 'local' if strict?
-    // But we are removing 'local' special handling.
-    // 'local' agent has ID too.
-    
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/agents/${agentId}/containers/${containerId}/logs?${params.toString()}`;
-    
-    const socket = new WebSocket(wsUrl);
+
     socketRef.current = socket;
 
     socket.onopen = () => {
-       fitAddonRef.current?.fit();
-       xtermRef.current?.write(`${ANSI.GREEN}--- Connected to Container Logs (tail=${tailCount}${timeRange ? `, since=${timeRange}` : ''}) ---${ANSI.RESET}\r\n`);
+      setWsStatus('connected');
+      fitAddonRef.current?.fit();
+      xtermRef.current?.clear();
+      logBufferRef.current = [];
+      setTotalLines(0);
+      setVisibleLines(0);
+      xtermRef.current?.writeln(`${ANSI.GREEN}--- Connected (tail=${tail}${tr ? `, since=${tr}` : ''}) ---${ANSI.RESET}`);
     };
 
     socket.onmessage = (event) => {
-        if (!xtermRef.current) return;
+      if (!xtermRef.current) return;
 
-        const handleData = (data: string) => {
-            const lines = data.split('\n');
-            
-            for (const line of lines) {
-                if (line) logBufferRef.current.push(line);
-            }
-            
-            // Limit buffer size
-            if (logBufferRef.current.length > 50000) {
-                 logBufferRef.current = logBufferRef.current.slice(-50000);
-            }
-
-            // Real-time render (use ref to avoid stale closure)
-            if (isPlayingRef.current) {
-                lines.forEach(rawLine => {
-                    if (!rawLine.trim()) return;
-                    
-                    let message = rawLine;
-                    const match = rawLine.match(/^(\d{4}-\d{2}-\d{2}T.*?) (.*)/);
-                    if (match) message = match[2];
-                    
-                    const level = detectLogLevel(message);
-                    if (!levelFiltersRef.current[level]) return;
-
-                    if (grepTermRef.current && !rawLine.toLowerCase().includes(grepTermRef.current.toLowerCase())) return;
-                    
-                    let timestamp = "";
-                    if (match) { timestamp = match[1]; message = match[2]; }
-                    const color = getLevelColor(level);
-                    
-                    let outputLine = "";
-                    if (showTimestampsRef.current && timestamp) {
-                        outputLine += `${ANSI.GRAY}${formatTimestamp(timestamp)}${ANSI.RESET} `;
-                    }
-                    outputLine += `${color}${message}${ANSI.RESET}`;
-                    
-                    xtermRef.current?.writeln(outputLine);
-                });
-                
-                setTotalLines(logBufferRef.current.length);
-            }
-        };
-
-        if (typeof event.data === 'string') {
-           handleData(event.data);
-        } else {
-           const reader = new FileReader();
-           reader.onload = () => handleData(reader.result as string);
-           reader.readAsText(event.data);
+      const handleData = (data: string) => {
+        const lines = data.split('\n');
+        for (const line of lines) {
+          if (line) logBufferRef.current.push(line);
         }
+        if (logBufferRef.current.length > 50000) {
+          logBufferRef.current = logBufferRef.current.slice(-50000);
+        }
+
+        if (isPlayingRef.current) {
+          for (const rawLine of lines) {
+            if (!rawLine.trim()) continue;
+
+            let message = rawLine;
+            const match = rawLine.match(/^(\d{4}-\d{2}-\d{2}T\S+) ([\s\S]*)/);
+            if (match) message = match[2];
+
+            const level = detectLogLevel(message);
+            if (!levelFiltersRef.current[level]) continue;
+            if (grepTermRef.current && !rawLine.toLowerCase().includes(grepTermRef.current.toLowerCase())) continue;
+
+            let outputLine = '';
+            if (showTimestampsRef.current && match) {
+              outputLine += `${ANSI.GRAY}${formatTimestamp(match[1])}${ANSI.RESET} `;
+            }
+            outputLine += `${getLevelColor(level)}${message}${ANSI.RESET}`;
+            xtermRef.current?.writeln(outputLine);
+          }
+          setTotalLines(logBufferRef.current.length);
+        }
+      };
+
+      if (typeof event.data === 'string') {
+        handleData(event.data);
+      } else {
+        const reader = new FileReader();
+        reader.onload = () => handleData(reader.result as string);
+        reader.readAsText(event.data);
+      }
     };
 
-    socket.onclose = () => {
-        xtermRef.current?.write(`\r\n${ANSI.RED}--- Log Stream Closed ---${ANSI.RESET}\r\n`);
+    socket.onerror = () => {
+      setWsStatus('error');
     };
 
-  }, [containerId, tailCount, timeRange, agentId, termReady]);
+    socket.onclose = (ev) => {
+      setWsStatus('closed');
+      // Don't auto-reconnect if the component unmounted (termReadyRef cleared)
+      if (!termReadyRef.current) return;
+      // Don't reconnect on clean close (code 1000 = normal, 1001 = going away)
+      const msg = ev.wasClean ? `closed (${ev.code})` : `lost (${ev.code})`;
+      xtermRef.current?.writeln(`\r\n${ANSI.YELLOW}--- Stream ${msg}, reconnecting in 3s... ---${ANSI.RESET}`);
+      reconnectTimerRef.current = setTimeout(() => {
+        if (termReadyRef.current) connectLogs();
+      }, 3000);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Initialize XTerm
   useEffect(() => {
@@ -394,32 +371,36 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
-    setTermReady(true);
+    termReadyRef.current = true;
 
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
 
     return () => {
-      if (socketRef.current) socketRef.current.close();
+      termReadyRef.current = false;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (socketRef.current) {
+        socketRef.current.onclose = null;
+        socketRef.current.close();
+        socketRef.current = null;
+      }
       term.dispose();
       window.removeEventListener('resize', handleResize);
     };
   }, []);
 
-  // Connect to logs when component mounts or settings change
+  // Initial connect + reconnect when params change
   useEffect(() => {
-      connectLogs();
-  }, [connectLogs]);
+    connectLogs();
+  }, [connectLogs, containerId, tailCount, timeRange, agentId]);
 
-  // Periodic table update
+  // Periodic table update (only when in table mode)
   useEffect(() => {
-      const interval = setInterval(() => {
-          if (viewMode === 'table') {
-              updateFilteredLogs();
-          }
-      }, 500);
+      if (viewMode !== 'table') return;
+      const interval = setInterval(() => reRenderLogs(), 1000);
       return () => clearInterval(interval);
-  }, [viewMode, updateFilteredLogs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   const handleSearchNext = () => searchAddonRef.current?.findNext(searchTerm);
   const handleSearchPrev = () => searchAddonRef.current?.findPrevious(searchTerm);
@@ -457,9 +438,11 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       const next = !isPlaying;
       setIsPlaying(next);
       isPlayingRef.current = next;
-      if (!isPlaying) {
-          // Resuming - refresh display
-          renderLogs();
+      if (!next) {
+          // Pausing — nothing to do
+      } else {
+          // Resuming — re-render buffer so any missed lines show
+          reRenderLogs();
       }
   };
 
@@ -554,11 +537,19 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
              <div className="text-xs text-slate-500 font-mono">
                  {visibleLines.toLocaleString()} / {totalLines.toLocaleString()} lines
              </div>
-             <button 
-                 onClick={togglePause} 
+             {/* WebSocket status dot */}
+             <span title={wsStatus} className="flex items-center gap-1 text-xs font-mono">
+                 <span className={`w-2 h-2 rounded-full ${
+                     wsStatus === 'connected' ? 'bg-emerald-400' :
+                     wsStatus === 'connecting' ? 'bg-amber-400 animate-pulse' :
+                     'bg-rose-500'
+                 }`} />
+             </span>
+             <button
+                 onClick={togglePause}
                  className={`flex items-center px-3 py-1.5 text-xs rounded transition-colors font-medium ${
-                     !isPlaying 
-                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                     !isPlaying
+                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                      : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                  }`}
              >
@@ -578,7 +569,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                     type="text" 
                     placeholder="Filter logs (grep)..." 
                     value={grepTerm}
-                    onChange={(e) => { setGrepTerm(e.target.value); grepTermRef.current = e.target.value; }}
+                    onChange={(e) => { setGrepTerm(e.target.value); grepTermRef.current = e.target.value; reRenderLogs(); }}
                     className="w-full bg-slate-800 border border-slate-700/50 rounded text-xs text-emerald-100 pl-9 pr-2 py-1.5 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
                  />
             </div>
@@ -606,14 +597,14 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
             {/* View Toggle */}
             <div className="flex bg-slate-800 rounded p-0.5">
                 <button
-                    onClick={() => setViewMode('raw')}
+                    onClick={() => { viewModeRef.current = 'raw'; setViewMode('raw'); }}
                     className={`p-1 rounded ${viewMode === 'raw' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
                     title="Terminal View"
                 >
                     <CommandLineIcon className="w-4 h-4" />
                 </button>
                 <button
-                    onClick={() => setViewMode('table')}
+                    onClick={() => { viewModeRef.current = 'table'; setViewMode('table'); reRenderLogs(); }}
                     className={`p-1 rounded ${viewMode === 'table' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
                     title="Structured Table View"
                 >
@@ -622,16 +613,16 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
             </div>
 
             {/* Toggles */}
-            <button 
-                onClick={() => setShowTimestamps(!showTimestamps)}
+            <button
+                onClick={() => { const next = !showTimestamps; setShowTimestamps(next); showTimestampsRef.current = next; reRenderLogs(); }}
                 className={`p-1.5 rounded transition-colors ${showTimestamps ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
                 title="Toggle Timestamps"
             >
                 <ClockIcon className="w-4 h-4" />
             </button>
-            
-             <button 
-                onClick={() => setDedup(!dedup)}
+
+             <button
+                onClick={() => { const next = !dedup; setDedup(next); dedupRef.current = next; reRenderLogs(); }}
                 className={`p-1.5 rounded transition-colors ${dedup ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
                 title="Toggle Deduplication (Unique)"
             >

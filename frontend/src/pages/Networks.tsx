@@ -18,6 +18,7 @@ import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { Pagination } from '../components/ui/Pagination';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
@@ -153,9 +154,20 @@ export const Networks = () => {
   };
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+  const [confirmPrune, setConfirmPrune] = useState(false);
 
   const handleRemoveNetwork = (id: string) => {
       setConfirmDelete({ isOpen: true, id });
+  };
+
+  const handlePruneNetworks = async () => {
+      if (!currentHost) return;
+      try {
+          const { data } = await api.post(`/agents/${currentHost.id}/networks/prune`);
+          const count = data?.networks_deleted?.length || 0;
+          toast.success(`Pruned ${count} unused networks`);
+          fetchNetworks();
+      } catch { toast.error('Failed to prune networks'); }
   };
 
   const executeRemoveNetwork = async () => {
@@ -209,6 +221,12 @@ export const Networks = () => {
       });
   }, [networks, sortField, sortDirection]);
 
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
+  const paginatedNetworks = sortedNetworks.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => { setPage(1); }, [sortField, sortDirection]);
+
   const SortIcon = ({ field }: { field: SortField }) => {
       if (sortField !== field) return <div className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-50" />;
       return sortDirection === 'asc' ? 
@@ -222,24 +240,36 @@ export const Networks = () => {
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 dark:from-purple-400 dark:to-pink-400">
           Networks
         </h2>
-        <div className="flex items-center space-x-3">
-             <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
-                <ServerStackIcon className="w-4 h-4" />
-                <span>{currentHost?.name}</span>
-            </GlassCard>
-            
-             <button 
+        <div className="flex items-center gap-3">
+             {currentHost && (
+                 <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-white/10">
+                     <ServerStackIcon className="w-4 h-4" />
+                     {currentHost.name}
+                 </span>
+             )}
+
+             <button
                 onClick={() => setCreateModalOpen(true)}
-                className="flex items-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-purple-500/20"
+                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
             >
-                <PlusIcon className="w-5 h-5" />
-                <span>Create Network</span>
+                <PlusIcon className="w-4 h-4" />
+                Create Network
             </button>
-            
-            <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-purple-600 dark:text-purple-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={fetchNetworks}>
+
+            <button
+                onClick={() => setConfirmPrune(true)}
+                className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+            >
+                <TrashIcon className="w-4 h-4" />
+                Prune
+            </button>
+            <button
+                onClick={fetchNetworks}
+                className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+            >
                 <ArrowPathIcon className="w-4 h-4" />
-                <span>Refresh</span>
-            </GlassCard>
+                Refresh
+            </button>
         </div>
       </div>
 
@@ -273,7 +303,7 @@ export const Networks = () => {
                     ) : networks.length === 0 ? (
                         <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">No networks found.</td></tr>
                     ) : (
-                        sortedNetworks.map((net) => (
+                        paginatedNetworks.map((net) => (
                             <tr key={net.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                 <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-200">
                                     <div className="flex items-center space-x-3">
@@ -352,9 +382,17 @@ export const Networks = () => {
           </div>
       </GlassCard>
 
-      <InspectModal 
-        isOpen={inspectModalOpen} 
-        onClose={() => setInspectModalOpen(false)} 
+      <Pagination
+        currentPage={page}
+        totalItems={sortedNetworks.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
+
+      <InspectModal
+        isOpen={inspectModalOpen}
+        onClose={() => setInspectModalOpen(false)}
         title="Network Details" 
         data={inspectData} 
       />
@@ -424,6 +462,15 @@ export const Networks = () => {
                 title="Remove Network"
                 message="Are you sure you want to remove this network?"
                 confirmText="Remove"
+                isDestructive={true}
+            />
+            <ConfirmModal
+                isOpen={confirmPrune}
+                onClose={() => setConfirmPrune(false)}
+                onConfirm={handlePruneNetworks}
+                title="Prune Networks"
+                message="Remove all unused networks? This cannot be undone."
+                confirmText="Prune"
                 isDestructive={true}
             />
 

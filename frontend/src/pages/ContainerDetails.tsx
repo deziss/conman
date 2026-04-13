@@ -37,6 +37,7 @@ import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { useHost } from '../contexts/HostContext';
 import { mapAgentContainerToDetails } from '../utils/containerMapper';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
 
 interface ContainerDetails {
     Id: string;
@@ -159,16 +160,16 @@ const formatBytes = (bytes: number) => {
 };
 
 // Info Card Component
-const InfoCard = ({ label, value, mono = false, className = '' }: { 
-    label: string; 
-    value: React.ReactNode; 
+const InfoCard = ({ label, value, mono = false, className = '' }: {
+    label: string;
+    value: React.ReactNode;
     mono?: boolean;
     className?: string;
 }) => (
-    <div className={clsx("bg-slate-800/50 rounded-lg p-4 border border-white/5", className)}>
+    <div className={clsx("bg-slate-100 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-white/5", className)}>
         <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">{label}</div>
         <div className={clsx(
-            "text-sm text-slate-200 break-all",
+            "text-sm text-slate-800 dark:text-slate-200 break-all",
             mono && "font-mono text-xs"
         )}>
             {value || '-'}
@@ -178,9 +179,9 @@ const InfoCard = ({ label, value, mono = false, className = '' }: {
 
 // Environment Variable Card
 const EnvVarCard = ({ name, value }: { name: string; value: string }) => (
-    <div className="bg-slate-800/50 rounded-lg p-4 border border-white/5">
+    <div className="bg-slate-100 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-white/5">
         <div className="text-xs text-slate-500 uppercase tracking-wider mb-2 truncate" title={name}>{name}</div>
-        <div className="text-sm text-slate-200 font-mono break-all truncate" title={value}>
+        <div className="text-sm text-slate-800 dark:text-slate-200 font-mono break-all truncate" title={value}>
             {value || '-'}
         </div>
     </div>
@@ -196,7 +197,7 @@ const PortBadge = ({ mapping }: { mapping: string }) => (
 
 // Storage Mount Card
 const MountCard = ({ mount }: { mount: ContainerDetails['Mounts'][0] }) => (
-    <div className="bg-slate-800/30 rounded-xl p-5 border border-white/5">
+    <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-5 border border-slate-200 dark:border-white/5">
         <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-3">
                 <div className={clsx(
@@ -210,7 +211,7 @@ const MountCard = ({ mount }: { mount: ContainerDetails['Mounts'][0] }) => (
                     )}
                 </div>
                 <div>
-                    <div className="text-sm font-medium text-white">{mount.Name || 'Host directory'}</div>
+                    <div className="text-sm font-medium text-slate-900 dark:text-white">{mount.Name || 'Host directory'}</div>
                     <div className="text-xs text-slate-500">{mount.Type} mount</div>
                 </div>
             </div>
@@ -259,13 +260,13 @@ const NetworkCard = ({ name, network }: {
     name: string; 
     network: NonNullable<ContainerDetails['NetworkSettings']>['Networks'][string] 
 }) => (
-    <div className="bg-slate-800/30 rounded-xl p-5 border border-white/5">
+    <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-5 border border-slate-200 dark:border-white/5">
         <div className="flex items-center space-x-3 mb-5">
             <div className="p-2 bg-purple-500/20 rounded-lg">
                 <GlobeAltIcon className="w-4 h-4 text-purple-400" />
             </div>
             <div>
-                <div className="text-sm font-medium text-white">{name}</div>
+                <div className="text-sm font-medium text-slate-900 dark:text-white">{name}</div>
                 <div className="text-xs text-slate-500">Network Interface</div>
             </div>
         </div>
@@ -460,17 +461,30 @@ export const ContainerDetails = () => {
 
     const labels = container?.Config?.Labels || {};
 
-    const handleAction = async (action: string) => {
+    const [confirmAction, setConfirmAction] = useState<{ isOpen: boolean; action: string }>({ isOpen: false, action: '' });
+
+    const executeAction = async (action: string) => {
         if (!container || !currentHost) return;
         try {
-            // Unified API Action
-            const endpoint = `/agents/${currentHost.id}/containers/${container.Id}/${action}`;
-
-            await api.post(endpoint);
+            if (action === 'remove') {
+                await api.delete(`/agents/${currentHost.id}/containers/${container.Id}`);
+                toast.success('Container removed');
+                window.history.back();
+                return;
+            }
+            await api.post(`/agents/${currentHost.id}/containers/${container.Id}/${action}`);
             toast.success(`Container ${action}ed`);
             setTimeout(fetchDetails, 1000);
         } catch (error) {
              toast.error(`Failed to ${action} container`);
+        }
+    };
+
+    const handleAction = (action: string) => {
+        if (action === 'stop' || action === 'remove') {
+            setConfirmAction({ isOpen: true, action });
+        } else {
+            executeAction(action);
         }
     };
 
@@ -480,18 +494,18 @@ export const ContainerDetails = () => {
     const isRunning = container.State.Running;
 
     return (
-        <div className="flex flex-col space-y-6">
+        <div className="flex flex-col h-full overflow-hidden"  style={{ gap: '1.5rem' }}>
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                     <button 
                         onClick={() => window.history.back()} 
-                        className="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
+                        className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white"
                     >
                         <ArrowLeftIcon className="w-5 h-5" />
                     </button>
                     <div>
-                        <h1 className="text-2xl font-bold text-white flex items-center space-x-3">
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center space-x-3">
                             <span>{container.Name}</span>
                             <span className={clsx(
                                 "px-2 py-0.5 text-xs font-medium rounded uppercase",
@@ -512,19 +526,19 @@ export const ContainerDetails = () => {
                 <div className="flex items-center space-x-2">
                     {isRunning ? (
                         <>
-                            <button onClick={() => handleAction('stop')} className="p-2 hover:bg-white/10 rounded-lg text-rose-400" title="Stop">
+                            <button onClick={() => handleAction('stop')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-rose-400" title="Stop">
                                 <StopIcon className="w-5 h-5" />
                             </button>
-                            <button onClick={() => handleAction('restart')} className="p-2 hover:bg-white/10 rounded-lg text-amber-400" title="Restart">
+                            <button onClick={() => handleAction('restart')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-amber-400" title="Restart">
                                 <ArrowPathIcon className="w-5 h-5" />
                             </button>
                         </>
                     ) : (
-                        <button onClick={() => handleAction('start')} className="p-2 hover:bg-white/10 rounded-lg text-emerald-400" title="Start">
+                        <button onClick={() => handleAction('start')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-emerald-400" title="Start">
                             <PlayIcon className="w-5 h-5" />
                         </button>
                     )}
-                    <button onClick={() => handleAction('remove')} className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-rose-400" title="Remove">
+                    <button onClick={() => handleAction('remove')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 hover:text-rose-400" title="Remove">
                         <TrashIcon className="w-5 h-5" />
                     </button>
                 </div>
@@ -585,7 +599,7 @@ export const ContainerDetails = () => {
                          {/* Details Column */}
                          <div className="lg:col-span-2 space-y-6">
                              <GlassCard className="p-6">
-                                 <h3 className="text-lg font-semibold text-white mb-6">Container Details</h3>
+                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Container Details</h3>
                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                      <InfoCard label="ID" value={container.Id} mono />
                                      <InfoCard label="Name" value={container.Name} />
@@ -598,7 +612,7 @@ export const ContainerDetails = () => {
 
                              {/* Mounts */}
                              <GlassCard className="p-6">
-                                 <h3 className="text-lg font-semibold text-white mb-6 flex items-center space-x-2">
+                                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center space-x-2">
                                      <FolderIcon className="w-5 h-5 text-amber-400" />
                                      <span>Mounts</span>
                                  </h3>
@@ -671,7 +685,7 @@ export const ContainerDetails = () => {
                               <KeyIcon className="w-5 h-5 text-emerald-400" />
                           </div>
                           <div>
-                              <h3 className="text-lg font-semibold text-white">Environment Variables</h3>
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Environment Variables</h3>
                               <p className="text-xs text-slate-500">Runtime environment variables for your container</p>
                           </div>
                       </div>
@@ -693,7 +707,7 @@ export const ContainerDetails = () => {
                               <TagIcon className="w-5 h-5 text-purple-400" />
                           </div>
                           <div>
-                              <h3 className="text-lg font-semibold text-white">Labels</h3>
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Labels</h3>
                               <p className="text-xs text-slate-500">Metadata labels attached to this container for organization and automation</p>
                           </div>
                       </div>
@@ -718,7 +732,7 @@ export const ContainerDetails = () => {
                           <GlobeAltIcon className="w-5 h-5 text-purple-400" />
                       </div>
                       <div>
-                          <h3 className="text-lg font-semibold text-white">Networks</h3>
+                          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Networks</h3>
                           <p className="text-xs text-slate-500">Network interfaces and connectivity configuration for this container</p>
                       </div>
                   </div>
@@ -744,7 +758,7 @@ export const ContainerDetails = () => {
                               <ShieldCheckIcon className="w-5 h-5 text-rose-400" />
                           </div>
                           <div>
-                              <h3 className="text-lg font-semibold text-white">Security & Permissions</h3>
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Security & Permissions</h3>
                               <p className="text-xs text-slate-500">Container security configuration and access controls</p>
                           </div>
                       </div>
@@ -770,7 +784,7 @@ export const ContainerDetails = () => {
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="bg-slate-800/50 rounded-lg p-4 border border-white/5">
+                          <div className="bg-slate-100 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-white/5">
                               <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Capabilities Added</div>
                               <div className="flex flex-wrap gap-2">
                                   {container.HostConfig?.CapAdd && container.HostConfig.CapAdd.length > 0 ? (
@@ -782,7 +796,7 @@ export const ContainerDetails = () => {
                                   )}
                               </div>
                           </div>
-                          <div className="bg-slate-800/50 rounded-lg p-4 border border-white/5">
+                          <div className="bg-slate-100 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-white/5">
                               <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Capabilities Dropped</div>
                               <div className="flex flex-wrap gap-2">
                                   {container.HostConfig?.CapDrop && container.HostConfig.CapDrop.length > 0 ? (
@@ -797,7 +811,7 @@ export const ContainerDetails = () => {
                       </div>
 
                       {container.HostConfig?.SecurityOpt && container.HostConfig.SecurityOpt.length > 0 && (
-                          <div className="mt-4 bg-slate-800/50 rounded-lg p-4 border border-white/5">
+                          <div className="mt-4 bg-slate-100 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-white/5">
                               <div className="text-xs text-slate-500 uppercase tracking-wider mb-3">Security Options</div>
                               <div className="flex flex-wrap gap-2">
                                   {container.HostConfig.SecurityOpt.map((opt, i) => (
@@ -815,7 +829,7 @@ export const ContainerDetails = () => {
                               <CpuChipIcon className="w-5 h-5 text-cyan-400" />
                           </div>
                           <div>
-                              <h3 className="text-lg font-semibold text-white">Resource Limits</h3>
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Resource Limits</h3>
                               <p className="text-xs text-slate-500">CPU, memory, and other resource constraints</p>
                           </div>
                       </div>
@@ -872,13 +886,13 @@ export const ContainerDetails = () => {
                                   <ServerStackIcon className="w-5 h-5 text-purple-400" />
                               </div>
                               <div>
-                                  <h3 className="text-lg font-semibold text-white">GPU & Device Requests</h3>
+                                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">GPU & Device Requests</h3>
                                   <p className="text-xs text-slate-500">GPU and specialized device allocations</p>
                               </div>
                           </div>
                           <div className="space-y-4">
                               {container.HostConfig.DeviceRequests.map((device, i) => (
-                                  <div key={i} className="bg-slate-800/50 rounded-lg p-4 border border-white/5">
+                                  <div key={i} className="bg-slate-100 dark:bg-slate-800/50 rounded-lg p-4 border border-slate-200 dark:border-white/5">
                                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                           <div>
                                               <div className="text-xs text-slate-500 uppercase mb-1">Driver</div>
@@ -911,7 +925,7 @@ export const ContainerDetails = () => {
                                   <WrenchScrewdriverIcon className="w-5 h-5 text-amber-400" />
                               </div>
                               <div>
-                                  <h3 className="text-lg font-semibold text-white">Device Mappings</h3>
+                                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Device Mappings</h3>
                                   <p className="text-xs text-slate-500">Host devices accessible to this container</p>
                               </div>
                           </div>
@@ -935,7 +949,7 @@ export const ContainerDetails = () => {
                               <InformationCircleIcon className="w-5 h-5 text-slate-400" />
                           </div>
                           <div>
-                              <h3 className="text-lg font-semibold text-white">Runtime Information</h3>
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Runtime Information</h3>
                               <p className="text-xs text-slate-500">Container runtime and driver details</p>
                           </div>
                       </div>
@@ -949,6 +963,20 @@ export const ContainerDetails = () => {
               </div>
           )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmAction.isOpen}
+        onClose={() => setConfirmAction({ isOpen: false, action: '' })}
+        onConfirm={() => executeAction(confirmAction.action)}
+        title={confirmAction.action === 'remove' ? 'Remove Container' : 'Stop Container'}
+        message={
+          confirmAction.action === 'remove'
+            ? `Are you sure you want to remove "${container.Name}"? This action cannot be undone.`
+            : `Are you sure you want to stop "${container.Name}"?`
+        }
+        confirmText={confirmAction.action === 'remove' ? 'Remove' : 'Stop'}
+        isDestructive={true}
+      />
     </div>
   );
 };
