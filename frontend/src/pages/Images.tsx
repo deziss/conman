@@ -19,6 +19,7 @@ import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { Pagination } from '../components/ui/Pagination';
 import { clsx } from 'clsx';
 
 interface Image {
@@ -47,6 +48,7 @@ export const Images = () => {
   const [inspectData, setInspectData] = useState<any>(null); // Kept for modal props compatibility if needed, else remove.
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<'name' | 'size' | 'created' | 'status'>('created');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'used' | 'unused'>('all');
   
   // Initialize from localStorage
   const [updateStatuses, setUpdateStatuses] = useState<Record<string, UpdateStatus>>(() => {
@@ -120,9 +122,20 @@ export const Images = () => {
   };
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+  const [confirmPrune, setConfirmPrune] = useState(false);
 
   const handleRemoveImage = (id: string) => {
       setConfirmDelete({ isOpen: true, id });
+  };
+
+  const handlePruneImages = async () => {
+      if (!currentHost) return;
+      try {
+          const { data } = await api.post(`/agents/${currentHost.id}/images/prune`);
+          const space = data?.space_reclaimed || 0;
+          toast.success(`Pruned unused images, reclaimed ${(space / 1024 / 1024).toFixed(1)} MB`);
+          fetchImages();
+      } catch { toast.error('Failed to prune images'); }
   };
 
   const executeRemoveImage = async () => {
@@ -346,7 +359,11 @@ export const Images = () => {
     return null;
   };
 
-  const sortedImages = [...images].sort((a, b) => {
+  const filteredImages = statusFilter === 'all'
+      ? images
+      : images.filter(img => img.status === statusFilter);
+
+  const sortedImages = [...filteredImages].sort((a, b) => {
       if (sortOrder === 'name') {
           const nameA = a.repo_tags && a.repo_tags.length > 0 ? a.repo_tags[0] : a.id;
           const nameB = b.repo_tags && b.repo_tags.length > 0 ? b.repo_tags[0] : b.id;
@@ -355,13 +372,19 @@ export const Images = () => {
       if (sortOrder === 'size') return b.size - a.size;
       if (sortOrder === 'created') return b.created - a.created;
       if (sortOrder === 'status') {
-          // Used first
           if (a.status === 'used' && b.status !== 'used') return -1;
           if (a.status !== 'used' && b.status === 'used') return 1;
           return 0;
       }
       return 0;
   });
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
+  const paginatedImages = sortedImages.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset page when sort/filter changes
+  useEffect(() => { setPage(1); }, [sortOrder, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -370,103 +393,112 @@ export const Images = () => {
         <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
           Images
         </h2>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-3">
           {currentHost && (
-            <GlassCard className="px-3 py-1.5 flex items-center space-x-2 text-xs text-purple-400 border-purple-500/20">
+            <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-white/10">
               <ServerStackIcon className="w-4 h-4" />
-              <span>{currentHost.name}</span>
-            </GlassCard>
+              {currentHost.name}
+            </span>
           )}
-          <GlassCard 
-            className={clsx(
-              "px-4 py-2 flex items-center space-x-2 text-sm cursor-pointer transition-colors",
-              checkingAll 
-                ? "text-blue-400 bg-blue-500/10" 
-                : "text-purple-600 dark:text-purple-400 hover:bg-black/5 dark:hover:bg-white/5"
-            )} 
-            role="button" 
+          <button
             onClick={checkAllUpdates}
+            disabled={checkingAll}
+            className={clsx(
+              "inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors",
+              checkingAll
+                ? "bg-blue-500/10 text-blue-400 cursor-wait"
+                : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
+            )}
           >
               <MagnifyingGlassIcon className={clsx("w-4 h-4", checkingAll && "animate-pulse")} />
-              <span>{checkingAll ? 'Checking...' : 'Check All Updates'}</span>
-          </GlassCard>
-          <GlassCard className="px-4 py-2 flex items-center space-x-2 text-sm text-cyan-600 dark:text-cyan-400 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors" role="button" onClick={fetchImages}>
+              {checkingAll ? 'Checking...' : 'Check All Updates'}
+          </button>
+          <button
+            onClick={() => setConfirmPrune(true)}
+            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+          >
+              <TrashIcon className="w-4 h-4" />
+              Prune
+          </button>
+          <button
+            onClick={fetchImages}
+            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+          >
               <ArrowPathIcon className="w-4 h-4" />
-              <span>Refresh</span>
-          </GlassCard>
+              Refresh
+          </button>
         </div>
       </div>
-       {/* Stats Grid */}
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <GlassCard className="p-6 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <Square3Stack3DIcon className="w-24 h-24 text-blue-500" />
+       {/* Stats + Pull — 3 cards in a row */}
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <GlassCard className="p-5 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <Square3Stack3DIcon className="w-16 h-16 text-blue-500" />
                 </div>
-                <div className="relative z-10">
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Images</p>
-                    <p className="text-4xl font-bold text-slate-800 dark:text-slate-100 mt-2">{images.length}</p>
-                    <div className="mt-4 flex items-center text-xs text-slate-500">
-                        <span className="text-blue-500 font-medium">{formatSize(images.reduce((acc, img) => acc + img.size, 0))}</span>
-                        <span className="ml-1">total size</span>
-                    </div>
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Images</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">{images.length}</p>
+                <div className="mt-3 flex items-center text-xs text-slate-500">
+                    <span className="text-blue-500 font-medium">{formatSize(images.reduce((acc, img) => acc + img.size, 0))}</span>
+                    <span className="ml-1">total size</span>
                 </div>
             </GlassCard>
 
-            <GlassCard className="p-6 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <ServerStackIcon className="w-24 h-24 text-emerald-500" />
+            <GlassCard className="p-5 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <ServerStackIcon className="w-16 h-16 text-emerald-500" />
                 </div>
-                <div className="relative z-10">
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Used Images</p>
-                    <p className="text-4xl font-bold text-slate-800 dark:text-slate-100 mt-2">
-                        {images.filter(img => img.status === 'used').length}
-                    </p>
-                     <div className="mt-4 flex items-center text-xs text-slate-500">
-                        <span className="text-emerald-500 font-medium">
-                            {Math.round((images.filter(img => img.status === 'used').length / (images.length || 1)) * 100)}%
-                        </span>
-                        <span className="ml-1">in use by containers</span>
-                    </div>
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Used Images</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">
+                    {images.filter(img => img.status === 'used').length}
+                </p>
+                <div className="mt-3 flex items-center text-xs text-slate-500">
+                    <span className="text-emerald-500 font-medium">
+                        {Math.round((images.filter(img => img.status === 'used').length / (images.length || 1)) * 100)}%
+                    </span>
+                    <span className="ml-1">in use by containers</span>
                 </div>
+            </GlassCard>
+
+            <GlassCard className="p-5 flex flex-col justify-between">
+                <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 flex items-center mb-3">
+                    <CloudArrowDownIcon className="w-4 h-4 mr-1.5 text-cyan-600 dark:text-cyan-400" />
+                    Pull New Image
+                </h3>
+                <form onSubmit={handlePullImage} className="flex gap-2">
+                    <input
+                        type="text"
+                        value={pullImageName}
+                        onChange={(e) => setPullImageName(e.target.value)}
+                        placeholder="e.g. nginx:alpine"
+                        className="flex-1 min-w-0 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
+                    />
+                    <button
+                        type="submit"
+                        disabled={pulling || !pullImageName}
+                        className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-cyan-500/20 whitespace-nowrap"
+                    >
+                        {pulling ? 'Pulling...' : 'Pull'}
+                    </button>
+                </form>
+                <p className="text-[11px] text-slate-400 mt-2">Docker Hub, ghcr.io, private registries</p>
             </GlassCard>
        </div>
-
-
-        {/* Pull Image Section - Local Only */}
-        {/* Pull Image Section - Enabled for All Agents */}
-        <GlassCard className="p-6">
-            <h3 className="text-lg font-medium text-slate-900 dark:text-slate-200 mb-4 flex items-center">
-                <CloudArrowDownIcon className="w-5 h-5 mr-2 text-cyan-600 dark:text-cyan-400" />
-                Pull New Image
-            </h3>
-            <form onSubmit={handlePullImage} className="flex gap-4">
-                <input 
-                    type="text" 
-                    value={pullImageName}
-                    onChange={(e) => setPullImageName(e.target.value)}
-                    placeholder="e.g. alpine:latest, nginx:alpine"
-                    className="flex-1 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-lg px-4 py-2 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
-                />
-                <button 
-                    type="submit" 
-                    disabled={pulling || !pullImageName}
-                    className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-all shadow-lg shadow-cyan-500/20 flex items-center"
-                >
-                    {pulling ? 'Pulling...' : 'Pull Image'}
-                </button>
-            </form>
-            <p className="text-xs text-slate-500 mt-2">
-              Supports Docker Hub, GitHub Container Registry (ghcr.io), and private registries
-            </p>
-        </GlassCard>
 
 
         {/* Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
         <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-300">Image List</h3>
         
-        <div className="flex items-center space-x-4">
-
+        <div className="flex items-center gap-3">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block p-2 outline-none"
+          >
+            <option value="all">All Images ({images.length})</option>
+            <option value="used">Used ({images.filter(i => i.status === 'used').length})</option>
+            <option value="unused">Unused ({images.filter(i => i.status === 'unused').length})</option>
+          </select>
           <select
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value as any)}
@@ -490,75 +522,40 @@ export const Images = () => {
                   ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' 
                   : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5'
               }`}>
-                {sortedImages.map((img) => (
-                    <GlassCard key={img.id} className="p-4 flex flex-col justify-between group h-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors relative overflow-hidden">
-                         <div className="flex justify-between items-start mb-4">
-                            <div className="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg relative">
-                                <Square3Stack3DIcon className="w-8 h-8 text-purple-600 dark:text-purple-400" />
-                                {img.status === 'used' && (
-                                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                {paginatedImages.map((img) => (
+                    <GlassCard key={img.id} className="p-3 flex flex-col justify-between group h-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors relative overflow-hidden">
+                         {/* "In use" dot — top-left corner */}
+                         {img.status === 'used' && (
+                             <span className="absolute top-2 left-2 flex h-2.5 w-2.5" title="Used by container">
+                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                             </span>
+                         )}
+                         {/* Header: name + actions */}
+                         <div className="flex justify-between items-start gap-2 mb-2">
+                            <div className="min-w-0">
+                                <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-200 truncate" title={img.repo_tags && img.repo_tags[0]}>
+                                    {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-1 mt-1">
+                                    <span className="text-[10px] font-mono text-slate-500 dark:text-slate-500 bg-slate-100 dark:bg-slate-900/50 px-1 py-px rounded border border-slate-200 dark:border-slate-800">
+                                        {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[1] || 'latest' : '<none>'}
                                     </span>
-                                )}
-                                {updateStatuses[img.id]?.available && (
-                                    <span className="absolute -top-1 -left-1 flex h-3 w-3">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
-                                    </span>
-                                )}
+                                    {getUpdateStatusBadge(img.id)}
+                                </div>
                             </div>
-                            <div className="flex space-x-1">
-                                <button 
+                            <div className="flex flex-shrink-0">
+                                <button
                                     onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
                                     disabled={updateStatuses[img.id]?.checking}
-                                    className={clsx(
-                                      "p-1.5 rounded-lg transition-colors",
-                                      updateStatuses[img.id]?.checking 
-                                        ? "text-blue-400 bg-blue-500/10" 
-                                        : "text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-500/10"
-                                    )}
+                                    className={clsx("p-1 rounded transition-colors", updateStatuses[img.id]?.checking ? "text-blue-400" : "text-slate-400 hover:text-indigo-500")}
                                     title="Check for Updates"
-                                >
-                                    <MagnifyingGlassIcon className={clsx("w-4 h-4", updateStatuses[img.id]?.checking && "animate-pulse")} />
-                                </button>
-                                  <button 
-                                      onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }}
-                                      className="p-1.5 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                                      title="Pull Latest Version"
-                                  >
-                                      <ArrowUpCircleIcon className="w-4 h-4" />
-                                  </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
-                                    className="p-1.5 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-100 dark:hover:bg-cyan-500/10 rounded-lg transition-colors"
-                                    title="Inspect Image"
-                                >
-                                    <EyeIcon className="w-4 h-4" />
-                                </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
-                                    className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
-                                    title="Remove Image"
-                                >
-                                    <TrashIcon className="w-4 h-4" />
-                                </button>
+                                ><MagnifyingGlassIcon className={clsx("w-3.5 h-3.5", updateStatuses[img.id]?.checking && "animate-pulse")} /></button>
+                                <button onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }} className="p-1 text-slate-400 hover:text-emerald-500 rounded transition-colors" title="Pull Latest"><ArrowUpCircleIcon className="w-3.5 h-3.5" /></button>
+                                <button onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }} className="p-1 text-slate-400 hover:text-cyan-500 rounded transition-colors" title="Inspect"><EyeIcon className="w-3.5 h-3.5" /></button>
+                                <button onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors" title="Remove"><TrashIcon className="w-3.5 h-3.5" /></button>
                             </div>
                          </div>
-                        
-                         <div>
-                            <h4 className="font-semibold text-slate-900 dark:text-slate-200 truncate mb-1" title={img.repo_tags && img.repo_tags[0]}>
-                                {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
-                            </h4>
-                            <div className="flex flex-wrap items-center gap-2 mb-3">
-                                <span className="text-xs font-mono text-slate-600 dark:text-slate-500 bg-slate-200 dark:bg-slate-900/50 px-2 py-0.5 rounded border border-slate-300 dark:border-slate-800">
-                                    {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[1] || 'latest' : '<none>'}
-                                </span>
-                                {img.status === 'used' && (
-                                     <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded flex items-center">Used</span>
-                                )}
-                                {getUpdateStatusBadge(img.id)}
-                            </div>
                             
                             <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-mono border-t border-slate-200 dark:border-slate-700/50 pt-3">
                                 <div>
@@ -574,13 +571,20 @@ export const Images = () => {
                                     <span>{formatTime(img.created)}</span>
                                 </div>
                             </div>
-                         </div>
                     </GlassCard>
                 ))
             }
             </div>
         )}
       </div>
+
+      <Pagination
+        currentPage={page}
+        totalItems={sortedImages.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+      />
 
       <InspectModal
         isOpen={inspectModalOpen}
@@ -596,6 +600,15 @@ export const Images = () => {
                 title="Remove Image"
                 message="Are you sure you want to remove this image? This cannot be undone."
                 confirmText="Remove"
+                isDestructive={true}
+            />
+            <ConfirmModal
+                isOpen={confirmPrune}
+                onClose={() => setConfirmPrune(false)}
+                onConfirm={handlePruneImages}
+                title="Prune Images"
+                message="Remove all unused (dangling) images? This cannot be undone."
+                confirmText="Prune"
                 isDestructive={true}
             />
     </div>

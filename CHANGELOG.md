@@ -2,6 +2,59 @@
 
 All notable changes to the Conman project are documented in this file.
 
+## [Unreleased] - 2026-04-12
+
+### Added (Licensing System — Keygen.sh)
+
+#### Backend
+- **`backend/internal/models/license.go`** — `LicenseCache` GORM model (single-row singleton); stores tier, validity, expiry, max hosts, features JSON, machine ID, grace period end
+- **`backend/internal/license/service.go`** — `LicenseService` with in-memory `LicenseState`, direct HTTP calls to Keygen.sh REST API, machine activation/deactivation, 72-hour grace period on network failure, background re-validation every 6 hours
+- **`backend/internal/license/fingerprint.go`** — Deterministic machine fingerprint (SHA256 of hostname + MAC address)
+- **`backend/internal/api/license.go`** — License REST endpoints: `GET /license`, `POST /license/activate`, `POST /license/deactivate`, `POST /license/validate`
+- **`backend/internal/middleware/license.go`** — `RequireFeature(feature)` middleware; returns `403` with `{"license_required": true, "feature": "..."}` when feature not available on current tier
+- License middleware injected into all protected routes; Stacks and Alerts routes wrapped with `RequireFeature("stacks")` / `RequireFeature("alerts")`
+- Host limit enforced in `AgentHandler.Register()`: returns `403` if `License.CanAddHost()` is false
+- `LicenseCache` added to AutoMigrate in `main.go`
+- Three env vars: `LICENSE_KEY`, `KEYGEN_ACCOUNT_ID`, `KEYGEN_PRODUCT_ID` (offline Pro fallback if account ID not set)
+
+#### Frontend
+- **`frontend/src/types/license.ts`** — `LicenseTier`, `LicenseInfo` interface, `TIER_LABELS`, `TIER_COLORS`, `FEATURE_LABELS`, `ALL_FEATURES` constants
+- **`frontend/src/contexts/LicenseContext.tsx`** — `LicenseProvider` context; fetches `/api/v1/license` on mount, re-fetches every 30 minutes; exposes `license`, `loading`, `hasFeature()`, `isProOrAbove`, `isEnterprise`, `activateLicense()`, `deactivateLicense()`, `refreshLicense()`
+- **`frontend/src/components/settings/LicenseSettings.tsx`** — License tab in Settings: current plan card, host usage progress bar, feature availability checklist, key input with Activate/Deactivate, grace period warning, force re-validate button
+- **`frontend/src/components/ui/UpgradePrompt.tsx`** — Reusable gate component shown when accessing a feature not available on current tier; links to Settings > License
+- Tier badge (Community / Pro / Enterprise) shown at bottom of sidebar
+- Lock icon on Stacks nav link when `stacks` feature is unavailable
+- Grace period warning banner in `DashboardLayout` above main content when license is offline
+- `api.ts` interceptor tags 403 responses with `license_required: true` as `error.isLicenseError` for UI upgrade prompts
+- `App.tsx` wraps `HostProvider` with `LicenseProvider`
+- Settings page adds License tab with `ShieldCheckIcon`
+
+#### Tier Structure
+
+| | Community (Free) | Pro | Enterprise |
+|---|---|---|---|
+| Max hosts | 1 | 10 | Unlimited |
+| Stacks | — | Yes | Yes |
+| Alerts | — | Yes | Yes |
+| Multi-host | — | Yes | Yes |
+| Update checking | — | Yes | Yes |
+| RBAC / SSO | — | — | Yes |
+| Audit logs | — | — | Yes |
+
+No `LICENSE_KEY` = Community tier (single-host, fully functional). Never crashes on license validation failure.
+
+### Added (Image Status Display)
+- Images page now shows a **used / unused** status badge on each image card
+- Backend `GetAgentImages()` cross-references image IDs and repo tags against the active container list to compute `status: "used" | "unused"`
+- `AgentImageResponse` struct in `agents.go` extends `protocol.Image` with `Status` and `UpdateAvailable` fields; `protocol.Image` itself unchanged
+
+### Fixed (Container Resource Metrics)
+- CPU%, memory, disk I/O, network Rx/Tx were blank on the Containers page for agent-managed hosts
+- `GetAgentContainers()` now merges `agent.Metrics[containerID]` into each container response (`AgentContainerResponse` struct)
+- `formatMetricBytes()` helper formats `uint64` byte values to human-readable strings (KB/MB/GB)
+
+---
+
 ## [Unreleased] - 2026-04-08
 
 ### Added (Linux Packaging)

@@ -2,8 +2,8 @@
 export const APP_CONFIG = {
   // Application Info
   NAME: 'CONMAN',
-  VERSION: '1.0.2',
-  FULL_VERSION: 'CONMAN v1.0.2',
+  VERSION: '1.1.0',
+  FULL_VERSION: 'CONMAN v1.1.0',
   
   // Support Links
   HELP_URL: 'https://github.com/conman/docs',

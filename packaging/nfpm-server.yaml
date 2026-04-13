@@ -1,7 +1,7 @@
 name: conman-server
 arch: amd64
 platform: linux
-version: "1.0.0"
+version: ${VERSION}
 version_schema: semver
 maintainer: "Conman Team"
 description: "Conman Server - Multi-host container management platform with web dashboard"

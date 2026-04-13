@@ -5,10 +5,11 @@ import (
 	"conman-backend/internal/api"
 	"conman-backend/internal/authz"
 	"conman-backend/internal/config"
+	"conman-backend/internal/license"
 	"conman-backend/internal/metrics"
 	"conman-backend/internal/middleware"
-	"conman-backend/internal/observability"
 	"conman-backend/internal/models"
+	"conman-backend/internal/observability"
 	"conman-backend/internal/service"
 	"context"
 	"encoding/json"
@@ -66,7 +67,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{}, &models.LicenseCache{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -125,7 +126,10 @@ func main() {
     // 5. Init Casbin (Database Adapter)
     authz.InitCasbin(db)
 
-	// 5. Setup Router (Chi)
+	// 6. Init License Service
+	licenseService := license.NewLicenseService(db)
+
+	// 7. Setup Router (Chi)
 	r := chi.NewRouter()
 
     // Middleware
@@ -144,7 +148,7 @@ func main() {
     }))
 
 	// Handlers (hoisted for use by alert evaluator)
-	agentHandler := api.NewAgentHandler(db, metricsStore)
+	agentHandler := api.NewAgentHandler(db, metricsStore, licenseService)
 
 	// API v1 Group
 	r.Route("/api/v1", func(r chi.Router) {
@@ -172,6 +176,14 @@ func main() {
         // Protected Routes
         r.Group(func(r chi.Router) {
             r.Use(mw.AuthMiddleware)
+            r.Use(middleware.NewLicenseMiddleware(licenseService))
+
+            // License Management
+            licenseHandler := api.NewLicenseHandler(licenseService)
+            r.Get("/license", licenseHandler.GetLicenseInfo)
+            r.Post("/license/activate", licenseHandler.ActivateLicense)
+            r.Post("/license/deactivate", licenseHandler.DeactivateLicense)
+            r.Post("/license/validate", licenseHandler.ValidateLicense)
 
             // User Management
             r.Route("/users", func(r chi.Router) {
@@ -277,10 +289,10 @@ func main() {
                  })
             })
 
-            // Stacks
+            // Stacks (Pro+)
             stackHandler := api.NewStackHandler(db)
             r.Route("/stacks", func(r chi.Router) {
-                // Permissions?
+                r.Use(middleware.RequireFeature("stacks"))
                 r.Get("/", stackHandler.ListStacks)
                 r.Post("/", stackHandler.CreateStack)
                 r.Get("/{id}", stackHandler.GetStack)
@@ -292,9 +304,12 @@ func main() {
             // Agent Management (Multi-Host)
             agentHandler.RegisterRoutes(r)
 
-            // Alert Management
-            alertHandler := api.NewAlertHandler(db)
-            alertHandler.RegisterRoutes(r)
+            // Alert Management (Pro+)
+            r.Group(func(r chi.Router) {
+                r.Use(middleware.RequireFeature("alerts"))
+                alertHandler := api.NewAlertHandler(db)
+                alertHandler.RegisterRoutes(r)
+            })
         })
 	})
 
@@ -386,6 +401,9 @@ func main() {
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Start License Service (background validation loop)
+	go licenseService.Start(ctx)
 
 	// Start Alert Evaluator (background, respects shutdown)
 	alertEvaluator := alerts.NewEvaluator(db, agentHandler)

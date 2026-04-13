@@ -10,11 +10,13 @@ import (
 	"net/http"
     "os"
     "os/exec"
+	"strconv"
 	"strings"
 
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -210,9 +212,15 @@ func (a *Agent) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		// Index 5, 6, 7
 		modTime := strings.Join(fields[5:8], " ")
 
+		// Parse size from field 4
+		var size int64
+		if parsed, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
+			size = parsed
+		}
+
 		files = append(files, FileEntry{
 			Name:    name,
-			Size:    0, // parsing skipped for brevity
+			Size:    size,
 			Mode:    mode,
 			ModTime: modTime,
 			IsDir:   isDir,
@@ -235,8 +243,9 @@ func (a *Agent) handleStreamLogs(w http.ResponseWriter, r *http.Request) {
     if tail == "" {
         tail = "100"
     }
-    
-    // Upgrade to WebSocket
+    since := r.URL.Query().Get("since")
+
+    // Upgrade to WebSocket first — any error before this sends a plain HTTP error
     ws, err := upgrader.Upgrade(w, r, nil)
     if err != nil {
         log.Printf("Upgrade error: %v", err)
@@ -251,6 +260,7 @@ func (a *Agent) handleStreamLogs(w http.ResponseWriter, r *http.Request) {
         Follow:     true,
         Tail:       tail,
         Timestamps: true,
+        Since:      since,
     }
 
     // Connect to Docker logs
@@ -390,6 +400,86 @@ func (a *Agent) handleSystemDF(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(usage)
 }
 
+// handlePruneContainers removes stopped containers
+func (a *Agent) handlePruneContainers(w http.ResponseWriter, r *http.Request) {
+	report, err := a.dockerClient().ContainersPrune(context.Background(), filters.Args{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"containers_deleted": report.ContainersDeleted,
+		"space_reclaimed":    report.SpaceReclaimed,
+	})
+}
+
+// handlePruneImages removes unused images
+func (a *Agent) handlePruneImages(w http.ResponseWriter, r *http.Request) {
+	report, err := a.dockerClient().ImagesPrune(context.Background(), filters.Args{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"images_deleted":  report.ImagesDeleted,
+		"space_reclaimed": report.SpaceReclaimed,
+	})
+}
+
+// handlePruneVolumes removes unused volumes
+func (a *Agent) handlePruneVolumes(w http.ResponseWriter, r *http.Request) {
+	report, err := a.dockerClient().VolumesPrune(context.Background(), filters.Args{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"volumes_deleted": report.VolumesDeleted,
+		"space_reclaimed": report.SpaceReclaimed,
+	})
+}
+
+// handlePruneNetworks removes unused networks
+func (a *Agent) handlePruneNetworks(w http.ResponseWriter, r *http.Request) {
+	report, err := a.dockerClient().NetworksPrune(context.Background(), filters.Args{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"networks_deleted": report.NetworksDeleted,
+	})
+}
+
+// handleSystemPrune removes all unused containers, images, networks, and volumes
+func (a *Agent) handleSystemPrune(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+	results := map[string]any{}
+
+	if cr, err := a.dockerClient().ContainersPrune(ctx, filters.Args{}); err == nil {
+		results["containers_deleted"] = cr.ContainersDeleted
+		results["containers_space"] = cr.SpaceReclaimed
+	}
+	if ir, err := a.dockerClient().ImagesPrune(ctx, filters.Args{}); err == nil {
+		results["images_deleted"] = ir.ImagesDeleted
+		results["images_space"] = ir.SpaceReclaimed
+	}
+	if vr, err := a.dockerClient().VolumesPrune(ctx, filters.Args{}); err == nil {
+		results["volumes_deleted"] = vr.VolumesDeleted
+		results["volumes_space"] = vr.SpaceReclaimed
+	}
+	if nr, err := a.dockerClient().NetworksPrune(ctx, filters.Args{}); err == nil {
+		results["networks_deleted"] = nr.NetworksDeleted
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
 func (a *Agent) handleDuplicateNetwork(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
@@ -465,6 +555,48 @@ func (a *Agent) handleConnectNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleStartContainer starts a container
+func (a *Agent) handleStartContainer(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing ID", http.StatusBadRequest)
+		return
+	}
+	if err := a.dockerClient().ContainerStart(context.Background(), id, container.StartOptions{}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleStopContainer stops a container
+func (a *Agent) handleStopContainer(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing ID", http.StatusBadRequest)
+		return
+	}
+	if err := a.dockerClient().ContainerStop(context.Background(), id, container.StopOptions{}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleRestartContainer restarts a container
+func (a *Agent) handleRestartContainer(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing ID", http.StatusBadRequest)
+		return
+	}
+	if err := a.dockerClient().ContainerRestart(context.Background(), id, container.StopOptions{}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -655,149 +787,294 @@ func (a *Agent) handlePullImage(w http.ResponseWriter, r *http.Request) {
 // handleListStacks uses "docker compose ls --format json" but since that requires project name awareness,
 // we will instead list containers and group them by "com.docker.compose.project" label.
 // This is more robust for "discovery" of existing stacks.
+// stackRegistryPath is the JSON file that persists known stack paths across restarts.
+const stackRegistryPath = "/tmp/conman-stacks/.registry.json"
+
+// loadStackRegistry reads the persisted map of stack name → config file path.
+func loadStackRegistry() map[string]string {
+	data, err := os.ReadFile(stackRegistryPath)
+	if err != nil {
+		return make(map[string]string)
+	}
+	var reg map[string]string
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return make(map[string]string)
+	}
+	return reg
+}
+
+// saveStackRegistry persists the registry to disk.
+func saveStackRegistry(reg map[string]string) {
+	os.MkdirAll("/tmp/conman-stacks", 0755)
+	data, _ := json.Marshal(reg)
+	os.WriteFile(stackRegistryPath, data, 0644)
+}
+
+// stackDirForConfig returns the directory containing a compose config file.
+func stackDirForConfig(configPath string) string {
+	// configPath may be comma-separated; take the first
+	if idx := strings.Index(configPath, ","); idx > 0 {
+		configPath = configPath[:idx]
+	}
+	configPath = strings.TrimSpace(configPath)
+	// Return parent directory
+	if idx := strings.LastIndex(configPath, "/"); idx >= 0 {
+		return configPath[:idx]
+	}
+	return configPath
+}
+
 func (a *Agent) handleListStacks(w http.ResponseWriter, r *http.Request) {
-    containers, err := a.dockerClient().ContainerList(context.Background(), container.ListOptions{All: true})
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Failed to list containers: %v", err), http.StatusInternalServerError)
-        return
-    }
+	containers, err := a.dockerClient().ContainerList(context.Background(), container.ListOptions{All: true})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list containers: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    type Stack struct {
-        Name        string `json:"Name"`
-        Status      string `json:"Status"`
-        Services    int    `json:"Services"`
-        ConfigFiles string `json:"ConfigFiles"`
-    }
+	type Stack struct {
+		Name        string `json:"Name"`
+		Status      string `json:"Status"`
+		Services    int    `json:"Services"`
+		ConfigFiles string `json:"ConfigFiles"`
+	}
 
-    stacks := make(map[string]*Stack)
+	stacks := make(map[string]*Stack)
 
-    for _, c := range containers {
-        projectName := c.Labels["com.docker.compose.project"]
-        if projectName == "" {
-            continue
-        }
+	for _, c := range containers {
+		projectName := c.Labels["com.docker.compose.project"]
+		if projectName == "" {
+			continue
+		}
 
-        if _, exists := stacks[projectName]; !exists {
-            stacks[projectName] = &Stack{
-                Name:   projectName,
-                Status: "active", // Default, will refine
-            }
-        }
-        
-        stacks[projectName].Services++
-        
-        // Simple status logic: if any container is not running, stack is partial/exited
-        if c.State != "running" {
-             if stacks[projectName].Status == "active" {
-                 stacks[projectName].Status = "partial"
-             }
-        }
-        
-        // Try to capture config file path if available (often stored in labels)
-        if cfg := c.Labels["com.docker.compose.project.config_files"]; cfg != "" {
-             stacks[projectName].ConfigFiles = cfg
-        }
-    }
+		if _, exists := stacks[projectName]; !exists {
+			stacks[projectName] = &Stack{
+				Name:   projectName,
+				Status: "active",
+			}
+		}
 
-    result := make([]*Stack, 0, len(stacks))
-    for _, s := range stacks {
-        result = append(result, s)
-    }
+		stacks[projectName].Services++
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(result)
+		if c.State != "running" {
+			if stacks[projectName].Status == "active" {
+				stacks[projectName].Status = "partial"
+			}
+		}
+
+		if cfg := c.Labels["com.docker.compose.project.config_files"]; cfg != "" {
+			stacks[projectName].ConfigFiles = cfg
+		}
+	}
+
+	// Persist any newly discovered config paths into the registry.
+	// Prune entries whose directories no longer exist on disk.
+	reg := loadStackRegistry()
+	changed := false
+
+	// Add newly discovered stacks
+	for name, s := range stacks {
+		if s.ConfigFiles != "" {
+			dir := stackDirForConfig(s.ConfigFiles)
+			if _, err := os.Stat(dir); err == nil {
+				if reg[name] != dir {
+					reg[name] = dir
+					changed = true
+				}
+			}
+		}
+	}
+
+	// Prune stacks whose directories have been deleted
+	for name, dir := range reg {
+		if _, err := os.Stat(dir); err != nil {
+			delete(reg, name)
+			changed = true
+			// Also remove conman-managed copy if it existed
+			os.RemoveAll(fmt.Sprintf("/tmp/conman-stacks/%s", name))
+		}
+	}
+
+	if changed {
+		saveStackRegistry(reg)
+	}
+
+	// Include stopped stacks from registry that have no running containers
+	for name, dir := range reg {
+		if _, exists := stacks[name]; !exists {
+			stacks[name] = &Stack{
+				Name:        name,
+				Status:      "exited",
+				Services:    0,
+				ConfigFiles: dir,
+			}
+		}
+	}
+
+	result := make([]*Stack, 0, len(stacks))
+	for _, s := range stacks {
+		result = append(result, s)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// resolveStackDir returns the directory for a stack by checking the registry,
+// conman-managed path, and falling back to the config label from containers.
+func (a *Agent) resolveStackDir(name string) string {
+	// 1. Check registry
+	reg := loadStackRegistry()
+	if dir, ok := reg[name]; ok {
+		if _, err := os.Stat(dir); err == nil {
+			return dir
+		}
+	}
+	// 2. Check conman-managed path
+	managed := fmt.Sprintf("/tmp/conman-stacks/%s", name)
+	if _, err := os.Stat(managed); err == nil {
+		return managed
+	}
+	return ""
 }
 
 // handleCreateStack accepts docker-compose content and runs "docker compose up"
 func (a *Agent) handleCreateStack(w http.ResponseWriter, r *http.Request) {
-    var req struct {
-        Name           string `json:"name"`
-        ComposeContent string `json:"compose_content"`
-        EnvContent     string `json:"env_content"`
-    }
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-         http.Error(w, "Invalid request body", http.StatusBadRequest)
-         return
-    }
+	var req struct {
+		Name           string `json:"name"`
+		ComposeContent string `json:"compose_content"`
+		EnvContent     string `json:"env_content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
-    if req.Name == "" || req.ComposeContent == "" {
-         http.Error(w, "Name and ComposeContent are required", http.StatusBadRequest)
-         return
-    }
+	if req.Name == "" || req.ComposeContent == "" {
+		http.Error(w, "Name and ComposeContent are required", http.StatusBadRequest)
+		return
+	}
 
-    // Create a temporary directory for the stack
-    // We use a persistent location in /tmp/conman-stacks/{name} so we can manage it later 
-    // (though real prod usage should use a persistent volume)
-    stackDir := fmt.Sprintf("/tmp/conman-stacks/%s", req.Name)
-    if err := os.MkdirAll(stackDir, 0755); err != nil {
-        http.Error(w, fmt.Sprintf("Failed to create stack dir: %v", err), http.StatusInternalServerError)
-        return
-    }
+	stackDir := fmt.Sprintf("/tmp/conman-stacks/%s", req.Name)
+	if err := os.MkdirAll(stackDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create stack dir: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    // Write docker-compose.yml
-    if err := os.WriteFile(stackDir+"/docker-compose.yml", []byte(req.ComposeContent), 0644); err != nil {
-        http.Error(w, fmt.Sprintf("Failed to write compose file: %v", err), http.StatusInternalServerError)
-        return
-    }
+	if err := os.WriteFile(stackDir+"/docker-compose.yml", []byte(req.ComposeContent), 0644); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write compose file: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-    // Write .env if provided
-    if req.EnvContent != "" {
-        if err := os.WriteFile(stackDir+"/.env", []byte(req.EnvContent), 0644); err != nil {
-             http.Error(w, fmt.Sprintf("Failed to write .env file: %v", err), http.StatusInternalServerError)
-             return
-        }
-    }
+	if req.EnvContent != "" {
+		if err := os.WriteFile(stackDir+"/.env", []byte(req.EnvContent), 0644); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to write .env file: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
 
-    // Run docker compose up
-    cmd := exec.Command("docker", "compose", "up", "-d")
-    cmd.Dir = stackDir
-    output, err := cmd.CombinedOutput()
-    if err != nil {
-        http.Error(w, fmt.Sprintf("Docker Compose failed: %s\nOutput: %s", err, string(output)), http.StatusInternalServerError)
-        return
-    }
+	cmd := exec.Command("docker", "compose", "up", "-d")
+	cmd.Dir = stackDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Docker Compose failed: %s\nOutput: %s", err, string(output)), http.StatusInternalServerError)
+		return
+	}
 
-    w.WriteHeader(http.StatusOK)
-    json.NewEncoder(w).Encode(map[string]string{"status": "deployed", "output": string(output)})
+	// Register the stack
+	reg := loadStackRegistry()
+	reg[req.Name] = stackDir
+	saveStackRegistry(reg)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "deployed", "output": string(output)})
+}
+
+// handleUpStack runs "docker compose up -d" on an existing stack
+func (a *Agent) handleUpStack(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "Missing stack name", http.StatusBadRequest)
+		return
+	}
+
+	stackDir := a.resolveStackDir(name)
+	if stackDir == "" {
+		http.Error(w, "Stack directory not found", http.StatusNotFound)
+		return
+	}
+
+	cmd := exec.Command("docker", "compose", "up", "-d")
+	cmd.Dir = stackDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Docker Compose Up failed: %v\nOutput: %s", err, string(output)), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "started", "output": string(output)})
+}
+
+// handleRestartStack runs "docker compose restart" on a stack
+func (a *Agent) handleRestartStack(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "Missing stack name", http.StatusBadRequest)
+		return
+	}
+
+	stackDir := a.resolveStackDir(name)
+	if stackDir == "" {
+		http.Error(w, "Stack directory not found", http.StatusNotFound)
+		return
+	}
+
+	cmd := exec.Command("docker", "compose", "restart")
+	cmd.Dir = stackDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Docker Compose Restart failed: %v\nOutput: %s", err, string(output)), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "restarted", "output": string(output)})
 }
 
 // handleRemoveStack runs "docker compose down"
 func (a *Agent) handleRemoveStack(w http.ResponseWriter, r *http.Request) {
-    name := r.URL.Query().Get("name")
-    if name == "" {
-        http.Error(w, "Missing stack name", http.StatusBadRequest)
-        return
-    }
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, "Missing stack name", http.StatusBadRequest)
+		return
+	}
 
-    // Try to find the stack directory
-    stackDir := fmt.Sprintf("/tmp/conman-stacks/%s", name)
-    // If directory doesn't exist, we might try to infer it from running containers, 
-    // but for now let's assume we can only fully manage stacks we created or that follow this convention.
-    // However, "docker compose -p {name} down" might work even without the directory if we don't need the file reference (usually we do).
-    
-    // Attempt 1: Use directory if exists
-    if _, err := os.Stat(stackDir); err == nil {
-         cmd := exec.Command("docker", "compose", "down")
-         cmd.Dir = stackDir
-         if out, err := cmd.CombinedOutput(); err != nil {
-             http.Error(w, fmt.Sprintf("Docker Compose Down failed: %v\nOutput: %s", err, string(out)), http.StatusInternalServerError)
-             return
-         }
-         // Clean up dir
-         os.RemoveAll(stackDir)
-    } else {
-        // Attempt 2: Just try "docker compose -p name down" (might not work without compose file depending on version)
-        // Actually, without the compose file, `down` is hard. 
-        // We will return an error if we can't find the directory, forcing user to manual cleanup or we implement a "force remove containers" logic.
-        
-        // Alternative: Find all containers with label and remove them?
-        // Let's rely on the CLI for now.
-        cmd := exec.Command("docker", "compose", "-p", name, "down")
-        if out, err := cmd.CombinedOutput(); err != nil {
-             http.Error(w, fmt.Sprintf("Stack config not found and generic down failed: %v\nOutput: %s", err, string(out)), http.StatusNotFound)
-             return
-        }
-    }
+	stackDir := a.resolveStackDir(name)
+	if stackDir != "" {
+		cmd := exec.Command("docker", "compose", "down")
+		cmd.Dir = stackDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			http.Error(w, fmt.Sprintf("Docker Compose Down failed: %v\nOutput: %s", err, string(out)), http.StatusInternalServerError)
+			return
+		}
+		// Clean up conman-managed dir (but not external dirs)
+		managed := fmt.Sprintf("/tmp/conman-stacks/%s", name)
+		if stackDir == managed {
+			os.RemoveAll(managed)
+		}
+	} else {
+		// Fallback: try project-name-based down
+		cmd := exec.Command("docker", "compose", "-p", name, "down")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			http.Error(w, fmt.Sprintf("Stack config not found and generic down failed: %v\nOutput: %s", err, string(out)), http.StatusNotFound)
+			return
+		}
+	}
 
-    w.WriteHeader(http.StatusOK)
+	// Remove from registry
+	reg := loadStackRegistry()
+	delete(reg, name)
+	saveStackRegistry(reg)
+
+	w.WriteHeader(http.StatusOK)
 }

@@ -1,7 +1,7 @@
 name: conman-agent
 arch: amd64
 platform: linux
-version: "1.0.0"
+version: ${VERSION}
 version_schema: semver
 maintainer: "Conman Team"
 description: "Conman Agent - Lightweight container monitoring agent (Docker, Podman, containerd)"

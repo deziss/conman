@@ -1,7 +1,9 @@
 import { CubeIcon, CommandLineIcon, ChevronUpDownIcon, ServerStackIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
 import { NavLink } from 'react-router-dom';
-import { HomeIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Cog6ToothIcon, SunIcon, MoonIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, KeyIcon, QuestionMarkCircleIcon, LifebuoyIcon } from '@heroicons/react/24/solid';
+import { HomeIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Cog6ToothIcon, SunIcon, MoonIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, KeyIcon, QuestionMarkCircleIcon, LifebuoyIcon, LockClosedIcon } from '@heroicons/react/24/solid';
 import { EnvelopeIcon } from '@heroicons/react/24/outline';
+import { useLicense } from '../contexts/LicenseContext';
+import { TIER_LABELS, TIER_COLORS } from '../types/license';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth, getInitials } from '../contexts/AuthContext';
 import { useHost } from '../contexts/HostContext';
@@ -18,6 +20,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
   const { theme, toggleTheme } = useTheme();
   const { logout, user } = useAuth();
   const { hosts, currentHost, setCurrentHost } = useHost();
+  const { license, hasFeature } = useLicense();
   const [hostDropdownOpen, setHostDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -68,27 +71,24 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
           className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} p-2 rounded-lg bg-gradient-to-r from-cyan-500/5 to-blue-500/5 border border-cyan-500/20 cursor-pointer hover:bg-cyan-500/10 transition-colors`}
         >
           <div className="flex items-center space-x-2 min-w-0">
-            <ServerStackIcon className="w-4 h-4 text-purple-400 flex-shrink-0" />
+            <ServerStackIcon className="w-4 h-4 text-purple-500 dark:text-purple-400 flex-shrink-0" />
             {!isCollapsed && (
-              <span className="text-sm font-medium text-slate-200 truncate">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
                 {currentHost?.name || 'Select Host'}
               </span>
             )}
           </div>
-          {!isCollapsed && <ChevronUpDownIcon className="w-4 h-4 text-slate-400 flex-shrink-0" />}
+          {!isCollapsed && <ChevronUpDownIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />}
         </div>
 
         {/* Dropdown */}
         {hostDropdownOpen && !isCollapsed && (
-          <div className="absolute left-4 right-4 mt-1 bg-slate-900 border border-white/10 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
-            {/* Hosts Dropdown */}
-            
-            {/* Remote Hosts */}
+          <div className="absolute left-4 right-4 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
             {hosts.map(host => (
               <button
                 key={host.id}
                 onClick={() => { setCurrentHost(host); setHostDropdownOpen(false); }}
-                className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-white/5 transition-colors ${currentHost?.id === host.id ? 'bg-purple-500/10 text-purple-400' : 'text-slate-300'}`}
+                className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-white/5 transition-colors ${currentHost?.id === host.id ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : 'text-slate-700 dark:text-slate-300'}`}
               >
                 <div className="flex items-center space-x-2">
                   <ServerStackIcon className="w-4 h-4" />
@@ -143,6 +143,9 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
                 <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
                   Stacks
                 </span>
+                {!hasFeature('stacks') && !isCollapsed && (
+                  <LockClosedIcon className="w-3.5 h-3.5 text-slate-400 ml-auto flex-shrink-0" title="Requires Pro plan" />
+                )}
               </NavLink>
 
               <NavLink
@@ -369,6 +372,11 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
               <span className="text-[10px] uppercase font-bold text-slate-300 dark:text-slate-700 tracking-wider">
                 {APP_CONFIG.FULL_VERSION}
               </span>
+              {license && (
+                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${TIER_COLORS[license.tier]}`}>
+                  {TIER_LABELS[license.tier]}
+                </span>
+              )}
             </div>
           </div>
         )}

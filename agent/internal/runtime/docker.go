@@ -250,6 +250,10 @@ func (d *DockerProvider) ListImages(ctx context.Context, all bool) ([]protocol.I
 
 	var result []protocol.Image
 	for _, img := range images {
+		containers := 0
+		if img.Containers > 0 {
+			containers = int(img.Containers)
+		}
 		result = append(result, protocol.Image{
 			ID:          img.ID,
 			RepoTags:    img.RepoTags,
@@ -258,6 +262,7 @@ func (d *DockerProvider) ListImages(ctx context.Context, all bool) ([]protocol.I
 			Size:        img.Size,
 			VirtualSize: img.VirtualSize,
 			Labels:      img.Labels,
+			Containers:  containers,
 		})
 	}
 	return result, nil
