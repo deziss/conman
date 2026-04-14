@@ -24,8 +24,8 @@ type LicenseCache struct {
 	Expiry         *time.Time
 	MaxHosts       int    `gorm:"default:1"`
 	Features       string `gorm:"type:text"` // JSON array of feature codes
-	MachineID      string `gorm:"size:256"`  // Server fingerprint for Keygen machine activation
-	KeygenMachineID string `gorm:"size:256"` // Keygen's machine resource ID
+	MachineID            string `gorm:"size:256"` // Server fingerprint (hostname + MAC)
+	LicenciaActivationID string `gorm:"size:256"` // Reserved for future Licencia activation tracking
 	LastValidated  time.Time
 	LastError      string `gorm:"type:text"`
 	GracePeriodEnd *time.Time

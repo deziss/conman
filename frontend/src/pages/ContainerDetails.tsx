@@ -481,7 +481,7 @@ export const ContainerDetails = () => {
     };
 
     const handleAction = (action: string) => {
-        if (action === 'stop' || action === 'remove') {
+        if (action === 'stop' || action === 'remove' || action === 'restart') {
             setConfirmAction({ isOpen: true, action });
         } else {
             executeAction(action);
@@ -562,7 +562,7 @@ export const ContainerDetails = () => {
                 ))}
             </div>
 
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                 {activeTab === 'overview' && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-8">
                          {/* Stats Column */}
@@ -968,14 +968,16 @@ export const ContainerDetails = () => {
         isOpen={confirmAction.isOpen}
         onClose={() => setConfirmAction({ isOpen: false, action: '' })}
         onConfirm={() => executeAction(confirmAction.action)}
-        title={confirmAction.action === 'remove' ? 'Remove Container' : 'Stop Container'}
+        title={confirmAction.action === 'remove' ? 'Remove Container' : confirmAction.action === 'restart' ? 'Restart Container' : 'Stop Container'}
         message={
           confirmAction.action === 'remove'
             ? `Are you sure you want to remove "${container.Name}"? This action cannot be undone.`
+            : confirmAction.action === 'restart'
+            ? `Are you sure you want to restart "${container.Name}"? The container will briefly go offline.`
             : `Are you sure you want to stop "${container.Name}"?`
         }
-        confirmText={confirmAction.action === 'remove' ? 'Remove' : 'Stop'}
-        isDestructive={true}
+        confirmText={confirmAction.action === 'remove' ? 'Remove' : confirmAction.action === 'restart' ? 'Restart' : 'Stop'}
+        isDestructive={confirmAction.action !== 'restart'}
       />
     </div>
   );

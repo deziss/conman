@@ -81,7 +81,7 @@ Uses Kong API Gateway for load balancing with active health checks.
 
 ### Building Packages From Source
 
-Prerequisites: Go 1.24+, Node 20+, nfpm
+Prerequisites: Go 1.24+, Node 22 (LTS), nfpm
 
 ```bash
 # Build all .deb and .rpm packages
