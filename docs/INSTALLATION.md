@@ -8,7 +8,7 @@
 | **Agent** | 0.1 CPU, 64 MB RAM | 0.5 CPU, 128 MB RAM |
 | **OS** | Linux amd64 (kernel 4.18+) | Ubuntu 22.04+, RHEL 9+, Debian 12+ |
 | **Go** (build only) | 1.24+ | 1.24+ |
-| **Node** (build only) | 20+ | 20+ |
+| **Node** (build only) | 22 (LTS) | 22 (LTS) |
 
 ## Server Installation
 

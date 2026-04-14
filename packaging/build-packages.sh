@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Build Conman .deb and .rpm packages
-# Prerequisites: go 1.24+, node 20+, nfpm (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest)
+# Prerequisites: go 1.24+, node 22+ (LTS), nfpm (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"

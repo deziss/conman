@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	keygenBaseURL       = "https://api.keygen.sh/v1/accounts"
 	revalidateInterval  = 6 * time.Hour
 	gracePeriodDuration = 72 * time.Hour
 	httpTimeout         = 10 * time.Second
@@ -50,19 +49,19 @@ func (s *LicenseState) HasFeature(feature string) bool {
 
 // LicenseService manages license validation, caching, and enforcement.
 type LicenseService struct {
-	db        *gorm.DB
-	mu        sync.RWMutex
-	state     *LicenseState
-	machineID string
-	cancel    context.CancelFunc
+	db     *gorm.DB
+	mu     sync.RWMutex
+	state  *LicenseState
+	hwID   string // hardware fingerprint sent to Licencia
+	cancel context.CancelFunc
 }
 
 // NewLicenseService creates a new license service and loads cached state from DB.
 func NewLicenseService(db *gorm.DB) *LicenseService {
 	svc := &LicenseService{
-		db:        db,
-		machineID: GenerateFingerprint(),
-		state:     communityState(),
+		db:    db,
+		hwID:  GenerateFingerprint(),
+		state: communityState(),
 	}
 
 	// Load cached state from DB
@@ -134,8 +133,6 @@ func (svc *LicenseService) GetState() *LicenseState {
 
 	// Check if grace period has expired
 	if svc.state.GracePeriod && svc.state.GracePeriodEnd != nil && time.Now().After(*svc.state.GracePeriodEnd) {
-		// Grace period expired — but don't modify under read lock.
-		// Return community state; the next validation tick will persist this.
 		cs := communityState()
 		cs.Error = "Grace period expired. License reverted to Community."
 		return cs
@@ -154,15 +151,12 @@ func (svc *LicenseService) Activate(key string) (*LicenseState, error) {
 		return nil, err
 	}
 
-	// Also try machine activation
-	svc.activateMachine(key)
-
 	return svc.GetState(), nil
 }
 
 // Deactivate clears the license and falls back to Community tier.
 func (svc *LicenseService) Deactivate() error {
-	svc.deactivateMachine()
+	svc.deactivateFromLicencia()
 
 	svc.mu.Lock()
 	svc.state = communityState()
@@ -204,11 +198,9 @@ func (svc *LicenseService) GetHostCount() int {
 // --- Internal ---
 
 func (svc *LicenseService) getActiveKey() string {
-	// Env var takes precedence
 	if config.AppConfig.LicenseKey != "" {
 		return config.AppConfig.LicenseKey
 	}
-	// Fall back to DB-stored key
 	var cache models.LicenseCache
 	if err := svc.db.First(&cache).Error; err == nil {
 		return cache.LicenseKey
@@ -217,20 +209,19 @@ func (svc *LicenseService) getActiveKey() string {
 }
 
 func (svc *LicenseService) validate(key string) error {
-	accountID := config.AppConfig.KeygenAccountID
-	if accountID == "" {
-		return svc.applyOfflineFallback(key, "KEYGEN_ACCOUNT_ID not configured")
+	licenciaURL := config.AppConfig.LicenciaURL
+	if licenciaURL == "" {
+		return svc.applyOfflineFallback(key, "LICENCIA_URL not configured")
 	}
 
-	url := fmt.Sprintf("%s/%s/licenses/actions/validate-key", keygenBaseURL, accountID)
+	url := licenciaURL + "/api/v1/licenses/validate"
 
 	body := map[string]interface{}{
-		"meta": map[string]interface{}{
-			"key": key,
-			"scope": map[string]string{
-				"fingerprint": svc.machineID,
-			},
-		},
+		"key":        key,
+		"hardwareId": svc.hwID,
+		"deviceName": "conman-server",
+		"os":         "linux",
+		"appVersion": "conman",
 	}
 
 	jsonBody, _ := json.Marshal(body)
@@ -240,8 +231,8 @@ func (svc *LicenseService) validate(key string) error {
 	if err != nil {
 		return svc.enterGracePeriod(fmt.Sprintf("request creation failed: %v", err))
 	}
-	req.Header.Set("Content-Type", "application/vnd.api+json")
-	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", config.AppConfig.LicenciaAPIKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -251,30 +242,34 @@ func (svc *LicenseService) validate(key string) error {
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	var result keygenValidationResponse
+	// Non-2xx with no parseable body → network/server issue, enter grace period
+	if resp.StatusCode >= 500 {
+		return svc.enterGracePeriod(fmt.Sprintf("Licencia server error: HTTP %d", resp.StatusCode))
+	}
+
+	var result licenciaValidationResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return svc.enterGracePeriod(fmt.Sprintf("invalid response: %v", err))
 	}
 
-	if !result.Meta.Valid {
-		// License is explicitly invalid (not a network error)
+	if !result.Valid {
 		svc.mu.Lock()
 		cs := communityState()
-		cs.Error = fmt.Sprintf("License invalid: %s - %s", result.Meta.Code, result.Meta.Detail)
+		cs.Error = "License invalid or expired"
 		cs.LicenseKeyMask = maskKey(key)
 		svc.state = cs
 		svc.mu.Unlock()
 		svc.persistCache(key, cs)
-		return fmt.Errorf("license invalid: %s", result.Meta.Code)
+		return fmt.Errorf("license invalid: key=%s", maskKey(key))
 	}
 
-	// Valid license — extract tier from policy/entitlements
+	// Valid license — extract tier from entitlements
 	tier, maxHosts, features := svc.extractLicenseDetails(result)
 
 	now := time.Now()
 	var expiry *time.Time
-	if result.Data.Attributes.Expiry != "" {
-		if t, err := time.Parse(time.RFC3339, result.Data.Attributes.Expiry); err == nil {
+	if result.ExpiresAt != "" {
+		if t, err := time.Parse(time.RFC3339, result.ExpiresAt); err == nil {
 			expiry = &t
 		}
 	}
@@ -300,10 +295,9 @@ func (svc *LicenseService) validate(key string) error {
 	return nil
 }
 
-func (svc *LicenseService) extractLicenseDetails(result keygenValidationResponse) (models.LicenseTier, int, []string) {
-	// Try to extract tier from license metadata
+func (svc *LicenseService) extractLicenseDetails(result licenciaValidationResponse) (models.LicenseTier, int, []string) {
 	tier := models.TierCommunity
-	if t, ok := result.Data.Attributes.Metadata["tier"]; ok {
+	if t, ok := result.Entitlements["tier"]; ok {
 		switch t {
 		case "pro":
 			tier = models.TierPro
@@ -312,25 +306,14 @@ func (svc *LicenseService) extractLicenseDetails(result keygenValidationResponse
 		}
 	}
 
-	// If no tier in metadata, infer from policy name
-	if tier == models.TierCommunity && result.Data.Attributes.Name != "" {
-		switch result.Data.Attributes.Name {
-		case "Pro", "pro":
-			tier = models.TierPro
-		case "Enterprise", "enterprise":
-			tier = models.TierEnterprise
-		}
-	}
-
 	maxHosts := models.DefaultMaxHosts(tier)
-	if mh, ok := result.Data.Attributes.Metadata["max_hosts"]; ok {
+	if mh, ok := result.Entitlements["max_hosts"]; ok {
 		if v, ok := mh.(float64); ok {
 			maxHosts = int(v)
 		}
 	}
 
 	features := models.DefaultFeatures(tier)
-
 	return tier, maxHosts, features
 }
 
@@ -339,27 +322,23 @@ func (svc *LicenseService) enterGracePeriod(reason string) error {
 	defer svc.mu.Unlock()
 
 	if svc.state.Valid && !svc.state.GracePeriod {
-		// Start grace period — keep current tier
 		end := time.Now().Add(gracePeriodDuration)
 		svc.state.GracePeriod = true
 		svc.state.GracePeriodEnd = &end
 		svc.state.Error = reason
 		log.Printf("License: entering grace period until %s (reason: %s)", end.Format(time.RFC3339), reason)
 	} else if svc.state.GracePeriod && svc.state.GracePeriodEnd != nil && time.Now().After(*svc.state.GracePeriodEnd) {
-		// Grace period expired
 		cs := communityState()
 		cs.Error = "Grace period expired: " + reason
 		svc.state = cs
 		log.Println("License: grace period expired, reverted to Community")
 	}
-	// If already in grace period and not expired, just update the error
 	svc.state.Error = reason
 
 	return fmt.Errorf("license validation failed: %s", reason)
 }
 
 func (svc *LicenseService) applyOfflineFallback(key, reason string) error {
-	// No Keygen account configured — use key presence as Pro indicator for dev/testing
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
 
@@ -380,95 +359,57 @@ func (svc *LicenseService) applyOfflineFallback(key, reason string) error {
 	return nil
 }
 
-func (svc *LicenseService) activateMachine(key string) {
-	accountID := config.AppConfig.KeygenAccountID
-	if accountID == "" {
+func (svc *LicenseService) deactivateFromLicencia() {
+	licenciaURL := config.AppConfig.LicenciaURL
+	if licenciaURL == "" {
 		return
 	}
 
-	url := fmt.Sprintf("%s/%s/machines", keygenBaseURL, accountID)
+	var cache models.LicenseCache
+	if err := svc.db.First(&cache).Error; err != nil || cache.LicenseKey == "" {
+		return
+	}
+
+	url := licenciaURL + "/api/v1/licenses/deactivate"
 
 	body := map[string]interface{}{
-		"data": map[string]interface{}{
-			"type": "machines",
-			"attributes": map[string]interface{}{
-				"fingerprint": svc.machineID,
-				"name":        fmt.Sprintf("conman-server-%s", svc.machineID[:12]),
-				"platform":    "linux",
-			},
-		},
+		"key":        cache.LicenseKey,
+		"hardwareId": svc.hwID,
 	}
 
 	jsonBody, _ := json.Marshal(body)
 
 	client := &http.Client{Timeout: httpTimeout}
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
-	req.Header.Set("Content-Type", "application/vnd.api+json")
-	req.Header.Set("Authorization", "License "+key)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		log.Printf("License: deactivation request failed: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", config.AppConfig.LicenciaAPIKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("License: machine activation failed: %v", err)
+		log.Printf("License: deactivation network error: %v", err)
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == 201 || resp.StatusCode == 200 {
-		var result struct {
-			Data struct {
-				ID string `json:"id"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-			// Store Keygen machine ID
-			svc.db.Model(&models.LicenseCache{}).Where("1 = 1").Update("keygen_machine_id", result.Data.ID)
-			log.Printf("License: machine activated (id=%s)", result.Data.ID)
-		}
-	} else if resp.StatusCode == 422 {
-		// Machine already activated — that's fine
-		log.Println("License: machine already activated")
-	}
-}
-
-func (svc *LicenseService) deactivateMachine() {
-	accountID := config.AppConfig.KeygenAccountID
-	if accountID == "" {
-		return
-	}
-
-	var cache models.LicenseCache
-	if err := svc.db.First(&cache).Error; err != nil || cache.KeygenMachineID == "" {
-		return
-	}
-
-	url := fmt.Sprintf("%s/%s/machines/%s", keygenBaseURL, accountID, cache.KeygenMachineID)
-
-	client := &http.Client{Timeout: httpTimeout}
-	req, _ := http.NewRequest("DELETE", url, nil)
-	req.Header.Set("Authorization", "License "+cache.LicenseKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("License: machine deactivation failed: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-	log.Println("License: machine deactivated")
+	log.Println("License: deactivated from Licencia")
 }
 
 func (svc *LicenseService) persistCache(key string, state *LicenseState) {
 	featuresJSON, _ := json.Marshal(state.Features)
 
 	cache := models.LicenseCache{
-		LicenseKey:     key,
-		Tier:           state.Tier,
-		Valid:          state.Valid,
-		Expiry:         state.Expiry,
-		MaxHosts:       state.MaxHosts,
-		Features:       string(featuresJSON),
-		MachineID:      svc.machineID,
-		LastValidated:  state.LastValidated,
-		LastError:      state.Error,
+		LicenseKey:    key,
+		Tier:          state.Tier,
+		Valid:         state.Valid,
+		Expiry:        state.Expiry,
+		MaxHosts:      state.MaxHosts,
+		Features:      string(featuresJSON),
+		MachineID:     svc.hwID,
+		LastValidated: state.LastValidated,
+		LastError:     state.Error,
 		GracePeriodEnd: state.GracePeriodEnd,
 	}
 
@@ -509,23 +450,13 @@ func parseFeatures(s string) []string {
 	return features
 }
 
-// --- Keygen.sh API response types ---
+// --- Licencia API response types ---
 
-type keygenValidationResponse struct {
-	Meta struct {
-		Valid  bool   `json:"valid"`
-		Code   string `json:"code"`
-		Detail string `json:"detail"`
-	} `json:"meta"`
-	Data struct {
-		ID         string `json:"id"`
-		Type       string `json:"type"`
-		Attributes struct {
-			Key      string            `json:"key"`
-			Name     string            `json:"name"`
-			Expiry   string            `json:"expiry"`
-			Status   string            `json:"status"`
-			Metadata map[string]interface{} `json:"metadata"`
-		} `json:"attributes"`
-	} `json:"data"`
+type licenciaValidationResponse struct {
+	Valid        bool                   `json:"valid"`
+	LicenseID    string                 `json:"licenseId"`
+	Type         string                 `json:"type"`
+	ExpiresAt    string                 `json:"expiresAt"`
+	Entitlements map[string]interface{} `json:"entitlements"`
+	NextCheckIn  int                    `json:"nextCheckIn"`
 }

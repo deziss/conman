@@ -84,7 +84,7 @@ func (h *LicenseHandler) DeactivateLicense(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// ValidateLicense forces an immediate re-validation against Keygen.sh.
+// ValidateLicense forces an immediate re-validation against Licencia.
 // POST /api/v1/license/validate
 func (h *LicenseHandler) ValidateLicense(w http.ResponseWriter, r *http.Request) {
 	if err := h.Service.ForceValidate(); err != nil {

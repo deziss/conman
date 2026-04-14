@@ -18,9 +18,9 @@ type Config struct {
 	AdminPassword  string   `mapstructure:"ADMIN_PASSWORD"`
 	StaticDir      string   `mapstructure:"STATIC_DIR"`    // Path to frontend build
 	AgentToken      string   `mapstructure:"AGENT_TOKEN"`       // Pre-shared key for agent authentication
-	LicenseKey      string   `mapstructure:"LICENSE_KEY"`       // License key for Keygen.sh (empty = Community tier)
-	KeygenAccountID string   `mapstructure:"KEYGEN_ACCOUNT_ID"` // Keygen.sh account ID
-	KeygenProductID string   `mapstructure:"KEYGEN_PRODUCT_ID"` // Keygen.sh product ID
+	LicenseKey     string `mapstructure:"LICENSE_KEY"`     // License key (empty = Community tier)
+	LicenciaURL    string `mapstructure:"LICENCIA_URL"`    // Licencia licensing server URL
+	LicenciaAPIKey string `mapstructure:"LICENCIA_API_KEY"` // Licencia API key with license:validate scope
 }
 
 var AppConfig *Config
@@ -38,9 +38,9 @@ func LoadConfig() {
     viper.SetDefault("ADMIN_PASSWORD", "admin")
 	viper.SetDefault("STATIC_DIR", "") // Empty means static serving disabled
 	viper.SetDefault("AGENT_TOKEN", "")        // Empty means agent auth disabled (insecure)
-	viper.SetDefault("LICENSE_KEY", "")        // Empty means Community/Free tier
-	viper.SetDefault("KEYGEN_ACCOUNT_ID", "")  // Required for Keygen.sh API
-	viper.SetDefault("KEYGEN_PRODUCT_ID", "")  // Required for Keygen.sh API
+	viper.SetDefault("LICENSE_KEY", "")      // Empty means Community/Free tier
+	viper.SetDefault("LICENCIA_URL", "")     // Licencia server URL (empty = offline mode)
+	viper.SetDefault("LICENCIA_API_KEY", "") // Licencia API key with license:validate scope
 
 	viper.AutomaticEnv()
 
