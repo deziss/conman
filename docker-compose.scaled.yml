@@ -26,7 +26,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - conman-net
+      - cm-scale-net
 
   # Backend (stateless, horizontally scalable)
   conman-backend:
@@ -56,7 +56,7 @@ services:
       conman-db:
         condition: service_healthy
     networks:
-      - conman-net
+      - cm-scale-net
     # No ports exposed — Kong handles external traffic
 
   # Kong API Gateway (load balancer + rate limiting)
@@ -73,12 +73,12 @@ services:
     volumes:
       - ./kong-scaled.yml:/etc/kong/kong.yml:ro
     ports:
-      - "8080:8080"   # Proxy (frontend + API)
-      - "8001:8001"   # Admin API
+      - "8080:8080"     # Proxy (frontend + API)
+      - "8001:8001"     # Admin API
     depends_on:
       - conman-backend
     networks:
-      - conman-net
+      - cm-scale-net
 
   # Agent (connects to Kong, which routes to backend instances)
   conman-agent:
@@ -102,12 +102,11 @@ services:
     depends_on:
       - kong
     networks:
-      - conman-net
+      - cm-scale-net
 
 volumes:
   conman_pgdata:
   conman_agent_data:
 
 networks:
-  conman-net:
-    driver: bridge
+  cm-scale-net:
