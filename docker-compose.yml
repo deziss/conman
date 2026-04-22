@@ -1,4 +1,5 @@
-version: '3.8'
+# Docker Compose configuration for Conman application
+# This file defines the services, networks, and volumes for the Conman application stack.
 
 services:
   # ---------------------------------------------------------------------------
@@ -187,4 +188,4 @@ volumes:
 
 networks:
   app-network:
-    driver: bridge
+  
