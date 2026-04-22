@@ -34,6 +34,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - cm-net
 
   # Local Agent (manages the local docker socket)
   local-agent:
@@ -58,6 +60,8 @@ services:
     depends_on:
       conman-server:
         condition: service_started
+    networks:
+      - cm-net
 
 
   # PostgreSQL (optional - set DATABASE_DRIVER=postgres to use)
@@ -78,7 +82,12 @@ services:
       retries: 5
     profiles:
       - postgres
+    networks:
+      - cm-net
 
 volumes:
   conman_data:
   conman_pgdata:
+
+networks:
+  cm-net:
