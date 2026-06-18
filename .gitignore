@@ -64,3 +64,5 @@ backend/app.db
 backend/cookies.txt
 arcane-db-schema.md
 
+
+graphify-out/
