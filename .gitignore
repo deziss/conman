@@ -66,3 +66,6 @@ arcane-db-schema.md
 
 
 graphify-out/
+.agents/
+.claude/
+.specify/
