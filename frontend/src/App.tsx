@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyRetry } from './utils/lazyRetry';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { HostProvider } from './contexts/HostContext';
@@ -14,23 +15,23 @@ import { Toaster } from 'react-hot-toast';
 import type { ReactNode } from 'react';
 
 // Lazy Page Imports
-const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
-const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const Containers = lazy(() => import('./pages/Containers').then(m => ({ default: m.Containers })));
-const ContainerDetails = lazy(() => import('./pages/ContainerDetails').then(m => ({ default: m.ContainerDetails })));
-const ContainerLogsPage = lazy(() => import('./pages/ContainerLogsPage').then(m => ({ default: m.ContainerLogsPage })));
-const Images = lazy(() => import('./pages/Images').then(m => ({ default: m.Images })));
-const ImageDetailsPage = lazy(() => import('./pages/ImageDetailsPage').then(m => ({ default: m.ImageDetailsPage })));
-const Networks = lazy(() => import('./pages/Networks').then(m => ({ default: m.Networks })));
-const NetworkDetailsPage = lazy(() => import('./pages/NetworkDetailsPage').then(m => ({ default: m.NetworkDetailsPage })));
-const Volumes = lazy(() => import('./pages/Volumes').then(m => ({ default: m.Volumes })));
-const Hosts = lazy(() => import('./pages/Hosts').then(m => ({ default: m.Hosts })));
-const HostDetails = lazy(() => import('./pages/HostDetails').then(m => ({ default: m.HostDetails })));
-const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users })));
-const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
-const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
-const Stacks = lazy(() => import('./pages/Stacks').then(m => ({ default: m.Stacks })));
-const Activities = lazy(() => import('./pages/Activities').then(m => ({ default: m.Activities })));
+const Login = lazyRetry(() => import('./pages/Login').then(m => ({ default: m.Login })));
+const Dashboard = lazyRetry(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Containers = lazyRetry(() => import('./pages/Containers').then(m => ({ default: m.Containers })));
+const ContainerDetails = lazyRetry(() => import('./pages/ContainerDetails').then(m => ({ default: m.ContainerDetails })));
+const ContainerLogsPage = lazyRetry(() => import('./pages/ContainerLogsPage').then(m => ({ default: m.ContainerLogsPage })));
+const Images = lazyRetry(() => import('./pages/Images').then(m => ({ default: m.Images })));
+const ImageDetailsPage = lazyRetry(() => import('./pages/ImageDetailsPage').then(m => ({ default: m.ImageDetailsPage })));
+const Networks = lazyRetry(() => import('./pages/Networks').then(m => ({ default: m.Networks })));
+const NetworkDetailsPage = lazyRetry(() => import('./pages/NetworkDetailsPage').then(m => ({ default: m.NetworkDetailsPage })));
+const Volumes = lazyRetry(() => import('./pages/Volumes').then(m => ({ default: m.Volumes })));
+const Hosts = lazyRetry(() => import('./pages/Hosts').then(m => ({ default: m.Hosts })));
+const HostDetails = lazyRetry(() => import('./pages/HostDetails').then(m => ({ default: m.HostDetails })));
+const Users = lazyRetry(() => import('./pages/Users').then(m => ({ default: m.Users })));
+const Profile = lazyRetry(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
+const Settings = lazyRetry(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
+const Stacks = lazyRetry(() => import('./pages/Stacks').then(m => ({ default: m.Stacks })));
+const Activities = lazyRetry(() => import('./pages/Activities').then(m => ({ default: m.Activities })));
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated, loading } = useAuth();

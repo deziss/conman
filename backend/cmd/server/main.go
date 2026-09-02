@@ -383,8 +383,11 @@ func main() {
 			
 			// Check if file exists
 			fullPath := filepath.Join(staticDir, path)
-			if _, err := os.Stat(fullPath); err == nil {
-				// File exists, serve it
+			if fi, err := os.Stat(fullPath); err == nil && !fi.IsDir() {
+				// Static assets (JS/CSS/images) in /assets/ have content hashes, cache aggressively
+				if strings.HasPrefix(path, "/assets/") {
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				}
 				fileServer.ServeHTTP(w, r)
 				return
 			}
@@ -395,8 +398,12 @@ func main() {
 				return
 			}
 
-			// For SPA routing: all other non-API paths serve index.html
+			// For SPA routing: all other non-API paths serve index.html with no-cache headers
+			// to ensure browsers immediately pick up new asset hashes on subsequent visits/reloads
 			if !strings.HasPrefix(path, "/api") {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				w.Header().Set("Pragma", "no-cache")
+				w.Header().Set("Expires", "0")
 				http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 				return
 			}
