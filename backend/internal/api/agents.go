@@ -293,6 +293,8 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
     // Container Management
 	// Container Management
     r.Get("/agents/{id}/containers/{containerId}", h.ProxyInspectContainer)
+	r.Get("/agents/{id}/containers/{containerId}/top", h.ProxyContainerTop)
+	r.Get("/agents/{id}/containers/{containerId}/processes", h.ProxyContainerTop)
 	r.Post("/agents/{id}/containers/{containerId}/start", h.ProxyStartContainer)
 	r.Post("/agents/{id}/containers/{containerId}/stop", h.ProxyStopContainer)
 	r.Post("/agents/{id}/containers/{containerId}/restart", h.ProxyRestartContainer)
