@@ -26,6 +26,7 @@ import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
 import 'xterm/css/xterm.css';
 import { StructuredLogViewer } from './StructuredLogViewer';
+import { useHost } from '../contexts/HostContext';
 
 interface ContainerLogsProps {
   containerId: string;
@@ -98,7 +99,9 @@ const TIME_RANGES = [
 ];
 
 export const ContainerLogs = (props: ContainerLogsProps) => {
-  const { containerId, agentId } = props;
+  const { currentHost, hosts } = useHost();
+  const effectiveAgentId = props.agentId || currentHost?.id || (hosts.length > 0 ? hosts[0].id : '') || localStorage.getItem('currentHostId') || '';
+  const { containerId } = props;
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -220,12 +223,12 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'closed' | 'error'>('connecting');
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track current connection params so reconnect uses latest values
-  const connectParamsRef = useRef({ containerId, tailCount, timeRange, agentId });
+  const connectParamsRef = useRef({ containerId, tailCount, timeRange, agentId: effectiveAgentId });
 
   // Keep params ref in sync without causing reconnect
   useEffect(() => {
-    connectParamsRef.current = { containerId, tailCount, timeRange, agentId };
-  });
+    connectParamsRef.current = { containerId, tailCount, timeRange, agentId: effectiveAgentId };
+  }, [containerId, tailCount, timeRange, effectiveAgentId]);
 
   const connectLogs = useCallback(() => {
     if (!termReadyRef.current) return;
@@ -372,6 +375,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
     termReadyRef.current = true;
+    connectLogs();
 
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
@@ -389,10 +393,12 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
     };
   }, []);
 
-  // Initial connect + reconnect when params change
+  // Initial connect + reconnect when params change or when agentId is resolved
   useEffect(() => {
-    connectLogs();
-  }, [connectLogs, containerId, tailCount, timeRange, agentId]);
+    if (effectiveAgentId && termReadyRef.current) {
+      connectLogs();
+    }
+  }, [connectLogs, containerId, tailCount, timeRange, effectiveAgentId]);
 
   // Periodic table update (only when in table mode)
   useEffect(() => {
