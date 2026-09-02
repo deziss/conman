@@ -127,10 +127,10 @@ export const mapAgentContainerToDetails = (agentContainer: AgentContainer): Cont
       Status: agentContainer.state,
       Running: agentContainer.state === 'running',
       Paused: agentContainer.state === 'paused',
-      StartedAt: new Date(agentContainer.created * 1000).toISOString(), // Approx since we don't have start time
+      StartedAt: new Date(agentContainer.created > 1e11 ? agentContainer.created : agentContainer.created * 1000).toISOString(),
       Pid: 0 // Not available in agent report
     },
-    Created: new Date(agentContainer.created * 1000).toISOString(),
+    Created: new Date(agentContainer.created > 1e11 ? agentContainer.created : agentContainer.created * 1000).toISOString(),
     Image: agentContainer.image,
     Config: {
       Cmd: agentContainer.command ? agentContainer.command.split(' ') : [],

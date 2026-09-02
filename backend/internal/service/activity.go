@@ -24,6 +24,11 @@ type recentUserAction struct {
 }
 
 func NewActivityService(db *gorm.DB) *ActivityService {
+	if db != nil {
+		// Clean up any existing activity records with corrupted future timestamps (e.g. legacy year 2083 bug)
+		now := time.Now()
+		db.Model(&models.Activity{}).Where("timestamp > ?", now.Add(24*time.Hour)).Update("timestamp", now)
+	}
 	return &ActivityService{
 		db: db,
 	}
@@ -60,7 +65,7 @@ func (s *ActivityService) RecordActivity(
 		return nil, nil
 	}
 
-	if ts.IsZero() {
+	if ts.IsZero() || ts.After(time.Now().Add(24*time.Hour)) {
 		ts = time.Now()
 	}
 	if severity == "" {
@@ -286,7 +291,7 @@ func (s *ActivityService) IngestSystemEvent(agentID, agentName string, event pro
 	}
 
 	ts := event.Timestamp
-	if ts.IsZero() {
+	if ts.IsZero() || ts.After(time.Now().Add(24*time.Hour)) {
 		ts = time.Now()
 	}
 
