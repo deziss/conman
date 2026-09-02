@@ -27,6 +27,7 @@ import { clsx } from 'clsx';
 import 'xterm/css/xterm.css';
 import { StructuredLogViewer } from './StructuredLogViewer';
 import { useHost } from '../contexts/HostContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface ContainerLogsProps {
   containerId: string;
@@ -100,8 +101,10 @@ const TIME_RANGES = [
 
 export const ContainerLogs = (props: ContainerLogsProps) => {
   const { currentHost, hosts } = useHost();
+  const { theme } = useTheme();
   const effectiveAgentId = props.agentId || currentHost?.id || (hosts.length > 0 ? hosts[0].id : '') || localStorage.getItem('currentHostId') || '';
   const { containerId } = props;
+
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -146,11 +149,10 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       error: 0, warn: 0, info: 0, debug: 0, unknown: 0
   });
 
-  // Stable refs for filter state — read in renderLogs without stale closures
   const dedupRef = useRef(false);
   const viewModeRef = useRef<'raw' | 'table'>('raw');
 
-  // Toggle level filter — updates both state (for display) and ref (for renderLogs)
+  // Toggle level filter
   const toggleLevel = (level: LogLevel) => {
       setLevelFilters(prev => {
           const next = { ...prev, [level]: !prev[level] };
@@ -160,8 +162,6 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       });
   };
 
-  // renderLogs: reads filter state from refs so it's always current.
-  // Called ONLY explicitly (filter changes, resume from pause). Never auto-fires.
   const reRenderLogs = (overrideLevelFilters?: Record<string, boolean>) => {
       if (!xtermRef.current) return;
 
@@ -205,7 +205,6 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       setVisibleLines(renderedCount);
       setLevelCounts(counts);
 
-      // Update table view too
       if (viewModeRef.current === 'table') {
           setFilteredLogs(buffer.filter(rawLine => {
               if (!rawLine.trim()) return false;
@@ -222,10 +221,8 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
 
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'closed' | 'error'>('connecting');
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track current connection params so reconnect uses latest values
   const connectParamsRef = useRef({ containerId, tailCount, timeRange, agentId: effectiveAgentId });
 
-  // Keep params ref in sync without causing reconnect
   useEffect(() => {
     connectParamsRef.current = { containerId, tailCount, timeRange, agentId: effectiveAgentId };
   }, [containerId, tailCount, timeRange, effectiveAgentId]);
@@ -236,15 +233,13 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
     const { containerId: cid, tailCount: tail, timeRange: tr, agentId: aid } = connectParamsRef.current;
     if (!aid || !cid) return;
 
-    // Cancel any pending reconnect
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
 
-    // Close existing socket cleanly
     if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) {
-      socketRef.current.onclose = null; // prevent reconnect loop from old socket
+      socketRef.current.onclose = null;
       socketRef.current.close();
     }
 
@@ -329,9 +324,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
 
     socket.onclose = (ev) => {
       setWsStatus('closed');
-      // Don't auto-reconnect if the component unmounted (termReadyRef cleared)
       if (!termReadyRef.current) return;
-      // Don't reconnect on clean close (code 1000 = normal, 1001 = going away)
       const msg = ev.wasClean ? `closed (${ev.code})` : `lost (${ev.code})`;
       xtermRef.current?.writeln(`\r\n${ANSI.YELLOW}--- Stream ${msg}, reconnecting in 3s... ---${ANSI.RESET}`);
       reconnectTimerRef.current = setTimeout(() => {
@@ -341,16 +334,39 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Update theme dynamically
+  useEffect(() => {
+    if (!xtermRef.current) return;
+    const isDark = theme === 'dark';
+    xtermRef.current.options.theme = isDark ? {
+      background: '#0f172a',
+      foreground: '#e2e8f0',
+      cursor: '#22d3ee',
+      selectionBackground: 'rgba(34, 211, 238, 0.3)',
+    } : {
+      background: '#ffffff',
+      foreground: '#0f172a',
+      cursor: '#0284c7',
+      selectionBackground: 'rgba(14, 165, 233, 0.25)',
+    };
+  }, [theme]);
+
   // Initialize XTerm
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    const isDark = theme === 'dark';
     const term = new XTerm({
-      theme: {
+      theme: isDark ? {
         background: '#0f172a',
         foreground: '#e2e8f0',
         cursor: '#22d3ee',
         selectionBackground: 'rgba(34, 211, 238, 0.3)',
+      } : {
+        background: '#ffffff',
+        foreground: '#0f172a',
+        cursor: '#0284c7',
+        selectionBackground: 'rgba(14, 165, 233, 0.25)',
       },
       fontFamily: 'JetBrains Mono, Consolas, monospace',
       fontSize: 12,
@@ -391,7 +407,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       term.dispose();
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [connectLogs]);
 
   // Initial connect + reconnect when params change or when agentId is resolved
   useEffect(() => {
@@ -426,7 +442,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
      const url = URL.createObjectURL(blob);
      const a = document.createElement('a');
      a.href = url;
-     a.download = `${containerId.substring(0, 12)}-${new Date().toISOString().split('T')[0]}.log`;
+     a.download = `container-${containerId.substring(0, 8)}-logs.txt`;
      a.click();
      URL.revokeObjectURL(url);
      toast.success("Download started");
@@ -444,18 +460,15 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       const next = !isPlaying;
       setIsPlaying(next);
       isPlayingRef.current = next;
-      if (!next) {
-          // Pausing — nothing to do
-      } else {
-          // Resuming — re-render buffer so any missed lines show
+      if (next) {
           reRenderLogs();
       }
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 rounded-lg overflow-hidden border border-slate-800 shadow-xl">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-950 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl">
       {/* Top Toolbar: Grafana-style controls */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 gap-3">
+      <div className="flex flex-wrap items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 gap-2">
          
          {/* Left: Tail & Time Selectors */}
          <div className="flex items-center space-x-2">
@@ -463,7 +476,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
              <select 
                  value={tailCount}
                  onChange={(e) => setTailCount(e.target.value)}
-                 className="bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 px-2 py-1.5 focus:outline-none focus:border-cyan-500"
+                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs text-slate-700 dark:text-slate-200 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-cyan-500"
              >
                  {TAIL_OPTIONS.map(opt => (
                      <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -474,7 +487,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
              <select 
                  value={timeRange}
                  onChange={(e) => setTimeRange(e.target.value)}
-                 className="bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 px-2 py-1.5 focus:outline-none focus:border-cyan-500"
+                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs text-slate-700 dark:text-slate-200 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-cyan-500"
              >
                  {TIME_RANGES.map(opt => (
                      <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -489,11 +502,11 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                  className={clsx(
                      "flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium transition-all",
                      levelFilters.error 
-                         ? "bg-rose-500/20 text-rose-400 border border-rose-500/30" 
-                         : "bg-slate-800 text-slate-500 border border-slate-700 opacity-50"
+                         ? "bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30" 
+                         : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 opacity-60"
                  )}
              >
-                 <XCircleIcon className="w-3 h-3" />
+                 <XCircleIcon className="w-3 h-3 text-rose-500" />
                  <span>ERR</span>
                  {levelCounts.error > 0 && <span className="ml-1 text-[10px] opacity-75">({levelCounts.error})</span>}
              </button>
@@ -502,11 +515,11 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                  className={clsx(
                      "flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium transition-all",
                      levelFilters.warn 
-                         ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" 
-                         : "bg-slate-800 text-slate-500 border border-slate-700 opacity-50"
+                         ? "bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30" 
+                         : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 opacity-60"
                  )}
              >
-                 <ExclamationTriangleIcon className="w-3 h-3" />
+                 <ExclamationTriangleIcon className="w-3 h-3 text-amber-500" />
                  <span>WARN</span>
                  {levelCounts.warn > 0 && <span className="ml-1 text-[10px] opacity-75">({levelCounts.warn})</span>}
              </button>
@@ -515,11 +528,11 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                  className={clsx(
                      "flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium transition-all",
                      levelFilters.info 
-                         ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
-                         : "bg-slate-800 text-slate-500 border border-slate-700 opacity-50"
+                         ? "bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30" 
+                         : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 opacity-60"
                  )}
              >
-                 <InformationCircleIcon className="w-3 h-3" />
+                 <InformationCircleIcon className="w-3 h-3 text-emerald-500" />
                  <span>INFO</span>
                  {levelCounts.info > 0 && <span className="ml-1 text-[10px] opacity-75">({levelCounts.info})</span>}
              </button>
@@ -528,11 +541,11 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                  className={clsx(
                      "flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium transition-all",
                      levelFilters.debug 
-                         ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" 
-                         : "bg-slate-800 text-slate-500 border border-slate-700 opacity-50"
+                         ? "bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30" 
+                         : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 opacity-60"
                  )}
              >
-                 <BugAntIcon className="w-3 h-3" />
+                 <BugAntIcon className="w-3 h-3 text-blue-500" />
                  <span>DEBUG</span>
                  {levelCounts.debug > 0 && <span className="ml-1 text-[10px] opacity-75">({levelCounts.debug})</span>}
              </button>
@@ -546,17 +559,17 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
              {/* WebSocket status dot */}
              <span title={wsStatus} className="flex items-center gap-1 text-xs font-mono">
                  <span className={`w-2 h-2 rounded-full ${
-                     wsStatus === 'connected' ? 'bg-emerald-400' :
-                     wsStatus === 'connecting' ? 'bg-amber-400 animate-pulse' :
+                     wsStatus === 'connected' ? 'bg-emerald-500' :
+                     wsStatus === 'connecting' ? 'bg-amber-500 animate-pulse' :
                      'bg-rose-500'
                  }`} />
              </span>
              <button
                  onClick={togglePause}
-                 className={`flex items-center px-3 py-1.5 text-xs rounded transition-colors font-medium ${
+                 className={`flex items-center px-3 py-1.5 text-xs rounded transition-colors font-medium border ${
                      !isPlaying
-                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                     : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                     ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/30'
+                     : 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30'
                  }`}
              >
                  {!isPlaying ? <PauseIcon className="w-3 h-3 mr-1.5" /> : <PlayIcon className="w-3 h-3 mr-1.5" />}
@@ -566,7 +579,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
       </div>
 
       {/* Search/Filter Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-900/50 border-b border-slate-800/50 gap-3">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-100/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800/50 gap-3">
          <div className="flex items-center space-x-2 flex-1 max-w-2xl">
             {/* Filter (Grep) */}
             <div className="relative flex-1">
@@ -576,24 +589,24 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
                     placeholder="Filter logs (grep)..." 
                     value={grepTerm}
                     onChange={(e) => { setGrepTerm(e.target.value); grepTermRef.current = e.target.value; reRenderLogs(); }}
-                    className="w-full bg-slate-800 border border-slate-700/50 rounded text-xs text-emerald-100 pl-9 pr-2 py-1.5 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 rounded text-xs text-slate-900 dark:text-emerald-100 pl-9 pr-2 py-1.5 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
                  />
             </div>
             
             {/* Search (Find) */}
             <div className="relative flex-1">
-                 <MagnifyingGlassIcon className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                 <MagnifyingGlassIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                  <input 
                     type="text" 
                     placeholder="Find in view..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700/50 rounded text-xs text-slate-200 pl-9 pr-2 py-1.5 focus:outline-none focus:border-cyan-500 transition-colors placeholder:text-slate-600"
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/50 rounded text-xs text-slate-900 dark:text-slate-200 pl-9 pr-2 py-1.5 focus:outline-none focus:border-cyan-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
                  />
             </div>
             <div className="flex space-x-1">
-                <button onClick={handleSearchPrev} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ChevronUpIcon className="w-4 h-4" /></button>
-                <button onClick={handleSearchNext} className="p-1 hover:bg-slate-700 rounded text-slate-400"><ChevronDownIcon className="w-4 h-4" /></button>
+                <button onClick={handleSearchPrev} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400"><ChevronUpIcon className="w-4 h-4" /></button>
+                <button onClick={handleSearchNext} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400"><ChevronDownIcon className="w-4 h-4" /></button>
             </div>
          </div>
 
@@ -601,17 +614,17 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
          <div className="flex items-center space-x-2">
             
             {/* View Toggle */}
-            <div className="flex bg-slate-800 rounded p-0.5">
+            <div className="flex bg-slate-200/70 dark:bg-slate-800 rounded p-0.5 border border-slate-200 dark:border-slate-700">
                 <button
                     onClick={() => { viewModeRef.current = 'raw'; setViewMode('raw'); }}
-                    className={`p-1 rounded ${viewMode === 'raw' ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                    className={`p-1 rounded text-xs font-medium transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
                     title="Terminal View"
                 >
                     <CommandLineIcon className="w-4 h-4" />
                 </button>
                 <button
                     onClick={() => { viewModeRef.current = 'table'; setViewMode('table'); reRenderLogs(); }}
-                    className={`p-1 rounded ${viewMode === 'table' ? 'bg-cyan-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
+                    className={`p-1 rounded text-xs font-medium transition-all ${viewMode === 'table' ? 'bg-cyan-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
                     title="Structured Table View"
                 >
                     <TableCellsIcon className="w-4 h-4" />
@@ -621,7 +634,7 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
             {/* Toggles */}
             <button
                 onClick={() => { const next = !showTimestamps; setShowTimestamps(next); showTimestampsRef.current = next; reRenderLogs(); }}
-                className={`p-1.5 rounded transition-colors ${showTimestamps ? 'bg-cyan-500/10 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+                className={`p-1.5 rounded transition-colors border ${showTimestamps ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20' : 'text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-300'}`}
                 title="Toggle Timestamps"
             >
                 <ClockIcon className="w-4 h-4" />
@@ -629,42 +642,43 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
 
              <button
                 onClick={() => { const next = !dedup; setDedup(next); dedupRef.current = next; reRenderLogs(); }}
-                className={`p-1.5 rounded transition-colors ${dedup ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+                className={`p-1.5 rounded transition-colors border ${dedup ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/20' : 'text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-300'}`}
                 title="Toggle Deduplication (Unique)"
             >
                 <Bars3BottomLeftIcon className="w-4 h-4" />
             </button>
 
-            <div className="h-4 w-px bg-slate-700" />
+            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
 
             {/* Scroll buttons */}
             <button 
                 onClick={scrollToTop} 
-                className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded transition-colors"
+                className="p-1.5 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-cyan-500/10 rounded transition-colors"
                 title="Scroll to Top"
             >
                 <ChevronDoubleUpIcon className="w-4 h-4" />
             </button>
             <button 
                 onClick={scrollToBottom} 
-                className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded transition-colors"
+                className="p-1.5 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-cyan-500/10 rounded transition-colors"
                 title="Scroll to Bottom"
             >
                 <ChevronDoubleDownIcon className="w-4 h-4" />
             </button>
 
-            <div className="h-4 w-px bg-slate-700" />
-
+            {/* Clear button */}
             <button 
                 onClick={handleClear} 
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
-                title="Clear Logs"
+                className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-rose-500/10 rounded transition-colors"
+                title="Clear View"
             >
                 <TrashIcon className="w-4 h-4" />
             </button>
+
+            {/* Download button */}
             <button 
                 onClick={handleDownload} 
-                className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded transition-colors"
+                className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-indigo-500/10 rounded transition-colors"
                 title="Download Logs"
             >
                 <ArrowDownTrayIcon className="w-4 h-4" />
@@ -672,25 +686,27 @@ export const ContainerLogs = (props: ContainerLogsProps) => {
          </div>
       </div>
 
-      <div className="flex-1 w-full relative min-h-0 bg-[#0f172a] flex flex-col">
-          {/* XTerm View */}
-          <div className={clsx("absolute inset-0 p-2", viewMode !== 'raw' && 'hidden')}>
-              <div ref={terminalRef} className="h-full w-full" />
-          </div>
-          
-          {/* Table View */}
-          {viewMode === 'table' && (
-               <div className="absolute inset-0 bg-[#0f172a]">
-                   <StructuredLogViewer 
-                        logs={filteredLogs} 
-                        filter={grepTerm} 
-                        dedup={dedup}
-                        showTimestamp={showTimestamps}
-                   />
-               </div>
+      {/* Main Log Area */}
+      <div className="flex-1 min-h-0 relative bg-white dark:bg-[#0f172a]">
+          {viewMode === 'raw' ? (
+              <div 
+                  ref={terminalRef} 
+                  className="h-full w-full p-2"
+                  style={{ minHeight: '300px' }}
+              />
+          ) : (
+              <div className="h-full w-full overflow-hidden">
+                  <StructuredLogViewer 
+                      logs={filteredLogs} 
+                      filter={grepTerm}
+                      dedup={dedup}
+                      showTimestamp={showTimestamps}
+                  />
+              </div>
           )}
       </div>
-    
     </div>
   );
 };
+
+export default ContainerLogs;
