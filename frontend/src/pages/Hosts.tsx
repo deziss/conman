@@ -248,62 +248,62 @@ export const Hosts = () => {
 
                             {/* Expanded Details */}
                             {expandedHost === host.id && (
-                                <div className="border-t border-white/5 bg-slate-900/30">
+                                <div className="border-t border-slate-200 dark:border-white/5 bg-slate-50/70 dark:bg-slate-900/30">
                                     {/* System Info */}
-                                    <div className="p-4 border-b border-white/5">
-                                        <h4 className="text-sm font-semibold text-slate-300 mb-3">System Information</h4>
+                                    <div className="p-4 border-b border-slate-200 dark:border-white/5">
+                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-200 mb-3">System Information</h4>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                             <div>
                                                 <p className="text-slate-500">OS</p>
-                                                <p className="text-slate-300">{host.host_info?.os || 'Unknown'}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{host.host_info?.os || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Runtime</p>
-                                                <p className="text-slate-300">{host.host_info?.runtime_version || host.host_info?.docker_version || 'Unknown'}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{host.host_info?.runtime_version || host.host_info?.docker_version || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Kernel</p>
-                                                <p className="text-slate-300">{host.host_info?.kernel_version || 'Unknown'}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{host.host_info?.kernel_version || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Memory</p>
-                                                <p className="text-slate-300">{host.host_info?.memory_total ? formatBytes(host.host_info.memory_total) : 'Unknown'}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{host.host_info?.memory_total ? formatBytes(host.host_info.memory_total) : 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">CPUs</p>
-                                                <p className="text-slate-300">{host.host_info?.cpus || 'Unknown'}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{host.host_info?.cpus || 'Unknown'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Mode</p>
-                                                <p className="text-slate-300">{host.mode || 'hybrid'}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{host.mode || 'hybrid'}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Last Report</p>
-                                                <p className="text-slate-300">{formatTimeAgo(host.last_report || '')}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{formatTimeAgo(host.last_report || '')}</p>
                                             </div>
                                             <div>
                                                 <p className="text-slate-500">Last Heartbeat</p>
-                                                <p className="text-slate-300">{formatTimeAgo(host.last_heartbeat || '')}</p>
+                                                <p className="text-slate-800 dark:text-slate-300 font-medium">{formatTimeAgo(host.last_heartbeat || '')}</p>
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* Containers */}
                                     <div className="p-4">
-                                        <h4 className="text-sm font-semibold text-slate-300 mb-3">
+                                        <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-200 mb-3">
                                             Containers ({host.containers?.length || 0})
                                         </h4>
                                         {host.containers && host.containers.length > 0 ? (
                                             <div className="space-y-2">
                                                 {host.containers.slice(0, 10).map((container) => (
-                                                    <div key={container.id} className="flex items-center justify-between text-sm bg-slate-800/50 rounded px-3 py-2">
+                                                    <div key={container.id} className="flex items-center justify-between text-sm bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5 rounded px-3 py-2">
                                                         <div className="flex items-center space-x-3">
-                                                            <span className={`w-2 h-2 rounded-full ${container.state === 'running' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
-                                                            <span className="text-slate-300 font-mono">{container.name?.replace('/', '') || container.id.substring(0, 12)}</span>
+                                                            <span className={`w-2 h-2 rounded-full ${container.state === 'running' ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'}`} />
+                                                            <span className="text-slate-800 dark:text-slate-300 font-mono">{container.name?.replace('/', '') || container.id.substring(0, 12)}</span>
                                                         </div>
                                                         <div className="flex items-center space-x-4">
                                                             <span className="text-xs text-slate-500">{container.image}</span>
-                                                            <span className={`text-xs px-2 py-0.5 rounded ${container.state === 'running' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700 text-slate-400'}`}>
+                                                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${container.state === 'running' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
                                                                 {container.state}
                                                             </span>
                                                         </div>

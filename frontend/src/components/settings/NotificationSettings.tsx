@@ -106,7 +106,7 @@ export const NotificationSettings = () => {
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <BellAlertIcon className="w-5 h-5 text-amber-400" />
-                        <h3 className="text-lg font-medium text-white">Alert Rules</h3>
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Alert Rules</h3>
                     </div>
                     <button
                         onClick={addDefaultRule}
@@ -122,16 +122,16 @@ export const NotificationSettings = () => {
                 ) : (
                     <div className="space-y-3">
                         {rules.map((rule) => (
-                            <div key={rule.ID} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-white/5">
+                            <div key={rule.ID} className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-white/5">
                                 <div>
-                                    <p className="text-sm font-medium text-slate-200">{rule.Name}</p>
+                                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{rule.Name}</p>
                                     <p className="text-xs text-slate-500">Type: {rule.Type}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <Switch
                                         checked={rule.Enabled}
                                         onChange={() => toggleRule(rule)}
-                                        className={`${rule.Enabled ? 'bg-cyan-600' : 'bg-slate-700'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
+                                        className={`${rule.Enabled ? 'bg-cyan-600' : 'bg-slate-300 dark:bg-slate-700'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
                                     >
                                         <span className={`${rule.Enabled ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
                                     </Switch>
@@ -150,7 +150,7 @@ export const NotificationSettings = () => {
 
             {/* Webhook Channels */}
             <GlassCard className="p-6">
-                <h3 className="text-lg font-medium text-white mb-4">Notification Channels</h3>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notification Channels</h3>
 
                 {channels.length > 0 && (
                     <div className="space-y-3 mb-4">
@@ -158,9 +158,9 @@ export const NotificationSettings = () => {
                             let url = '';
                             try { url = JSON.parse(ch.Config).url; } catch {}
                             return (
-                                <div key={ch.ID} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-white/5">
+                                <div key={ch.ID} className="flex items-center justify-between p-3 bg-slate-100 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-white/5">
                                     <div>
-                                        <p className="text-sm font-medium text-slate-200">{ch.Name}</p>
+                                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{ch.Name}</p>
                                         <p className="text-xs text-slate-500 font-mono truncate max-w-md">{url}</p>
                                     </div>
                                     <button
@@ -181,14 +181,14 @@ export const NotificationSettings = () => {
                         value={newWebhookName}
                         onChange={(e) => setNewWebhookName(e.target.value)}
                         placeholder="Channel name"
-                        className="flex-[2] bg-slate-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="flex-[2] bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                     />
                     <input
                         type="url"
                         value={newWebhookUrl}
                         onChange={(e) => setNewWebhookUrl(e.target.value)}
                         placeholder="https://hooks.slack.com/services/..."
-                        className="flex-[5] bg-slate-900/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                        className="flex-[5] bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
                     />
                     <button
                         onClick={addWebhook}

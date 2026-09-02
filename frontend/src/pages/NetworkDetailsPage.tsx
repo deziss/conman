@@ -26,13 +26,13 @@ const Badge = ({ children, className }: { children: React.ReactNode; className?:
 );
 
 const InfoItem = ({ icon: Icon, label, value }: { icon: any, label: string, value: string }) => (
-    <div className="flex items-center space-x-3 p-3 rounded-lg bg-white/5 border border-white/5">
-        <div className="p-2 bg-slate-800 rounded-lg">
-            <Icon className="w-5 h-5 text-indigo-400" />
+    <div className="flex items-center space-x-3 p-3 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5">
+        <div className="p-2 bg-slate-200 dark:bg-slate-800 rounded-lg">
+            <Icon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
         </div>
         <div>
             <div className="text-xs text-slate-500 uppercase tracking-wider">{label}</div>
-            <div className="text-sm font-medium text-slate-200 truncate max-w-[150px] md:max-w-xs" title={value}>{value || '-'}</div>
+            <div className="text-sm font-medium text-slate-900 dark:text-slate-200 truncate max-w-[150px] md:max-w-xs" title={value}>{value || '-'}</div>
         </div>
     </div>
 );
@@ -109,7 +109,7 @@ export const NetworkDetailsPage = () => {
             <div className="flex items-center justify-between">
                 <button 
                     onClick={() => navigate('/networks')}
-                    className="flex items-center text-slate-400 hover:text-white transition-colors"
+                    className="flex items-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                     <ArrowLeftIcon className="w-5 h-5 mr-2" />
                     Back to Networks
@@ -127,7 +127,7 @@ export const NetworkDetailsPage = () => {
             </div>
 
             {/* Header Card */}
-            <div className="relative overflow-hidden rounded-2xl bg-[#0f172a] border border-white/10 p-8 shadow-2xl">
+            <div className="relative overflow-hidden rounded-2xl bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-white/10 p-8 shadow-2xl">
                  <div className="absolute top-0 right-0 p-32 bg-indigo-500/5 blur-3xl rounded-full pointer-events-none transform translate-x-1/2 -translate-y-1/2" />
                  
                  <div className="relative z-10">
@@ -135,7 +135,7 @@ export const NetworkDetailsPage = () => {
                         <div>
                             <div className="flex items-center space-x-3 mb-2">
                                 <SignalIcon className="w-10 h-10 text-indigo-500" />
-                                <h1 className="text-3xl font-bold text-white tracking-tight break-all">
+                                <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight break-all">
                                     {network.Name}
                                 </h1>
                             </div>
@@ -157,7 +157,7 @@ export const NetworkDetailsPage = () => {
             <GlassCard className="p-6">
                  <div className="flex items-center space-x-2 mb-6">
                     <InformationCircleIcon className="w-5 h-5 text-indigo-500" />
-                    <h3 className="text-lg font-medium text-white">Network Details</h3>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Network Details</h3>
                  </div>
                  
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -177,14 +177,14 @@ export const NetworkDetailsPage = () => {
              <GlassCard className="p-6">
                 <div className="flex items-center space-x-2 mb-6">
                     <ServerIcon className="w-5 h-5 text-purple-500" />
-                    <h3 className="text-lg font-medium text-white">Connected Containers</h3>
-                    <span className="text-xs bg-white/10 text-slate-300 px-2 py-0.5 rounded-full">{containers.length}</span>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Connected Containers</h3>
+                    <span className="text-xs bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full">{containers.length}</span>
                 </div>
                 
                 {containers.length > 0 ? (
-                    <div className="overflow-x-auto rounded-lg border border-white/5">
+                    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-white/5">
                         <table className="w-full text-left text-sm text-slate-500 dark:text-slate-400">
-                            <thead className="bg-black/20 text-slate-200">
+                            <thead className="bg-slate-100 dark:bg-black/20 text-slate-700 dark:text-slate-200">
                                 <tr>
                                     <th className="px-6 py-3 font-medium">Name</th>
                                     <th className="px-6 py-3 font-medium">IPv4 Address</th>
@@ -192,9 +192,9 @@ export const NetworkDetailsPage = () => {
                                     <th className="px-6 py-3 font-medium">Mac Address</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-white/5">
+                            <tbody className="divide-y divide-slate-200 dark:divide-white/5">
                                 {containers.map((c: any) => (
-                                    <tr key={c.Name} className="hover:bg-white/5 transition-colors">
+                                    <tr key={c.Name} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                                         <td className="px-6 py-4 font-medium text-indigo-400">{c.Name}</td>
                                         <td className="px-6 py-4 font-mono">{c.IPv4Address || '-'}</td>
                                         <td className="px-6 py-4 font-mono">{c.IPv6Address || '-'}</td>
@@ -205,7 +205,7 @@ export const NetworkDetailsPage = () => {
                         </table>
                     </div>
                 ) : (
-                    <div className="text-center py-10 text-slate-500 border border-white/5 rounded-lg bg-black/10">
+                    <div className="text-center py-10 text-slate-500 border border-slate-200 dark:border-white/5 rounded-lg bg-slate-50 dark:bg-black/10">
                         No containers connected to this network.
                     </div>
                 )}

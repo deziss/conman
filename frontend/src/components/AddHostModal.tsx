@@ -131,11 +131,11 @@ sudo systemctl enable --now conman-agent`;
                             leaveFrom="opacity-100 translate-y-0 sm:scale-100"
                             leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
                         >
-                            <Dialog.Panel className="relative transform overflow-hidden rounded-xl bg-slate-900 border border-slate-700 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-xl">
+                            <Dialog.Panel className="relative transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-xl">
                                 <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
                                     <button
                                         type="button"
-                                        className="rounded-md text-slate-400 hover:text-slate-200 focus:outline-none"
+                                        className="rounded-lg p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 focus:outline-none transition-colors"
                                         onClick={onClose}
                                     >
                                         <span className="sr-only">Close</span>
@@ -144,13 +144,13 @@ sudo systemctl enable --now conman-agent`;
                                 </div>
 
                                 <div className="p-6">
-                                    <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-white mb-6">
+                                    <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-slate-900 dark:text-white mb-6">
                                         Add New Host
                                     </Dialog.Title>
 
                                     {/* Runtime Selector */}
                                     <div className="mb-5">
-                                        <label className="block text-sm font-medium text-slate-300 mb-2">Container Runtime</label>
+                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Container Runtime</label>
                                         <div className="flex space-x-2">
                                             {(Object.keys(runtimeConfig) as RuntimeType[]).map((rt) => (
                                                 <button
@@ -159,7 +159,7 @@ sudo systemctl enable --now conman-agent`;
                                                     className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border ${
                                                         runtime === rt
                                                             ? `${runtimeConfig[rt].color} text-white border-transparent shadow-lg`
-                                                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-white'
+                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
                                                     }`}
                                                 >
                                                     {runtimeConfig[rt].label}
@@ -169,13 +169,13 @@ sudo systemctl enable --now conman-agent`;
                                     </div>
 
                                     <Tab.Group onChange={(idx) => setMode(idx === 0 ? 'agent' : 'manual')}>
-                                        <Tab.List className="flex space-x-1 rounded-xl bg-slate-800 p-1 mb-6">
+                                        <Tab.List className="flex space-x-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1 mb-6 border border-slate-200 dark:border-slate-700/50">
                                             {['Connect Agent', 'Manual Registration'].map((category) => (
                                                 <Tab
                                                     key={category}
                                                     className={({ selected }) =>
-                                                        `w-full rounded-lg py-2.5 text-sm font-medium leading-5 text-cyan-500 ring-white ring-opacity-60 ring-offset-2 ring-offset-cyan-400 focus:outline-none focus:ring-2
-                                                        ${selected ? 'bg-slate-700 shadow' : 'text-slate-400 hover:bg-white/[0.12] hover:text-white'}`
+                                                        `w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-all focus:outline-none
+                                                        ${selected ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`
                                                     }
                                                 >
                                                     {category}
@@ -186,16 +186,16 @@ sudo systemctl enable --now conman-agent`;
                                             <Tab.Panel>
                                                 <div className="space-y-4">
                                                     <div>
-                                                        <label className="block text-sm font-medium text-slate-300 mb-1">Agent Name</label>
+                                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Agent Name</label>
                                                         <input
                                                             type="text"
                                                             value={name}
                                                             onChange={(e) => setName(e.target.value)}
-                                                            className="w-full bg-slate-800 border-slate-700 rounded-lg text-white placeholder-slate-500 focus:ring-cyan-500 focus:border-cyan-500"
+                                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none"
                                                             placeholder="e.g. production-db-01"
                                                         />
                                                     </div>
-                                                    <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 relative group max-h-64 overflow-y-auto">
+                                                    <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 relative group max-h-64 overflow-y-auto">
                                                          <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                                             <button onClick={handleCopy} className="p-1.5 bg-slate-800 rounded hover:bg-slate-700 text-slate-300">
                                                                 <ClipboardDocumentIcon className="w-4 h-4" />
@@ -216,22 +216,22 @@ sudo systemctl enable --now conman-agent`;
                                             <Tab.Panel>
                                                  <div className="space-y-4">
                                                     <div>
-                                                        <label className="block text-sm font-medium text-slate-300 mb-1">Host Name</label>
+                                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Host Name</label>
                                                         <input
                                                             type="text"
                                                             value={name}
                                                             onChange={(e) => setName(e.target.value)}
-                                                            className="w-full bg-slate-800 border-slate-700 rounded-lg text-white"
+                                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none"
                                                             placeholder="e.g. legacy-server"
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-sm font-medium text-slate-300 mb-1">Scrape URL (Optional)</label>
+                                                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Scrape URL (Optional)</label>
                                                         <input
                                                             type="text"
                                                             value={url}
                                                             onChange={(e) => setUrl(e.target.value)}
-                                                            className="w-full bg-slate-800 border-slate-700 rounded-lg text-white"
+                                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none"
                                                             placeholder="http://192.168.1.50:9090"
                                                         />
                                                     </div>

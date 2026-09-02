@@ -418,31 +418,31 @@ export const Networks = () => {
       {/* Create Modal */}
       <Transition.Root show={createModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={setCreateModalOpen}>
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             <div className="fixed inset-0 overflow-y-auto">
                 <div className="flex min-h-full items-center justify-center p-4">
-                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 p-6 text-left align-middle shadow-xl transition-all">
-                        <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white mb-4">
+                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-6 text-left align-middle shadow-2xl transition-all">
+                        <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-900 dark:text-white mb-4">
                             Create Network
                         </Dialog.Title>
                         <form onSubmit={handleCreateNetwork} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
                                 <input
                                     type="text"
                                     required
                                     value={newNetworkName}
                                     onChange={(e) => setNewNetworkName(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-white/10 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-300 dark:border-white/10 rounded-lg px-4 py-2 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                                     placeholder="my-network"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Driver</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Driver</label>
                                 <select
                                     value={newNetworkDriver}
                                     onChange={(e) => setNewNetworkDriver(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-white/10 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-300 dark:border-white/10 rounded-lg px-4 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                                 >
                                     <option value="bridge">Bridge</option>
                                     <option value="host">Host</option>
@@ -455,7 +455,7 @@ export const Networks = () => {
                                 <button
                                     type="button"
                                     onClick={() => setCreateModalOpen(false)}
-                                    className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg transition-colors"
                                 >
                                     Cancel
                                 </button>
@@ -495,20 +495,20 @@ export const Networks = () => {
       {/* Connect Modal */}
       <Transition.Root show={connectModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={setConnectModalOpen}>
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             <div className="fixed inset-0 overflow-y-auto">
                 <div className="flex min-h-full items-center justify-center p-4">
-                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 p-6 text-left align-middle shadow-xl transition-all">
-                        <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white mb-4">
+                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-6 text-left align-middle shadow-2xl transition-all">
+                        <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-900 dark:text-white mb-4">
                             Connect Container
                         </Dialog.Title>
                         <form onSubmit={handleConnect} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Select Container</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Container</label>
                                 <select
                                     value={connectContainerId}
                                     onChange={(e) => setConnectContainerId(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-white/10 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-300 dark:border-white/10 rounded-lg px-4 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
                                 >
                                     {containers.map((c: any) => (
                                         <option key={c.id} value={c.id}>
@@ -521,7 +521,7 @@ export const Networks = () => {
                                 <button
                                     type="button"
                                     onClick={() => setConnectModalOpen(false)}
-                                    className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg transition-colors"
                                 >
                                     Cancel
                                 </button>

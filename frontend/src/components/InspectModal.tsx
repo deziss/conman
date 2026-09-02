@@ -38,27 +38,27 @@ export const InspectModal = ({ isOpen, onClose, title, data }: InspectModalProps
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
               <Dialog.Panel className="relative transform overflow-hidden rounded-lg text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-4xl h-[80vh] flex flex-col">
-                <GlassCard className="h-full flex flex-col p-0">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/5">
-                        <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-slate-100 flex items-center">
-                            <CodeBracketIcon className="w-5 h-5 mr-2 text-cyan-400" />
+                <div className="h-full flex flex-col p-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 shadow-2xl overflow-hidden">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800/50">
+                        <Dialog.Title as="h3" className="text-xl font-bold leading-6 text-slate-900 dark:text-slate-100 flex items-center">
+                            <CodeBracketIcon className="w-5 h-5 mr-2 text-cyan-600 dark:text-cyan-400" />
                             {title}
                         </Dialog.Title>
                         <button
                             type="button"
-                            className="text-slate-400 hover:text-white transition-colors"
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-white/5 transition-colors"
                             onClick={onClose}
                         >
                             <XMarkIcon className="w-6 h-6" aria-hidden="true" />
                         </button>
                     </div>
                     
-                    <div className="flex-1 overflow-auto p-6 bg-slate-900/50 font-mono text-xs text-slate-300">
+                    <div className="flex-1 overflow-auto p-6 bg-slate-900 text-slate-200 font-mono text-xs leading-relaxed">
                         <pre className="whitespace-pre-wrap break-all">
                             {JSON.stringify(data, null, 2)}
                         </pre>
                     </div>
-                </GlassCard>
+                </div>
               </Dialog.Panel>
             </Transition.Child>
           </div>

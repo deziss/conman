@@ -466,39 +466,39 @@ export const Volumes = () => {
       {/* Create Modal */}
       <Transition.Root show={createModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={setCreateModalOpen}>
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             <div className="fixed inset-0 overflow-y-auto">
                 <div className="flex min-h-full items-center justify-center p-4">
-                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 p-6 text-left align-middle shadow-xl transition-all">
-                        <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white mb-4">
+                    <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 p-6 text-left align-middle shadow-2xl transition-all">
+                        <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-900 dark:text-white mb-4">
                             Create Volume
                         </Dialog.Title>
                         <form onSubmit={handleCreateVolume} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Name</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
                                 <input
                                     type="text"
                                     required
                                     value={newVolumeName}
                                     onChange={(e) => setNewVolumeName(e.target.value)}
-                                    className="w-full bg-slate-800/50 border border-white/10 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-300 dark:border-white/10 rounded-lg px-4 py-2 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                                     placeholder="my-volume"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Driver</label>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Driver</label>
                                 <input
                                     type="text"
                                     readOnly
                                     value="local"
-                                    className="w-full bg-slate-800/20 border border-white/5 rounded-lg px-4 py-2 text-slate-500 cursor-not-allowed"
+                                    className="w-full bg-slate-100 dark:bg-slate-800/20 border border-slate-200 dark:border-white/5 rounded-lg px-4 py-2 text-slate-500 cursor-not-allowed"
                                 />
                             </div>
                             <div className="mt-6 flex justify-end space-x-3">
                                 <button
                                     type="button"
                                     onClick={() => setCreateModalOpen(false)}
-                                    className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition-colors"
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 rounded-lg transition-colors"
                                 >
                                     Cancel
                                 </button>
@@ -538,22 +538,22 @@ export const Volumes = () => {
       {/* Browse Modal */}
       <Transition.Root show={browseModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50" onClose={setBrowseModalOpen}>
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
             <div className="fixed inset-0 overflow-hidden flex justify-center items-center p-4">
-                 <Dialog.Panel className="w-full max-w-5xl h-[80vh] transform overflow-hidden rounded-2xl bg-slate-900 border border-white/10 text-left align-middle shadow-xl transition-all flex flex-col">
-                      <div className="flex justify-between items-center p-4 border-b border-white/5 bg-slate-800/50">
-                          <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-white flex items-center space-x-2">
+                 <Dialog.Panel className="w-full max-w-5xl h-[80vh] transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-left align-middle shadow-2xl transition-all flex flex-col">
+                      <div className="flex justify-between items-center p-4 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-800/50">
+                          <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-900 dark:text-white flex items-center space-x-2">
                               <ServerStackIcon className="w-5 h-5 text-amber-500" />
                               <span>Browsing: {browseVolName}</span>
                           </Dialog.Title>
-                          <button onClick={() => setBrowseModalOpen(false)} className="text-slate-400 hover:text-white">
+                          <button onClick={() => setBrowseModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
                               <span className="sr-only">Close</span>
                               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                               </svg>
                           </button>
                       </div>
-                      <div className="flex-1 overflow-hidden bg-slate-900">
+                      <div className="flex-1 overflow-hidden bg-white dark:bg-slate-900">
                           {browseContainerId && <FileBrowser containerId={browseContainerId} />}
                       </div>
                  </Dialog.Panel>
