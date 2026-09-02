@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"context"
 	"encoding/json"
 	"io"
@@ -97,9 +98,15 @@ func (a *Agent) handlePullImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Agent) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
     id := r.URL.Query().Get("id")
     if _, err := a.docker.ImageRemove(context.Background(), id, image.RemoveOptions{Force: true}); err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
+        w.WriteHeader(http.StatusBadRequest)
+        errMsg := err.Error()
+        if strings.Contains(strings.ToLower(errMsg), "used by running container") || strings.Contains(strings.ToLower(errMsg), "is being used") {
+            errMsg = "Image is currently in use by active container(s). Stop and remove the containers first."
+        }
+        json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
         return
     }
     json.NewEncoder(w).Encode(map[string]string{"message": "Image removed"})

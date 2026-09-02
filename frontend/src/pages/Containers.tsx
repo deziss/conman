@@ -924,7 +924,7 @@ export const Containers = () => {
                             <span className="text-lg font-bold text-slate-700 dark:text-slate-200">{container.cpu_usage || '0.00%'}</span>
                             <div className="h-6 w-20">
                               {statsHistory[container.id]?.cpu?.length > 0 && (
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={24}>
                                   <AreaChart data={statsHistory[container.id].cpu}>
                                     <Area type="monotone" dataKey="value" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
                                   </AreaChart>
@@ -939,7 +939,7 @@ export const Containers = () => {
                             <span className="text-lg font-bold text-slate-700 dark:text-slate-200">{container.memory_usage || '0 B'}</span>
                             <div className="h-6 w-20">
                               {statsHistory[container.id]?.mem?.length > 0 && (
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={24}>
                                   <AreaChart data={statsHistory[container.id].mem}>
                                     <Area type="monotone" dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
                                   </AreaChart>
