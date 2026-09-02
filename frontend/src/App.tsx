@@ -7,6 +7,7 @@ import { LicenseProvider } from './contexts/LicenseContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
+import { TaskProvider } from './contexts/TaskContext';
 import { Loading } from './components/ui/Loading';
 import type { ReactNode } from 'react';
 
@@ -50,6 +51,7 @@ function App() {
                 path="/*"
                 element={
                   <ProtectedRoute>
+                    <TaskProvider>
                     <LicenseProvider>
                     <HostProvider>
                     <DashboardLayout>
@@ -78,6 +80,7 @@ function App() {
                     </DashboardLayout>
                     </HostProvider>
                     </LicenseProvider>
+                    </TaskProvider>
                   </ProtectedRoute>
                 }
               />

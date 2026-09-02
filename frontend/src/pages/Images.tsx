@@ -20,6 +20,7 @@ import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
+import { useTask } from '../contexts/TaskContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
 import { SituationalBanner } from '../components/ui/SituationalBanner';
@@ -60,6 +61,7 @@ export const Images = () => {
   const [checkingAll, setCheckingAll] = useState(false);
   const { isCollapsed } = useSidebar();
   const { currentHost } = useHost();
+  const { startTask } = useTask();
 
   const handleViewModeChange = (mode: 'table' | 'grid') => {
     setViewMode(mode);
@@ -169,19 +171,34 @@ export const Images = () => {
 
   const handlePullImage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pullImageName.trim()) return;
+    const targetImage = pullImageName.trim();
+    if (!targetImage) return;
 
     setPulling(true);
-    const toastId = toast.loading(`Pulling image ${pullImageName}...`);
+    const task = startTask({
+      type: 'pull',
+      title: 'Pulling Docker Image',
+      resource: targetImage,
+      initialLog: `Initiating pull for ${targetImage} on host ${currentHost?.name || 'local'}...`
+    });
 
     try {
-        if (!currentHost) return;
-        await api.post(`/agents/${currentHost.id}/images/pull`, { image: pullImageName });
-        toast.success(`Successfully pulled ${pullImageName}`, { id: toastId });
+        if (!currentHost) throw new Error('No agent host selected');
+        task.appendLog('Contacting Docker daemon and verifying remote repository manifest...');
+        task.setProgress(25);
+        
+        await api.post(`/agents/${currentHost.id}/images/pull`, { image: targetImage });
+        
+        task.appendLog('Unpacking layer tarballs and verifying SHA256 checksums...');
+        task.setProgress(90);
+        task.complete(`Successfully pulled image ${targetImage}`);
+        toast.success(`Successfully pulled ${targetImage}`);
         setPullImageName('');
         fetchImages();
-    } catch (error) {
-        toast.error(`Failed to pull image ${pullImageName}`, { id: toastId });
+    } catch (error: any) {
+        const msg = error.response?.data?.error || error.message || 'Failed to pull image';
+        task.fail(msg);
+        toast.error(`Failed to pull ${targetImage}: ${msg}`);
     } finally {
         setPulling(false);
     }
@@ -204,15 +221,27 @@ export const Images = () => {
   const handlePruneImages = async () => {
       if (!currentHost) return;
       setIsPruning(true);
-      const toastId = toast.loading('Pruning unused images...');
+      const task = startTask({
+          type: 'prune',
+          title: 'Pruning Unused Images',
+          resource: 'Dangling layers & untagged images',
+          initialLog: `Requesting Docker daemon to prune unreferenced image layers...`
+      });
+
       try {
+          task.setProgress(30);
           const { data } = await api.post(`/agents/${currentHost.id}/images/prune`);
           const space = data?.space_reclaimed || 0;
-          toast.success(`Pruned unused images, reclaimed ${(space / 1024 / 1024).toFixed(1)} MB`, { id: toastId });
+          const mbReclaimed = (space / 1024 / 1024).toFixed(1);
+          task.appendLog(`Docker engine deleted unreferenced layers. Space reclaimed: ${mbReclaimed} MB`);
+          task.complete(`Pruned unused images (${mbReclaimed} MB reclaimed)`);
+          toast.success(`Pruned unused images, reclaimed ${mbReclaimed} MB`);
           setConfirmPrune(false);
           fetchImages();
       } catch (err: any) { 
-          toast.error(`Failed to prune images: ${err.response?.data?.error || err.message}`, { id: toastId }); 
+          const msg = err.response?.data?.error || err.message || 'Failed to prune images';
+          task.fail(msg);
+          toast.error(`Failed to prune images: ${msg}`); 
       } finally {
           setIsPruning(false);
       }
@@ -227,15 +256,24 @@ export const Images = () => {
 
       const targetImg = images.find(img => img.id === id);
       const displayName = targetImg?.repo_tags?.[0] || id.substring(0, 12);
-      const toastId = toast.loading(`Removing ${displayName}...`);
+      const task = startTask({
+          type: 'remove',
+          title: 'Removing Docker Image',
+          resource: displayName,
+          initialLog: `Requesting Docker daemon to untag and delete image ${displayName}...`
+      });
 
       try {
+          task.setProgress(40);
           await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
-          toast.success(`Removed ${displayName}`, { id: toastId });
+          task.appendLog(`Image ${displayName} successfully removed from host storage.`);
+          task.complete(`Removed ${displayName}`);
+          toast.success(`Removed ${displayName}`);
           setImages(prev => prev.filter(img => img.id !== id));
       } catch (error: any) {
           const errMsg = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to remove image';
-          toast.error(`Error: ${errMsg}`, { id: toastId });
+          task.fail(errMsg);
+          toast.error(`Error: ${errMsg}`);
       } finally {
           setDeletingImageIds(prev => {
               const next = { ...prev };

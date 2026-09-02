@@ -24,6 +24,7 @@ import { Link } from 'react-router-dom';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
+import { useTask } from '../contexts/TaskContext';
 import { PageTransition } from '../components/ui/PageTransition';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
@@ -73,6 +74,7 @@ export const Containers = () => {
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const { isCollapsed } = useSidebar();
   const { currentHost } = useHost();
+  const { startTask } = useTask();
 
   const handleViewModeChange = (mode: 'table' | 'grid') => {
     setViewMode(mode);
@@ -154,24 +156,38 @@ export const Containers = () => {
       
       const method: 'post' | 'delete' = action === 'remove' ? 'delete' : 'post';
       const actionName = `${action.charAt(0).toUpperCase() + action.slice(1)}ing`;
+      const targetCont = containers.find(c => c.id === id);
+      const contName = targetCont?.name || id.substring(0, 12);
       
       setOperatingContainers(prev => ({ ...prev, [id]: actionName }));
       setActiveBanner({
         action: action === 'remove' ? 'deleting' : 'restarting',
         title: `${actionName} Container`,
-        description: `Sending docker ${action} signal to container runtime...`,
+        description: `Sending docker ${action} signal to container ${contName}...`,
         isVisible: true
       });
 
+      const task = startTask({
+        type: action === 'remove' ? 'remove' : action,
+        title: `${action.charAt(0).toUpperCase() + action.slice(1)} Container`,
+        resource: contName,
+        initialLog: `Dispatching ${action} command to Docker engine for ${contName}...`
+      });
+
       try {
-          await toast.promise(api[method](endpoint), {
-              loading: `${actionName} container...`,
-              success: `Container ${action}ed successfully`,
-              error: `Failed to ${action} container`
-          });
+          task.setProgress(40);
+          task.appendLog(`Waiting for container lifecycle transition on host ${currentHost.name}...`);
+          
+          await api[method](endpoint);
+          
+          task.appendLog(`Container ${contName} state updated.`);
+          task.complete(`Container ${contName} ${action}ed successfully`);
+          toast.success(`Container ${action}ed successfully`);
           fetchContainers();
-      } catch (e) {
-          // Toast handles error display
+      } catch (e: any) {
+          const errMsg = e.response?.data?.error || e.message || `Failed to ${action} container`;
+          task.fail(errMsg);
+          toast.error(errMsg);
       } finally {
           setOperatingContainers(prev => {
               const next = { ...prev };
@@ -186,12 +202,29 @@ export const Containers = () => {
 
   const handlePrune = async () => {
       if (!currentHost) return;
+      setIsPruningContainers(true);
+      const task = startTask({
+          type: 'prune',
+          title: 'Pruning Containers',
+          resource: 'Stopped / exited containers',
+          initialLog: 'Sending container prune request to Docker host...'
+      });
+
       try {
+          task.setProgress(40);
           const { data } = await api.post(`/agents/${currentHost.id}/containers/prune`);
           const count = data?.containers_deleted?.length || 0;
+          task.appendLog(`Docker pruned ${count} stopped containers.`);
+          task.complete(`Pruned ${count} stopped containers`);
           toast.success(`Pruned ${count} stopped containers`);
           fetchContainers();
-      } catch { toast.error('Failed to prune containers'); }
+      } catch (err: any) {
+          const errMsg = err.response?.data?.error || err.message || 'Failed to prune containers';
+          task.fail(errMsg);
+          toast.error(errMsg);
+      } finally {
+          setIsPruningContainers(false);
+      }
   };
 
   const handleActionClick = (id: string, action: 'start' | 'stop' | 'restart' | 'remove') => {

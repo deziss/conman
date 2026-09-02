@@ -15,6 +15,7 @@ import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
+import { useTask } from '../contexts/TaskContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
 import { SituationalBanner } from '../components/ui/SituationalBanner';
@@ -50,6 +51,7 @@ export const Volumes = () => {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const { currentHost } = useHost();
+  const { startTask } = useTask();
 
   // Sort State
   const [sortField, setSortField] = useState<SortField>('name');
@@ -158,15 +160,26 @@ export const Volumes = () => {
   const handlePruneVolumes = async () => {
       if (!currentHost) return;
       setIsPruningVolumes(true);
-      const toastId = toast.loading('Pruning unused volumes...');
+      const task = startTask({
+          type: 'prune',
+          title: 'Pruning Docker Volumes',
+          resource: 'Unattached local storage volumes',
+          initialLog: 'Requesting Docker daemon to clean unattached volumes...'
+      });
+
       try {
+          task.setProgress(35);
           const { data } = await api.post(`/agents/${currentHost.id}/volumes/prune`);
           const count = data?.volumes_deleted?.length || 0;
-          toast.success(`Pruned ${count} unused volumes`, { id: toastId });
+          task.appendLog(`Docker pruned ${count} unused volumes.`);
+          task.complete(`Pruned ${count} unused volumes`);
+          toast.success(`Pruned ${count} unused volumes`);
           setConfirmPrune(false);
           fetchVolumes(true);
       } catch (err: any) { 
-          toast.error(`Failed to prune volumes: ${err.response?.data?.error || err.message}`, { id: toastId }); 
+          const errMsg = err.response?.data?.error || err.message || 'Failed to prune volumes';
+          task.fail(errMsg);
+          toast.error(`Failed to prune volumes: ${errMsg}`); 
       } finally {
           setIsPruningVolumes(false);
       }
@@ -179,15 +192,25 @@ export const Volumes = () => {
       setDeletingVolumeIds(prev => ({ ...prev, [volName]: true }));
       setConfirmDelete({ isOpen: false, id: '' });
 
-      const toastId = toast.loading('Removing volume...');
+      const task = startTask({
+          type: 'remove',
+          title: 'Removing Docker Volume',
+          resource: volName,
+          initialLog: `Requesting Docker daemon to remove volume ${volName}...`
+      });
+
       try {
+          task.setProgress(40);
           await api.delete(`/agents/${currentHost.id}/volumes/${encodeURIComponent(volName)}`);
-          toast.success('Volume removed', { id: toastId });
+          task.appendLog(`Volume ${volName} removed from filesystem.`);
+          task.complete(`Volume ${volName} removed`);
+          toast.success('Volume removed');
           setVolumes(prev => prev.filter(v => v.name !== volName));
           fetchVolumes(true);
       } catch (error: any) {
           const errMsg = error.response?.data?.error || error.response?.data || error.message || 'Failed to remove volume. Ensure it is not in use.';
-          toast.error(`Failed to remove volume: ${errMsg}`, { id: toastId });
+          task.fail(errMsg);
+          toast.error(`Failed to remove volume: ${errMsg}`);
       } finally {
           setDeletingVolumeIds(prev => {
               const next = { ...prev };
