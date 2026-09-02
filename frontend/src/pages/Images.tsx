@@ -683,7 +683,7 @@ export const Images = () => {
       {/* --- GRID / CARDS VIEW --- */}
       {!loading && viewMode === 'grid' && (
         <div className="space-y-4">
-            <div className={`grid gap-6 ${
+            <div className={`grid gap-6 items-stretch ${
                 isCollapsed 
                   ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' 
                   : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5'
@@ -696,7 +696,7 @@ export const Images = () => {
                     <GlassCard 
                         key={img.id} 
                         className={clsx(
-                            "p-4 relative transition-all duration-300 group overflow-hidden border border-slate-200 dark:border-white/10",
+                            "p-4 relative transition-all duration-300 group overflow-hidden border border-slate-200 dark:border-white/10 h-full flex flex-col justify-between",
                             isDeleting ? "ring-2 ring-rose-500/50 pointer-events-none" : "hover:ring-1 hover:ring-indigo-500/30",
                             isSystem && "bg-cyan-500/[0.02]"
                         )}
@@ -779,7 +779,7 @@ export const Images = () => {
                             </div>
                          </div>
                             
-                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-mono border-t border-slate-200 dark:border-slate-700/50 pt-3">
+                            <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-mono border-t border-slate-200 dark:border-slate-700/50 pt-3 mt-auto">
                                 <div>
                                     <span className="block text-[10px] uppercase text-slate-400 dark:text-slate-600">ID</span>
                                     <span className="truncate block">{img.id.substring(7, 15)}</span>
