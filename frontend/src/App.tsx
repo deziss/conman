@@ -8,7 +8,9 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { TaskProvider } from './contexts/TaskContext';
+import { TaskToastDrawer } from './components/ui/TaskToastDrawer';
 import { Loading } from './components/ui/Loading';
+import { Toaster } from 'react-hot-toast';
 import type { ReactNode } from 'react';
 
 // Lazy Page Imports
@@ -29,7 +31,6 @@ const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Pro
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Stacks = lazy(() => import('./pages/Stacks').then(m => ({ default: m.Stacks })));
 const Activities = lazy(() => import('./pages/Activities').then(m => ({ default: m.Activities })));
-// const StackDetails = lazy(() => import('./pages/StackDetails').then(m => ({ default: m.StackDetails }))); // Commented out to fix build
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -44,53 +45,64 @@ function App() {
         <CacheProvider>
           <AuthProvider>
             <BrowserRouter>
-          <Suspense fallback={<Loading />}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
-                    <TaskProvider>
-                    <LicenseProvider>
-                    <HostProvider>
-                    <DashboardLayout>
-                      <Suspense fallback={<Loading />}>
-                        <Routes>
-                          <Route path="/" element={<Dashboard />} />
-                          <Route path="/containers" element={<Containers />} />
-                          <Route path="/containers/:id" element={<ContainerDetails />} />
-                          <Route path="/containers/:id/logs" element={<ContainerLogsPage />} />
-                          <Route path="/images" element={<Images />} />
-                          <Route path="/images/:id" element={<ImageDetailsPage />} />
-                          <Route path="/networks" element={<Networks />} />
-                          <Route path="/networks/:id" element={<NetworkDetailsPage />} />
-                          <Route path="/volumes" element={<Volumes />} />
-                          <Route path="/stacks" element={<Stacks />} />
-                          <Route path="/activities" element={<Activities />} /> 
-                          {/* <Route path="/stacks/:id" element={<StackDetails />} /> */}
-                          <Route path="/hosts" element={<Hosts />} />
-                          <Route path="/hosts/:id" element={<HostDetails />} />
-                          <Route path="/users" element={<Users />} />
-                          <Route path="/profile" element={<Profile />} />
-                          <Route path="/settings" element={<Settings />} />
-                          <Route path="*" element={<div className="text-slate-500 text-center mt-20">Work in Progress</div>} />
-                        </Routes>
-                      </Suspense>
-                    </DashboardLayout>
-                    </HostProvider>
-                    </LicenseProvider>
-                    </TaskProvider>
-                  </ProtectedRoute>
-                }
-              />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </AuthProvider>
-      </CacheProvider>
-    </SettingsProvider>
-  </ThemeProvider>
+              <TaskProvider>
+                <Toaster 
+                  position="top-right" 
+                  toastOptions={{
+                    duration: 4000,
+                    style: {
+                      borderRadius: '12px',
+                      fontSize: '13px',
+                    },
+                    className: 'dark:!bg-slate-900 dark:!text-slate-100 dark:!border dark:!border-slate-800 shadow-xl'
+                  }}
+                />
+                <TaskToastDrawer />
+                <Suspense fallback={<Loading />}>
+                  <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route
+                      path="/*"
+                      element={
+                        <ProtectedRoute>
+                          <LicenseProvider>
+                            <HostProvider>
+                              <DashboardLayout>
+                                <Suspense fallback={<Loading />}>
+                                  <Routes>
+                                    <Route path="/" element={<Dashboard />} />
+                                    <Route path="/containers" element={<Containers />} />
+                                    <Route path="/containers/:id" element={<ContainerDetails />} />
+                                    <Route path="/containers/:id/logs" element={<ContainerLogsPage />} />
+                                    <Route path="/images" element={<Images />} />
+                                    <Route path="/images/:id" element={<ImageDetailsPage />} />
+                                    <Route path="/networks" element={<Networks />} />
+                                    <Route path="/networks/:id" element={<NetworkDetailsPage />} />
+                                    <Route path="/volumes" element={<Volumes />} />
+                                    <Route path="/stacks" element={<Stacks />} />
+                                    <Route path="/activities" element={<Activities />} /> 
+                                    <Route path="/hosts" element={<Hosts />} />
+                                    <Route path="/hosts/:id" element={<HostDetails />} />
+                                    <Route path="/users" element={<Users />} />
+                                    <Route path="/profile" element={<Profile />} />
+                                    <Route path="/settings" element={<Settings />} />
+                                    <Route path="*" element={<div className="text-slate-500 text-center mt-20">Work in Progress</div>} />
+                                  </Routes>
+                                </Suspense>
+                              </DashboardLayout>
+                            </HostProvider>
+                          </LicenseProvider>
+                        </ProtectedRoute>
+                      }
+                    />
+                  </Routes>
+                </Suspense>
+              </TaskProvider>
+            </BrowserRouter>
+          </AuthProvider>
+        </CacheProvider>
+      </SettingsProvider>
+    </ThemeProvider>
   );
 }
 

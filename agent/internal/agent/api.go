@@ -445,7 +445,15 @@ func (a *Agent) handlePruneContainers(w http.ResponseWriter, r *http.Request) {
 
 // handlePruneImages removes unused images
 func (a *Agent) handlePruneImages(w http.ResponseWriter, r *http.Request) {
-	report, err := a.dockerClient().ImagesPrune(context.Background(), filters.Args{})
+	pruneFilters := filters.NewArgs()
+	all := r.URL.Query().Get("all")
+	if all == "true" || all == "1" {
+		pruneFilters.Add("dangling", "false")
+	} else if r.URL.Query().Get("dangling") != "" {
+		pruneFilters.Add("dangling", r.URL.Query().Get("dangling"))
+	}
+
+	report, err := a.dockerClient().ImagesPrune(context.Background(), pruneFilters)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -733,9 +741,19 @@ func (a *Agent) handleRemoveNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.dockerClient().NetworkRemove(context.Background(), id)
+	// Inspect network to prevent deleting predefined Docker networks
+	info, err := a.dockerClient().NetworkInspect(context.Background(), id, types.NetworkInspectOptions{})
+	if err == nil {
+		netName := strings.ToLower(strings.TrimSpace(info.Name))
+		if netName == "bridge" || netName == "host" || netName == "none" || info.Driver == "null" || info.Driver == "host" {
+			http.Error(w, fmt.Sprintf("Predefined Docker network '%s' cannot be removed", info.Name), http.StatusBadRequest)
+			return
+		}
+	}
+
+	err = a.dockerClient().NetworkRemove(context.Background(), id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
