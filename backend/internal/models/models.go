@@ -151,3 +151,23 @@ type AgentSnapshot struct {
 	ReportJSON []byte    `gorm:"type:bytes"` // Compressed JSON of full AgentState
 	Timestamp  time.Time // When this snapshot was last updated
 }
+
+// Activity records any full-system event or user-initiated action across the cluster.
+// Tracks container crashes, OOM killer kills, external CLI changes, user actions, etc.
+type Activity struct {
+	gorm.Model
+	AgentID      string    `gorm:"index" json:"agent_id"`
+	AgentName    string    `json:"agent_name"`
+	Type         string    `gorm:"index" json:"type"` // "container", "image", "volume", "network", "stack", "host", "user", "system"
+	Action       string    `gorm:"index" json:"action"` // "oom_killed", "crashed", "stopped", "started", "restarted", "created", "deleted", "unhealthy", "killed", "login", etc.
+	Severity     string    `gorm:"index;default:'info'" json:"severity"` // "info", "warning", "error", "critical"
+	TargetID     string    `json:"target_id"` // Container ID, Image ID, Volume Name, etc.
+	TargetName   string    `gorm:"index" json:"target_name"` // Container Name, Image Tag, Volume Name, etc.
+	Actor        string    `json:"actor"` // "user:admin@example.com", "system:oom-killer", "docker-engine", "external-cli", "host-system"
+	ActorType    string    `json:"actor_type"` // "user", "system", "engine", "external"
+	Details      string    `json:"details"` // Detailed description (e.g. "Container killed due to Out of Memory (OOM, Exit Code 137)")
+	ExitCode     string    `json:"exit_code,omitempty"`
+	Reason       string    `json:"reason,omitempty"`
+	MetadataJSON []byte    `gorm:"type:bytes" json:"metadata,omitempty"`
+	Timestamp    time.Time `gorm:"index" json:"timestamp"`
+}

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -131,16 +132,25 @@ func (a *Agent) runEventWatcher(ctx context.Context) {
 				eventsCh, errsCh = a.dockerClient().Events(ctx, types.EventsOptions{})
 			}
 		case event := <-eventsCh:
-			// Only handle container events
-			if event.Type == "container" {
-				containerEvent := protocol.ContainerEvent{
-					AgentID:       a.cfg.AgentID,
-					ContainerID:   event.Actor.ID,
-					ContainerName: event.Actor.Attributes["name"],
-					Action:        string(event.Action),
-					Timestamp:     time.Unix(event.Time, event.TimeNano),
-					Attributes:    event.Actor.Attributes,
-				}
+			// Filter noisy healthcheck exec events
+			if strings.HasPrefix(string(event.Action), "exec_") {
+				continue
+			}
+
+			targetName := event.Actor.Attributes["name"]
+			if targetName == "" {
+				targetName = event.Actor.ID
+			}
+
+			containerEvent := protocol.ContainerEvent{
+				AgentID:       a.cfg.AgentID,
+				Type:          string(event.Type),
+				ContainerID:   event.Actor.ID,
+				ContainerName: targetName,
+				Action:        string(event.Action),
+				Timestamp:     time.Unix(event.Time, event.TimeNano),
+				Attributes:    event.Actor.Attributes,
+			}
 
 				// Push event to server
 				if a.cfg.PushEnabled {
@@ -153,7 +163,6 @@ func (a *Agent) runEventWatcher(ctx context.Context) {
 				default:
 					// Channel full, skip
 				}
-			}
 		}
 	}
 }

@@ -161,6 +161,7 @@ type ContainerMetrics struct {
 // ContainerEvent represents a container lifecycle event
 type ContainerEvent struct {
 	AgentID       string            `json:"agent_id"`
+	Type          string            `json:"type,omitempty"`
 	ContainerID   string            `json:"container_id"`
 	ContainerName string            `json:"container_name"`
 	Action        string            `json:"action"` // start, stop, die, create, destroy, etc.

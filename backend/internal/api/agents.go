@@ -1,6 +1,7 @@
 package api
 
 import (
+	"conman-backend/internal/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -39,6 +40,7 @@ type AgentHandler struct {
 	DB           *gorm.DB
 	MetricsStore *metrics.MetricsStore
 	License      *license.LicenseService
+	Activity     *service.ActivityService
 	writeQueue   chan persistJob
 }
 
@@ -132,12 +134,13 @@ const writeQueueSize = 256
 const writeWorkers = 4
 
 // NewAgentHandler creates a new agent handler with a background write queue.
-func NewAgentHandler(db *gorm.DB, metricsStore *metrics.MetricsStore, lic *license.LicenseService) *AgentHandler {
+func NewAgentHandler(db *gorm.DB, metricsStore *metrics.MetricsStore, lic *license.LicenseService, activity *service.ActivityService) *AgentHandler {
 	h := &AgentHandler{
 		agents:       make(map[string]*AgentState),
 		DB:           db,
 		MetricsStore: metricsStore,
 		License:      lic,
+		Activity:     activity,
 		writeQueue:   make(chan persistJob, writeQueueSize),
 	}
 	h.loadAgents()
@@ -777,8 +780,10 @@ func (h *AgentHandler) ReceiveEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentName := ""
 	h.mu.Lock()
 	if agent, exists := h.agents[id]; exists {
+		agentName = agent.Name
 		// Keep only last 100 events
 		agent.Events = append(agent.Events, event)
 		if len(agent.Events) > 100 {
@@ -787,7 +792,11 @@ func (h *AgentHandler) ReceiveEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 
-	log.Printf("Event from %s: %s %s", id[:8], event.Action, event.ContainerName)
+	log.Printf("Event from %s: %s %s (attrs: %+v)", id[:8], event.Action, event.ContainerName, event.Attributes)
+
+	if h.Activity != nil {
+		go h.Activity.IngestSystemEvent(id, agentName, event)
+	}
 
 	WriteJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
