@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"net/url"
 	"strings"
 	"context"
 	"encoding/json"
@@ -97,6 +98,22 @@ func (a *Agent) handlePullImage(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(map[string]string{"message": "Image pulled"})
 }
 
+func sanitizeImageID(rawID string) string {
+	id := rawID
+	for i := 0; i < 3; i++ {
+		if strings.Contains(id, "%") {
+			if unescaped, err := url.QueryUnescape(id); err == nil && unescaped != "" {
+				id = unescaped
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	return strings.TrimSpace(id)
+}
+
 func (a *Agent) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
     id := r.URL.Query().Get("id")
@@ -113,7 +130,7 @@ func (a *Agent) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Agent) handleInspectImage(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	id := sanitizeImageID(r.URL.Query().Get("id"))
 	if id == "" {
 		http.Error(w, "Missing ID", http.StatusBadRequest)
 		return

@@ -147,12 +147,28 @@ func (h *AgentHandler) ProxyPullImage(w http.ResponseWriter, r *http.Request) {
     h.proxyRequest(w, r, "POST", "/api/images/pull")
 }
 
-func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) {
-    agentID := chi.URLParam(r, "id")
+func cleanImageIDParam(r *http.Request) string {
     imageID := chi.URLParam(r, "imageId")
     if imageID == "" {
         imageID = r.URL.Query().Get("id")
     }
+    for i := 0; i < 3; i++ {
+        if strings.Contains(imageID, "%") {
+            if unescaped, err := url.QueryUnescape(imageID); err == nil && unescaped != "" {
+                imageID = unescaped
+            } else {
+                break
+            }
+        } else {
+            break
+        }
+    }
+    return strings.TrimSpace(imageID)
+}
+
+func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
+    imageID := cleanImageIDParam(r)
     user := getUserEmail(r)
     if h.Activity != nil {
         go h.Activity.RecordActivity(agentID, "", "image", "deleted", "warning", imageID, "", "user:"+user, "user", fmt.Sprintf("User %s removed image", user), "", "", nil, time.Now())
@@ -162,10 +178,7 @@ func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AgentHandler) ProxyCheckImageUpdate(w http.ResponseWriter, r *http.Request) {
-    imageID := chi.URLParam(r, "imageId")
-    if imageID == "" {
-        imageID = r.URL.Query().Get("id")
-    }
+    imageID := cleanImageIDParam(r)
     path := fmt.Sprintf("/api/images/check-update?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "GET", path)
 }
@@ -261,7 +274,7 @@ func (h *AgentHandler) ProxyInspectContainer(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AgentHandler) ProxyInspectImage(w http.ResponseWriter, r *http.Request) {
-    imageID := chi.URLParam(r, "imageId")
+    imageID := cleanImageIDParam(r)
     path := fmt.Sprintf("/api/images/inspect?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "GET", path)
 }
