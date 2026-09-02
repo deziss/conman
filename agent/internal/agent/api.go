@@ -443,19 +443,22 @@ func (a *Agent) handlePruneContainers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePruneImages removes unused images
+// handlePruneImages removes unused images (both dangling layers and unreferenced tagged images)
 func (a *Agent) handlePruneImages(w http.ResponseWriter, r *http.Request) {
 	pruneFilters := filters.NewArgs()
-	all := r.URL.Query().Get("all")
-	if all == "true" || all == "1" {
+	danglingParam := r.URL.Query().Get("dangling")
+	if danglingParam == "true" || danglingParam == "1" {
+		pruneFilters.Add("dangling", "true")
+	} else {
+		// By default or with all=true, prune all unused images not in use by containers
 		pruneFilters.Add("dangling", "false")
-	} else if r.URL.Query().Get("dangling") != "" {
-		pruneFilters.Add("dangling", r.URL.Query().Get("dangling"))
 	}
 
 	report, err := a.dockerClient().ImagesPrune(context.Background(), pruneFilters)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -268,19 +268,19 @@ export const Images = () => {
       const task = startTask({
           type: 'prune',
           title: 'Pruning Unused Images',
-          resource: 'Dangling layers & untagged images',
-          initialLog: `Requesting Docker daemon to prune unreferenced image layers...`
+          resource: 'All unused & unreferenced images',
+          initialLog: `Requesting Docker daemon to prune all images not currently in use by containers...`
       });
 
       try {
           task.setProgress(30);
-          const { data } = await api.post(`/agents/${currentHost.id}/images/prune`);
+          const { data } = await api.post(`/agents/${currentHost.id}/images/prune?all=true`);
+          const count = data?.images_deleted?.length || 0;
           const space = data?.space_reclaimed || 0;
           const mbReclaimed = (space / 1024 / 1024).toFixed(1);
-          task.appendLog(`Docker engine deleted unreferenced layers. Space reclaimed: ${mbReclaimed} MB`);
-          task.complete(`Pruned unused images (${mbReclaimed} MB reclaimed)`);
-          toast.success(`Pruned unused images, reclaimed ${mbReclaimed} MB`);
-          setConfirmPrune(false);
+          task.appendLog(`Docker engine deleted ${count} unused image(s). Space reclaimed: ${mbReclaimed} MB`);
+          task.complete(`Pruned ${count} unused image(s) (${mbReclaimed} MB reclaimed)`);
+          toast.success(`Pruned ${count} unused image(s), reclaimed ${mbReclaimed} MB`);
           fetchImages();
       } catch (err: any) { 
           const msg = err.response?.data?.error || err.message || 'Failed to prune images';
@@ -933,11 +933,14 @@ export const Images = () => {
       <ConfirmModal
           isOpen={confirmPrune}
           onClose={() => { if (!isPruning) setConfirmPrune(false); }}
-          onConfirm={handlePruneImages}
-          title="Prune Images"
-          message="Remove all unused (dangling) images? This will delete unreferenced layers and free disk space."
-          confirmText="Prune Images"
-          loadingText="Pruning Layers..."
+          onConfirm={() => {
+              setConfirmPrune(false);
+              handlePruneImages();
+          }}
+          title="Prune Unused Images"
+          message="Remove all images that are not currently in use by active containers? This will safely delete untagged layers and unused images to free disk space."
+          confirmText="Prune Unused"
+          loadingText="Pruning Unused Images..."
           isLoading={isPruning}
           isDestructive={true}
       />
