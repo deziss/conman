@@ -483,7 +483,13 @@ export const ContainerDetails = () => {
         }
     };
 
+    const isSystem = container ? isConmanSystemContainer(container.Name, container.Image) : false;
+
     const handleAction = (action: string) => {
+        if (isSystem && (action === 'stop' || action === 'remove')) {
+            toast.error(`Cannot ${action} Conman core system container from within the panel.`);
+            return;
+        }
         if (action === 'stop' || action === 'remove' || action === 'restart') {
             setConfirmAction({ isOpen: true, action });
         } else {
@@ -535,7 +541,17 @@ export const ContainerDetails = () => {
                 <div className="flex items-center space-x-2">
                     {isRunning ? (
                         <>
-                            <button onClick={() => handleAction('stop')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-rose-400" title="Stop">
+                            <button 
+                                onClick={() => handleAction('stop')} 
+                                disabled={isSystem}
+                                className={clsx(
+                                    "p-2 rounded-lg transition-colors",
+                                    isSystem
+                                        ? "opacity-25 cursor-not-allowed text-slate-400"
+                                        : "hover:bg-slate-100 dark:hover:bg-white/10 text-rose-400"
+                                )} 
+                                title={isSystem ? "Protected: Conman core system container cannot be stopped from itself" : "Stop"}
+                            >
                                 <StopIcon className="w-5 h-5" />
                             </button>
                             <button onClick={() => handleAction('restart')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-amber-400" title="Restart">

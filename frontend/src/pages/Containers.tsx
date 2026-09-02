@@ -167,9 +167,15 @@ export const Containers = () => {
 
   const handleActionClick = (id: string, action: 'start' | 'stop' | 'restart' | 'remove') => {
       const targetCont = containers.find(c => c.id === id);
-      if (action === 'remove' && targetCont && isConmanSystemContainer(targetCont.name, targetCont.image)) {
-          toast.error('Cannot remove Conman core system container from within the panel.');
-          return;
+      if (targetCont && isConmanSystemContainer(targetCont.name, targetCont.image)) {
+          if (action === 'remove') {
+              toast.error('Cannot remove Conman core system container from within the panel.');
+              return;
+          }
+          if (action === 'stop') {
+              toast.error('Cannot stop Conman core system container from within the panel.');
+              return;
+          }
       }
       if (action === 'remove' || action === 'stop') {
           setConfirmModal({
@@ -548,13 +554,16 @@ export const Containers = () => {
                             {/* Start/Stop */}
                             <button 
                               onClick={() => handleActionClick(container.id, isRunning ? 'stop' : 'start')}
+                              disabled={isRunning && isSystem}
                               className={clsx(
                                 "p-1.5 rounded-lg transition-colors",
-                                isRunning 
-                                  ? "hover:bg-amber-500/10 text-amber-500" 
-                                  : "hover:bg-emerald-500/10 text-emerald-500"
+                                isRunning && isSystem
+                                  ? "opacity-20 cursor-not-allowed text-slate-400"
+                                  : isRunning 
+                                    ? "hover:bg-amber-500/10 text-amber-500" 
+                                    : "hover:bg-emerald-500/10 text-emerald-500"
                               )}
-                              title={isRunning ? 'Stop Container' : 'Start Container'}
+                              title={isRunning && isSystem ? "Protected: Conman core system container cannot be stopped from itself" : isRunning ? 'Stop Container' : 'Start Container'}
                             >
                               {isRunning ? <StopIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
                             </button>
@@ -666,8 +675,16 @@ export const Containers = () => {
                     <div className="flex space-x-1 opacity-80">
                       <button 
                             onClick={() => handleActionClick(container.id, isRunning ? 'stop' : 'start')}
-                            className={`p-1.5 rounded-lg transition-colors ${isRunning ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-emerald-500/10 text-emerald-500'}`}
-                            title={isRunning ? 'Stop' : 'Start'}
+                            disabled={isRunning && isSystem}
+                            className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isRunning && isSystem
+                                    ? "opacity-20 cursor-not-allowed text-slate-400"
+                                    : isRunning
+                                        ? "hover:bg-amber-500/10 text-amber-500"
+                                        : "hover:bg-emerald-500/10 text-emerald-500"
+                            )}
+                            title={isRunning && isSystem ? "Protected: Conman core system container cannot be stopped from itself" : isRunning ? 'Stop' : 'Start'}
                         >
                             {isRunning ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
                         </button>
