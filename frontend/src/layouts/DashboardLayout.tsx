@@ -1,4 +1,4 @@
-import { ReactNode, useState, createContext, useContext } from 'react';
+import { ReactNode, useState, useEffect, createContext, useContext } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { useLicense } from '../contexts/LicenseContext';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
@@ -6,6 +6,7 @@ import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 interface SidebarContextType {
   isCollapsed: boolean;
   toggle: () => void;
+  setIsCollapsed: (collapsed: boolean) => void;
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -18,20 +19,38 @@ export const useSidebar = () => {
   return context;
 };
 
+// Breakpoint below which sidebar auto-collapses to give dashboard and card grids full width
+const COLLAPSE_BREAKPOINT = 1280;
+
 export const DashboardLayout = ({ children }: { children: ReactNode }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < COLLAPSE_BREAKPOINT;
+    }
+    return false;
+  });
   const { license } = useLicense();
 
-  const toggle = () => setIsCollapsed(!isCollapsed);
+  useEffect(() => {
+    const handleResize = () => {
+      const isNarrow = window.innerWidth < COLLAPSE_BREAKPOINT;
+      setIsCollapsed(isNarrow);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const toggle = () => setIsCollapsed(prev => !prev);
 
   return (
-    <SidebarContext.Provider value={{ isCollapsed, toggle }}>
+    <SidebarContext.Provider value={{ isCollapsed, toggle, setIsCollapsed }}>
       <div className="flex h-screen overflow-hidden">
         <Sidebar isCollapsed={isCollapsed} toggle={toggle} />
         <main
           className={`flex-1 ${
             isCollapsed ? 'ml-20' : 'ml-64'
-          } h-full overflow-y-auto p-8 relative scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent transition-all duration-300 ease-in-out`}
+          } h-full overflow-y-auto p-4 sm:p-6 lg:p-8 relative scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent transition-all duration-300 ease-in-out`}
         >
           {/* Glow effect at top right */}
           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px] -z-10 pointer-events-none" />
