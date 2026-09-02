@@ -1,3 +1,4 @@
+import { isConmanSystemImage } from '../utils/systemProtection';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -127,6 +128,11 @@ export const Images = () => {
   const [isPruning, setIsPruning] = useState(false);
 
   const handleRemoveImage = (id: string) => {
+      const targetImg = images.find(img => img.id === id);
+      if (targetImg && isConmanSystemImage(targetImg.repo_tags, targetImg.id)) {
+          toast.error('Cannot remove Conman core system image from within the panel.');
+          return;
+      }
       setConfirmDelete({ isOpen: true, id });
   };
 
@@ -583,9 +589,17 @@ export const Images = () => {
                          {/* Header: name + actions */}
                          <div className="flex justify-between items-start gap-2 mb-2">
                             <div className="min-w-0">
-                                <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-200 truncate" title={img.repo_tags && img.repo_tags[0]}>
-                                    {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
-                                </h4>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-200 truncate" title={img.repo_tags && img.repo_tags[0]}>
+                                        {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
+                                    </h4>
+                                    {isConmanSystemImage(img.repo_tags, img.id) && (
+                                        <span className="text-[10px] font-semibold text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 px-1.5 py-px rounded border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Image">
+                                            <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                            System
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex flex-wrap items-center gap-1 mt-1">
                                     <span className="text-[10px] font-mono text-slate-500 dark:text-slate-500 bg-slate-100 dark:bg-slate-900/50 px-1 py-px rounded border border-slate-200 dark:border-slate-800">
                                         {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[1] || 'latest' : '<none>'}
@@ -614,9 +628,16 @@ export const Images = () => {
                                 ><EyeIcon className="w-3.5 h-3.5" /></button>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} 
-                                    disabled={isDeleting}
-                                    className={clsx("p-1 text-slate-400 hover:text-rose-500 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
-                                    title="Remove"
+                                    disabled={isDeleting || isConmanSystemImage(img.repo_tags, img.id)}
+                                    className={clsx(
+                                        "p-1 rounded transition-colors",
+                                        isConmanSystemImage(img.repo_tags, img.id)
+                                            ? "opacity-25 cursor-not-allowed text-slate-400"
+                                            : isDeleting 
+                                                ? "opacity-40 cursor-not-allowed text-slate-400"
+                                                : "text-slate-400 hover:text-rose-500"
+                                    )} 
+                                    title={isConmanSystemImage(img.repo_tags, img.id) ? "Protected: Conman core system image cannot be removed from itself" : "Remove"}
                                 ><TrashIcon className="w-3.5 h-3.5" /></button>
                             </div>
                          </div>

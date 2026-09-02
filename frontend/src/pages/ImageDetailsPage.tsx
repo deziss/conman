@@ -1,3 +1,4 @@
+import { isConmanSystemImage } from '../utils/systemProtection';
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -134,7 +135,14 @@ export const ImageDetailsPage = () => {
                      <span className="text-xs text-slate-500 font-mono">{image.Id}</span>
                      <button 
                         onClick={handleRemove}
-                        className="flex items-center space-x-2 bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-500 hover:bg-rose-500 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-rose-200 dark:border-rose-500/20"
+                        disabled={isConmanSystemImage(image.RepoTags, image.Id)}
+                        className={clsx(
+                            "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border",
+                            isConmanSystemImage(image.RepoTags, image.Id)
+                                ? "opacity-30 cursor-not-allowed bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700"
+                                : "bg-rose-100 dark:bg-rose-500/10 text-rose-600 dark:text-rose-500 hover:bg-rose-500 hover:text-white border-rose-200 dark:border-rose-500/20"
+                        )}
+                        title={isConmanSystemImage(image.RepoTags, image.Id) ? "Protected: Conman core system image cannot be removed from itself" : "Remove"}
                     >
                         <TrashIcon className="w-4 h-4" />
                         <span>Remove</span>
@@ -162,6 +170,12 @@ export const ImageDetailsPage = () => {
                             </div>
                             
                             <div className="flex flex-wrap items-center gap-2 mt-4 ml-1">
+                                {isConmanSystemImage(image.RepoTags, image.Id) && (
+                                    <Badge className="bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-200 dark:border-cyan-500/20 flex items-center gap-1">
+                                        <ShieldCheckIcon className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                                        Protected System Image
+                                    </Badge>
+                                )}
                                 <Badge className="bg-indigo-100 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-500/20">{image.Architecture}</Badge>
                                 <Badge className="bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-500/20">{image.Os}</Badge>
                                 <Badge className="bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20">{formatSize(image.Size)}</Badge>
