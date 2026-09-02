@@ -268,6 +268,7 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
 	mux.HandleFunc("/api/networks/connect", a.handleConnectNetwork)
 	mux.HandleFunc("/api/volumes/inspect", a.handleInspectVolume)
     mux.HandleFunc("/api/images/check-update", a.handleCheckImageUpdate)
+    mux.HandleFunc("/api/images/scan", a.handleScanImage)
     mux.HandleFunc("/api/stacks", func(w http.ResponseWriter, r *http.Request) {
         switch r.Method {
             case "GET": a.handleListStacks(w, r)
@@ -303,6 +304,8 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
 	mux.HandleFunc("/api/exec", a.handleStreamExec)
 	mux.HandleFunc("/api/files", a.handleListFiles)
 	mux.HandleFunc("/api/files/download", a.handleDownloadFile)
+	mux.HandleFunc("/api/files/upload", a.handleUploadFile)
+	mux.HandleFunc("/api/containers/update", a.handleUpdateContainer)
 	mux.HandleFunc("/api/logs", a.handleStreamLogs)
 	mux.HandleFunc("/api/stats", a.handleStreamStats)
 

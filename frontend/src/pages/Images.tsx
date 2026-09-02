@@ -688,6 +688,15 @@ export const Images = () => {
                               <ArrowUpCircleIcon className="w-3.5 h-3.5" />
                             </button>
 
+                            {/* Security Scan & Details */}
+                            <Link
+                              to={`/images/${encodeURIComponent(img.id)}`}
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-cyan-500 transition-colors inline-flex items-center"
+                              title="Security Scan & Details"
+                            >
+                              <ShieldCheckIcon className="w-3.5 h-3.5" />
+                            </Link>
+
                             {/* Inspect */}
                             <button
                               onClick={() => handleInspect(img.id)}
@@ -774,7 +783,9 @@ export const Images = () => {
                             <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                     <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-200 truncate" title={img.repo_tags && img.repo_tags[0]}>
-                                        {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
+                                        <Link to={`/images/${encodeURIComponent(img.id)}`} className="hover:text-cyan-500 transition-colors">
+                                            {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
+                                        </Link>
                                     </h4>
                                     {isSystem && (
                                         <span className="text-[10px] font-semibold text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 px-1.5 py-px rounded border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Image">
@@ -830,6 +841,21 @@ export const Images = () => {
                                               <MagnifyingGlassIcon className={clsx("w-3.5 h-3.5 text-indigo-500", updateStatuses[img.id]?.checking && "animate-pulse")} />
                                               <span>Check for Updates</span>
                                             </button>
+                                          )}
+                                        </Menu.Item>
+
+                                        <Menu.Item>
+                                          {({ active }) => (
+                                            <Link
+                                              to={`/images/${encodeURIComponent(img.id)}`}
+                                              className={clsx(
+                                                "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors",
+                                                active ? "bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" : "text-slate-700 dark:text-slate-300"
+                                              )}
+                                            >
+                                              <ShieldCheckIcon className="w-3.5 h-3.5 text-cyan-500" />
+                                              <span>Security & Details</span>
+                                            </Link>
                                           )}
                                         </Menu.Item>
 

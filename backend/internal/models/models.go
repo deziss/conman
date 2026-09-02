@@ -171,3 +171,37 @@ type Activity struct {
 	MetadataJSON []byte    `gorm:"type:bytes" json:"metadata,omitempty"`
 	Timestamp    time.Time `gorm:"index" json:"timestamp"`
 }
+
+
+// VulnerabilityItem represents a single detected CVE/vulnerability
+type VulnerabilityItem struct {
+	ID               string  `json:"id"`
+	VulnerabilityID  string  `json:"vulnerability_id"`
+	PkgName          string  `json:"package"`
+	PackageName      string  `json:"pkg_name"`
+	InstalledVersion string  `json:"installed_version"`
+	FixedVersion     string  `json:"fixed_version"`
+	Severity         string  `json:"severity"` // "CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"
+	Title            string  `json:"title"`
+	Description      string  `json:"description"`
+	PrimaryURL       string  `json:"primary_url"`
+	Score            float64 `json:"score,omitempty"`
+}
+
+// VulnerabilityReport stores the full security scan results for an image
+type VulnerabilityReport struct {
+	gorm.Model
+	ImageID       string    `gorm:"index" json:"image_id"`
+	ImageTag      string    `gorm:"index" json:"image_tag"`
+	Status        string    `json:"status"` // "scanning", "completed", "failed"
+	Scanner       string    `json:"scanner"` // "trivy"
+	CriticalCount int       `json:"critical_count"`
+	HighCount     int       `json:"high_count"`
+	MediumCount   int       `json:"medium_count"`
+	LowCount      int       `json:"low_count"`
+	UnknownCount  int       `json:"unknown_count"`
+	TotalCount    int       `json:"total_count"`
+	ResultsJSON   string    `gorm:"type:text" json:"results_json,omitempty"`
+	ErrorMessage  string    `json:"error_message,omitempty"`
+	ScannedAt     time.Time `json:"scanned_at"`
+}

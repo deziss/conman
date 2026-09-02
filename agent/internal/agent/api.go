@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"log"
 	"net"
 	"net/http"
@@ -405,6 +406,176 @@ func (a *Agent) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.tar\"", filepath.Base(targetPath)))
 	_, _ = io.Copy(w, reader)
 }
+
+// handleUploadFile extracts uploaded file into container via tar archive stream
+func (a *Agent) handleUploadFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	targetDir := r.URL.Query().Get("path")
+	if id == "" {
+		http.Error(w, "Missing container ID", http.StatusBadRequest)
+		return
+	}
+	if targetDir == "" {
+		targetDir = "/"
+	}
+
+	var fileHeaderName string
+	var fileContent []byte
+
+	// Try parsing multipart form first (up to 100MB)
+	err := r.ParseMultipartForm(100 << 20)
+	if err == nil && r.MultipartForm != nil && len(r.MultipartForm.File) > 0 {
+		for _, headers := range r.MultipartForm.File {
+			if len(headers) > 0 {
+				fileHeaderName = filepath.Base(headers[0].Filename)
+				var file multipart.File
+				file, err = headers[0].Open()
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to open uploaded file: %v", err), http.StatusBadRequest)
+					return
+				}
+				fileContent, err = io.ReadAll(file)
+				file.Close()
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
+					return
+				}
+				break
+			}
+		}
+	} else {
+		// Fallback: direct body upload with ?filename=
+		fileHeaderName = r.URL.Query().Get("filename")
+		if fileHeaderName == "" {
+			fileHeaderName = "upload.bin"
+		}
+		fileHeaderName = filepath.Base(fileHeaderName)
+		fileContent, err = io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to read body: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if len(fileHeaderName) == 0 || len(fileContent) == 0 {
+		http.Error(w, "No file content uploaded", http.StatusBadRequest)
+		return
+	}
+
+	// Package file into a TAR archive in-memory
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+
+	header := &tar.Header{
+		Name:    fileHeaderName,
+		Mode:    0644,
+		Size:    int64(len(fileContent)),
+		ModTime: time.Now(),
+	}
+
+	if err := tw.WriteHeader(header); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write tar header: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if _, err := tw.Write(fileContent); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write tar body: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := tw.Close(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to finalize tar: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Copy into container
+	err = a.dockerClient().CopyToContainer(
+		context.Background(),
+		id,
+		targetDir,
+		&tarBuf,
+		types.CopyToContainerOptions{
+			AllowOverwriteDirWithFile: true,
+		},
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Docker CopyToContainer failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "success",
+		"message":  fmt.Sprintf("File %s successfully uploaded to %s", fileHeaderName, targetDir),
+		"filename": fileHeaderName,
+		"size":     len(fileContent),
+	})
+}
+
+// UpdateContainerRequest holds resource constraints and restart policies for live container tuning
+type UpdateContainerRequest struct {
+	Memory        int64  `json:"memory"`         // In bytes, 0 for unlimited
+	MemorySwap    int64  `json:"memory_swap"`    // In bytes, -1 for unlimited, 0 unset
+	CPUShares     int64  `json:"cpu_shares"`     // Relative weight (e.g. 1024)
+	CPUQuota      int64  `json:"cpu_quota"`      // Microseconds quota per period
+	CPUPeriod     int64  `json:"cpu_period"`     // Microseconds period (e.g. 100000)
+	NanoCPUs      int64  `json:"nano_cpus"`      // CPU quota in units of 10^-9 CPUs
+	RestartPolicy string `json:"restart_policy"` // "no", "always", "unless-stopped", "on-failure"
+}
+
+// handleUpdateContainer dynamically updates container resources (docker update) without container recreation
+func (a *Agent) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing container ID", http.StatusBadRequest)
+		return
+	}
+
+	var req UpdateContainerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid update payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	updateConfig := container.UpdateConfig{
+		Resources: container.Resources{
+			Memory:     req.Memory,
+			MemorySwap: req.MemorySwap,
+			CPUShares:  req.CPUShares,
+			CPUQuota:   req.CPUQuota,
+			CPUPeriod:  req.CPUPeriod,
+			NanoCPUs:   req.NanoCPUs,
+		},
+	}
+
+	if req.RestartPolicy != "" {
+		updateConfig.RestartPolicy = container.RestartPolicy{
+			Name: container.RestartPolicyMode(req.RestartPolicy),
+		}
+	}
+
+	resp, err := a.dockerClient().ContainerUpdate(context.Background(), id, updateConfig)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update container: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "success",
+		"warnings": resp.Warnings,
+		"message":  "Container resources updated successfully",
+	})
+}
+
 
 // handleStreamLogs streams container logs via WebSocket
 func (a *Agent) handleStreamLogs(w http.ResponseWriter, r *http.Request) {
@@ -1381,4 +1552,42 @@ func (a *Agent) handleContainerTop(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(top)
+}
+
+
+// handleScanImage triggers a Trivy vulnerability scan on an image on the agent node
+func (a *Agent) handleScanImage(w http.ResponseWriter, r *http.Request) {
+	imageRef := r.URL.Query().Get("image")
+	if imageRef == "" {
+		imageRef = r.URL.Query().Get("id")
+	}
+	if imageRef == "" {
+		http.Error(w, "Missing image or id query parameter", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm",
+		"-v", "/var/run/docker.sock:/var/run/docker.sock",
+		"-v", "conman-trivy-cache:/root/.cache/",
+		"aquasec/trivy:latest",
+		"image", "--format", "json", "--quiet", imageRef,
+	)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		errMsg := stderr.String()
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		http.Error(w, fmt.Sprintf("Trivy scan failed: %s", errMsg), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(stdout.Bytes())
 }

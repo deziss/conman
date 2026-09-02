@@ -67,7 +67,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{}, &models.LicenseCache{}, &models.Activity{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{}, &models.LicenseCache{}, &models.Activity{}, &models.VulnerabilityReport{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -150,6 +150,7 @@ func main() {
 	// Handlers (hoisted for use by alert evaluator)
 	activityService := service.NewActivityService(db)
 	activityHandler := api.NewActivityHandler(activityService)
+	service.InitScannerService(db, activityService)
 	agentHandler := api.NewAgentHandler(db, metricsStore, licenseService, activityService)
 
 	// API v1 Group
@@ -159,6 +160,7 @@ func main() {
         userHandler := api.NewUserHandler(db)
         containerHandler := api.NewContainerHandler()
         dockerHandler := api.NewDockerHandler()
+        scannerHandler := api.NewScannerHandler()
         networkHandler := api.NewNetworkHandler()
         volumeHandler := api.NewVolumeHandler()
         environmentHandler := api.NewEnvironmentHandler(db)
@@ -166,8 +168,12 @@ func main() {
         // Middleware Instance
         mw := middleware.NewMiddleware(db)
 
+        // Stack Handler
+        stackHandler := api.NewStackHandler(db)
+
         // Public Routes
 		r.Post("/auth/login", authHandler.Login)
+        r.Post("/webhooks/stacks/{id}", stackHandler.WebhookDeploy)
         
         // Agent Routes (registration, heartbeat, report - secured with agent PSK)
         r.Group(func(r chi.Router) {
@@ -226,10 +232,12 @@ func main() {
                     r.Get("/system/df", dockerHandler.GetSystemDF)
                     r.Get("/system/stats", dockerHandler.GetSystemStats)
                     r.Get("/images/{id}/check-update", dockerHandler.CheckUpdate)
+                    r.Get("/images/{id}/vulnerabilities", scannerHandler.GetImageVulnerabilities)
 
                     r.Group(func(r chi.Router) {
                         r.Use(mw.RequirePermission("images", "write"))
                         r.Delete("/images/{id}", dockerHandler.RemoveImage)
+                        r.Post("/images/{id}/scan", scannerHandler.ScanImage)
                         r.Post("/images/pull", dockerHandler.PullImage)
                         r.Post("/prune/containers", dockerHandler.PruneContainers)
                         r.Post("/prune/images", dockerHandler.PruneImages)
@@ -256,6 +264,8 @@ func main() {
                          r.Delete("/", containerHandler.RemoveContainer)
                          r.Get("/files", containerHandler.ListContainerFiles)
                          r.Get("/files/download", containerHandler.DownloadContainerFile)
+                         r.Post("/files/upload", containerHandler.UploadContainerFile)
+                         r.Post("/update", containerHandler.UpdateContainer)
                      })
                 })
 
@@ -292,7 +302,6 @@ func main() {
             })
 
             // Stacks (Pro+)
-            stackHandler := api.NewStackHandler(db)
             r.Route("/stacks", func(r chi.Router) {
                 r.Use(middleware.RequireFeature("stacks"))
                 r.Get("/", stackHandler.ListStacks)
@@ -301,6 +310,7 @@ func main() {
                 r.Put("/{id}", stackHandler.UpdateStack)
                 r.Post("/{id}/stop", stackHandler.StopStack)
                 r.Delete("/{id}", stackHandler.DeleteStack)
+                r.Post("/{id}/webhook", stackHandler.WebhookDeploy)
             })
 
             // Agent Management (Multi-Host)

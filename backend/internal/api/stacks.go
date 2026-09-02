@@ -188,3 +188,43 @@ func (h *StackHandler) UpdateStack(w http.ResponseWriter, r *http.Request) {
     
     json.NewEncoder(w).Encode(stack)
 }
+
+
+// WebhookDeploy triggers an automatic stack redeploy for CI/CD pipelines
+func (h *StackHandler) WebhookDeploy(w http.ResponseWriter, r *http.Request) {
+    idStr := chi.URLParam(r, "id")
+    id, err := strconv.Atoi(idStr)
+    if err != nil {
+        http.Error(w, "Invalid stack ID", http.StatusBadRequest)
+        return
+    }
+
+    var stack models.Stack
+    if err := h.DB.First(&stack, id).Error; err != nil {
+        http.Error(w, "Stack not found", http.StatusNotFound)
+        return
+    }
+
+    stack.Status = "deploying"
+    stack.Message = "Webhook deployment triggered"
+    h.DB.Save(&stack)
+
+    go func() {
+        err := h.ComposeService.Deploy(&stack)
+        if err != nil {
+            stack.Status = "error"
+            stack.Message = "Webhook deployment failed: " + err.Error()
+        } else {
+            stack.Status = "active"
+            stack.Message = "Deployed via webhook successfully"
+        }
+        h.DB.Save(&stack)
+    }()
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "status":  "triggered",
+        "stack":   stack.Name,
+        "message": "Stack redeployment triggered via webhook",
+    })
+}

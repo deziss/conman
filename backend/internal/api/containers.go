@@ -7,7 +7,9 @@ import (
     "context"
     "encoding/json"
     "io"
-    "bytes"
+    "archive/tar"
+	"bytes"
+	"mime/multipart"
     "fmt"
     "path/filepath"
     "net/http"
@@ -521,3 +523,158 @@ func (h *ContainerHandler) DownloadContainerFile(w http.ResponseWriter, r *http.
     }
 }
 
+
+
+type LocalUpdateContainerRequest struct {
+	Memory        int64  `json:"memory"`         // In bytes (0 = unlimited)
+	MemorySwap    int64  `json:"memory_swap"`    // In bytes (-1 = unlimited swap)
+	CPUShares     int64  `json:"cpu_shares"`     // Relative weight
+	CPUQuota      int64  `json:"cpu_quota"`      // Microseconds in CPU period
+	CPUPeriod     int64  `json:"cpu_period"`     // Microseconds period
+	NanoCPUs      int64  `json:"nano_cpus"`      // CPU quota in 10^-9 CPUs
+	RestartPolicy string `json:"restart_policy"` // "no", "always", "unless-stopped", "on-failure"
+}
+
+// UpdateContainer updates container resources dynamically without stopping or recreating
+func (h *ContainerHandler) UpdateContainer(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, "Container ID is required", http.StatusBadRequest)
+		return
+	}
+
+	var req LocalUpdateContainerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid update payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	cli := service.GetDockerClient()
+	updateConfig := container.UpdateConfig{
+		Resources: container.Resources{
+			Memory:     req.Memory,
+			MemorySwap: req.MemorySwap,
+			CPUShares:  req.CPUShares,
+			CPUQuota:   req.CPUQuota,
+			CPUPeriod:  req.CPUPeriod,
+			NanoCPUs:   req.NanoCPUs,
+		},
+	}
+
+	if req.RestartPolicy != "" {
+		updateConfig.RestartPolicy = container.RestartPolicy{
+			Name: container.RestartPolicyMode(req.RestartPolicy),
+		}
+	}
+
+	resp, err := cli.ContainerUpdate(context.Background(), id, updateConfig)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update container: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "success",
+		"warnings": resp.Warnings,
+		"message":  "Container resources updated successfully",
+	})
+}
+
+// UploadContainerFile streams an uploaded file into container directory via TAR archive
+func (h *ContainerHandler) UploadContainerFile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	targetDir := r.URL.Query().Get("path")
+	if id == "" {
+		http.Error(w, "Missing container ID", http.StatusBadRequest)
+		return
+	}
+	if targetDir == "" {
+		targetDir = "/"
+	}
+
+	var fileHeaderName string
+	var fileContent []byte
+
+	err := r.ParseMultipartForm(100 << 20)
+	if err == nil && r.MultipartForm != nil && len(r.MultipartForm.File) > 0 {
+		for _, headers := range r.MultipartForm.File {
+			if len(headers) > 0 {
+				fileHeaderName = filepath.Base(headers[0].Filename)
+				var file multipart.File
+				file, err = headers[0].Open()
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to open file: %v", err), http.StatusBadRequest)
+					return
+				}
+				fileContent, err = io.ReadAll(file)
+				file.Close()
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
+					return
+				}
+				break
+			}
+		}
+	} else {
+		fileHeaderName = r.URL.Query().Get("filename")
+		if fileHeaderName == "" {
+			fileHeaderName = "upload.bin"
+		}
+		fileHeaderName = filepath.Base(fileHeaderName)
+		fileContent, err = io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to read body: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if len(fileHeaderName) == 0 || len(fileContent) == 0 {
+		http.Error(w, "No file content uploaded", http.StatusBadRequest)
+		return
+	}
+
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+
+	header := &tar.Header{
+		Name:    fileHeaderName,
+		Mode:    0644,
+		Size:    int64(len(fileContent)),
+		ModTime: time.Now(),
+	}
+
+	if err := tw.WriteHeader(header); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write tar header: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if _, err := tw.Write(fileContent); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write tar body: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := tw.Close(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to finalize tar: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	cli := service.GetDockerClient()
+	err = cli.CopyToContainer(
+		context.Background(),
+		id,
+		targetDir,
+		&tarBuf,
+		types.CopyToContainerOptions{
+			AllowOverwriteDirWithFile: true,
+		},
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Docker CopyToContainer failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "success",
+		"message":  fmt.Sprintf("File %s uploaded to %s", fileHeaderName, targetDir),
+		"filename": fileHeaderName,
+		"size":     len(fileContent),
+	})
+}

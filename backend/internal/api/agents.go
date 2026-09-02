@@ -294,10 +294,11 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/agents/{id}/containers/{containerId}/logs", h.ProxyStreamLogs)
 	r.Get("/agents/{id}/containers/{containerId}/stats", h.ProxyStreamStats)
     r.Get("/agents/{id}/containers/{containerId}/files/download", h.ProxyDownloadFile)
+    r.Post("/agents/{id}/containers/{containerId}/files/upload", h.ProxyUploadFile)
 
     // Container Management
-	// Container Management
     r.Get("/agents/{id}/containers/{containerId}", h.ProxyInspectContainer)
+    r.Post("/agents/{id}/containers/{containerId}/update", h.ProxyUpdateContainer)
 	r.Get("/agents/{id}/containers/{containerId}/top", h.ProxyContainerTop)
 	r.Get("/agents/{id}/containers/{containerId}/processes", h.ProxyContainerTop)
 	r.Post("/agents/{id}/containers/{containerId}/start", h.ProxyStartContainer)
@@ -309,6 +310,8 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
     r.Get("/agents/{id}/images/check-update", h.ProxyCheckImageUpdate)
     r.Get("/agents/{id}/images/{imageId}/check-update", h.ProxyCheckImageUpdate)
     r.Get("/agents/{id}/images/{imageId}", h.ProxyInspectImage)
+    r.Post("/agents/{id}/images/{imageId}/scan", h.ProxyScanImage)
+    r.Get("/agents/{id}/images/{imageId}/vulnerabilities", h.ProxyGetImageVulnerabilities)
 	r.Post("/agents/{id}/images/pull", h.ProxyPullImage)
 	r.Delete("/agents/{id}/images", h.ProxyRemoveImage)
 	r.Delete("/agents/{id}/images/{imageId}", h.ProxyRemoveImage)

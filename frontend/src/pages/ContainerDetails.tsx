@@ -41,6 +41,7 @@ import { clsx } from 'clsx';
 import { useHost } from '../contexts/HostContext';
 import { mapAgentContainerToDetails } from '../utils/containerMapper';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { ResourceTuningModal } from '../components/ResourceTuningModal';
 
 interface ContainerDetails {
     Id: string;
@@ -327,6 +328,7 @@ export const ContainerDetails = () => {
     const [netData, setNetData] = useState<StatPoint[]>([]);
     const [diskData, setDiskData] = useState<StatPoint[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
+    const [isTuningModalOpen, setIsTuningModalOpen] = useState<boolean>(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     const { currentHost } = useHost();
@@ -882,14 +884,23 @@ export const ContainerDetails = () => {
 
                   {/* Resource Limits */}
                   <GlassCard className="p-6">
-                      <div className="flex items-center space-x-3 mb-6">
-                          <div className="p-2 bg-cyan-500/20 rounded-lg">
-                              <CpuChipIcon className="w-5 h-5 text-cyan-400" />
+                      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+                          <div className="flex items-center space-x-3">
+                              <div className="p-2 bg-cyan-500/20 rounded-lg">
+                                  <CpuChipIcon className="w-5 h-5 text-cyan-400" />
+                              </div>
+                              <div>
+                                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Resource Limits</h3>
+                                  <p className="text-xs text-slate-500">CPU, memory, and runtime resource quotas</p>
+                              </div>
                           </div>
-                          <div>
-                              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Resource Limits</h3>
-                              <p className="text-xs text-slate-500">CPU, memory, and other resource constraints</p>
-                          </div>
+                          <button
+                              onClick={() => setIsTuningModalOpen(true)}
+                              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 rounded-xl transition-all shadow-md shadow-indigo-500/20"
+                          >
+                              <WrenchScrewdriverIcon className="w-4 h-4" />
+                              <span>Live Resource Tuning</span>
+                          </button>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                           <InfoCard 
@@ -1037,6 +1048,18 @@ export const ContainerDetails = () => {
         confirmText={confirmAction.action === 'remove' ? 'Remove' : confirmAction.action === 'restart' ? 'Restart' : 'Stop'}
         isDestructive={confirmAction.action !== 'restart'}
       />
+
+      {container && (
+        <ResourceTuningModal
+          isOpen={isTuningModalOpen}
+          onClose={() => setIsTuningModalOpen(false)}
+          onSuccess={() => fetchDetails()}
+          containerId={container.Id}
+          containerName={container.Name}
+          currentHostId={currentHost?.id}
+          currentHostConfig={container.HostConfig}
+        />
+      )}
     </div>
   );
 };

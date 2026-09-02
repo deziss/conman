@@ -254,15 +254,33 @@ func (h *AgentHandler) ProxyDuplicateNetwork(w http.ResponseWriter, r *http.Requ
 // -- File Download Proxy --
 func (h *AgentHandler) ProxyDownloadFile(w http.ResponseWriter, r *http.Request) {
     containerID := chi.URLParam(r, "containerId")
-    // Query param 'path' is already in r.URL.RawQuery and handled by proxyRequest
-    
-    // We need to construct the base path carefully.
-    // Agent expects /api/files/download?id={cid}&path={path}
-    // proxyRequest appends existing query params.
-    // So if I pass "/api/files/download?id={cid}", and request has ?path=..., it becomes ...?id={cid}&path=...
-    
     path := fmt.Sprintf("/api/files/download?id=%s", containerID)
     h.proxyRequest(w, r, "GET", path)
+}
+
+// ProxyUploadFile proxies multipart or raw file upload to agent
+func (h *AgentHandler) ProxyUploadFile(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
+    containerID := chi.URLParam(r, "containerId")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        go h.Activity.RecordActivity(agentID, "", "container", "file_upload", "info", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s uploaded file to container %s", user, containerID), "", "", nil, time.Now())
+    }
+    path := fmt.Sprintf("/api/files/upload?id=%s", url.QueryEscape(containerID))
+    h.proxyRequest(w, r, "POST", path)
+}
+
+// ProxyUpdateContainer proxies live resource tuning (docker update) to agent
+func (h *AgentHandler) ProxyUpdateContainer(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
+    containerID := chi.URLParam(r, "containerId")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, containerID, "", "container.update")
+        go h.Activity.RecordActivity(agentID, "", "container", "updated", "info", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s updated container %s resources", user, containerID), "", "", nil, time.Now())
+    }
+    path := fmt.Sprintf("/api/containers/update?id=%s", url.QueryEscape(containerID))
+    h.proxyRequest(w, r, "POST", path)
 }
 
 // -- Inspect Proxies (Moved from agents.go) --
@@ -319,5 +337,21 @@ func (h *AgentHandler) ProxySystemPrune(w http.ResponseWriter, r *http.Request) 
 func (h *AgentHandler) ProxyContainerTop(w http.ResponseWriter, r *http.Request) {
     containerID := chi.URLParam(r, "containerId")
     path := fmt.Sprintf("/api/containers/top?id=%s", url.QueryEscape(containerID))
+    h.proxyRequest(w, r, "GET", path)
+}
+
+
+func (h *AgentHandler) ProxyScanImage(w http.ResponseWriter, r *http.Request) {
+    imageID := cleanImageIDParam(r)
+    imageRef := r.URL.Query().Get("image")
+    force := r.URL.Query().Get("force")
+    path := fmt.Sprintf("/api/images/scan?id=%s&image=%s&force=%s", url.QueryEscape(imageID), url.QueryEscape(imageRef), url.QueryEscape(force))
+    h.proxyRequest(w, r, "POST", path)
+}
+
+func (h *AgentHandler) ProxyGetImageVulnerabilities(w http.ResponseWriter, r *http.Request) {
+    imageID := cleanImageIDParam(r)
+    imageRef := r.URL.Query().Get("image")
+    path := fmt.Sprintf("/api/images/vulnerabilities?id=%s&image=%s", url.QueryEscape(imageID), url.QueryEscape(imageRef))
     h.proxyRequest(w, r, "GET", path)
 }
