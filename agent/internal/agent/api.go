@@ -2,6 +2,8 @@ package agent
 
 import (
 	"bytes"
+	"errors"
+	"net"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +24,24 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/gorilla/websocket"
 )
+
+func isExpectedDisconnect(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived, websocket.CloseAbnormalClosure) {
+		return true
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "broken pipe") ||
+		strings.Contains(errStr, "connection reset by peer") ||
+		strings.Contains(errStr, "use of closed network connection") ||
+		strings.Contains(errStr, "close sent") ||
+		strings.Contains(errStr, "closed by client")
+}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -282,7 +302,7 @@ func (a *Agent) handleStreamLogs(w http.ResponseWriter, r *http.Request) {
     // stdcopy.StdCopy demultiplexes the stream. 
     // We want to merge them into the websocket.
     _, err = stdcopy.StdCopy(wsWriter, wsWriter, reader)
-    if err != nil {
+    if err != nil && !isExpectedDisconnect(err) {
         log.Printf("Stream error: %v", err)
     }
 }
@@ -312,7 +332,7 @@ func (a *Agent) handleStreamStats(w http.ResponseWriter, r *http.Request) {
 	// Stats are streamed as JSON objects
 	wsWriter := &WSWriter{Conn: ws}
 	_, err = io.Copy(wsWriter, stats.Body)
-	if err != nil {
+	if err != nil && !isExpectedDisconnect(err) {
 		log.Printf("Stats stream error: %v", err)
 	}
 }
