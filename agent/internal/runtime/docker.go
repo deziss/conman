@@ -110,6 +110,16 @@ func (d *DockerProvider) ListContainers(ctx context.Context, all bool) ([]protoc
 			})
 		}
 
+		ipAddress := ""
+		if c.NetworkSettings != nil && c.NetworkSettings.Networks != nil {
+			for _, netSettings := range c.NetworkSettings.Networks {
+				if netSettings != nil && netSettings.IPAddress != "" {
+					ipAddress = netSettings.IPAddress
+					break
+				}
+			}
+		}
+
 		result = append(result, protocol.Container{
 			ID:          c.ID,
 			Name:        name,
@@ -123,6 +133,7 @@ func (d *DockerProvider) ListContainers(ctx context.Context, all bool) ([]protoc
 			Labels:      c.Labels,
 			NetworkMode: c.HostConfig.NetworkMode,
 			Mounts:      mounts,
+			IPAddress:   ipAddress,
 		})
 	}
 	return result, nil
