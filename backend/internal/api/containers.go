@@ -1,6 +1,7 @@
 package api
 
 import (
+	"time"
     "conman-backend/internal/models"
     "conman-backend/internal/service"
     "context"
@@ -296,12 +297,49 @@ func (h *ContainerHandler) StreamExec(w http.ResponseWriter, r *http.Request) {
 
     cli := service.GetDockerClient()
     
+    preferredShell := r.URL.Query().Get("shell")
+    shellCandidates := []string{"/bin/sh", "/bin/bash", "/bin/ash", "/usr/bin/sh", "/usr/bin/bash", "sh", "bash"}
+    if preferredShell != "" && preferredShell != "auto" {
+        shellCandidates = []string{preferredShell}
+    }
+
+    selectedShell := ""
+    for _, s := range shellCandidates {
+        pConfig := types.ExecConfig{
+            AttachStdout: false,
+            AttachStderr: false,
+            Tty:          false,
+            Cmd:          []string{s, "-c", "exit 0"},
+        }
+        if pResp, pErr := cli.ContainerExecCreate(context.Background(), id, pConfig); pErr == nil {
+            pCtx, pCancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+            pStartErr := cli.ContainerExecStart(pCtx, pResp.ID, types.ExecStartCheck{})
+            pCancel()
+            if pStartErr == nil {
+                if pInspect, pInspectErr := cli.ContainerExecInspect(context.Background(), pResp.ID); pInspectErr == nil && pInspect.ExitCode == 0 {
+                    selectedShell = s
+                    break
+                }
+            }
+        }
+    }
+
+    if selectedShell == "" {
+        wsWriter := &WSWriter{Conn: ws}
+        msg := "\r\n\x1b[1;33m[Conman] ⚠️ No Shell Found in Container\x1b[0m\r\n\r\n" +
+            "\x1b[90mThis container appears to be built from a \x1b[1;37mscratch\x1b[0;90m or \x1b[1;37mdistroless\x1b[0;90m image without an internal shell (/bin/sh, /bin/bash, /bin/ash).\r\n\r\n" +
+            "Interactive terminal sessions require an installed shell binary inside the container.\r\n" +
+            "Containers packaging standalone static binaries (such as Dozzle, Traefik, or pure Go/Rust images) do not provide a shell.\x1b[0m\r\n\r\n"
+        _, _ = wsWriter.Write([]byte(msg))
+        return
+    }
+
     execConfig := types.ExecConfig{
         AttachStdin:  true,
         AttachStdout: true,
         AttachStderr: true,
         Tty:          true,
-        Cmd:          []string{"/bin/sh"},
+        Cmd:          []string{selectedShell},
     }
     
     execIDResp, err := cli.ContainerExecCreate(context.Background(), id, execConfig)

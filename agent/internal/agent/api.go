@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"time"
 	"net/url"
 	"bytes"
 	"errors"
@@ -71,21 +72,45 @@ type ExecMessage struct {
 
 
 
+func (a *Agent) detectContainerShell(ctx context.Context, containerID, preferred string) string {
+	var candidates []string
+	if preferred != "" && preferred != "auto" {
+		candidates = []string{preferred}
+	} else {
+		candidates = []string{"/bin/sh", "/bin/bash", "/bin/ash", "/usr/bin/sh", "/usr/bin/bash", "sh", "bash"}
+	}
+
+	for _, shellCmd := range candidates {
+		probeConfig := types.ExecConfig{
+			AttachStdout: false,
+			AttachStderr: false,
+			Tty:          false,
+			Cmd:          []string{shellCmd, "-c", "exit 0"},
+		}
+		execResp, err := a.dockerClient().ContainerExecCreate(ctx, containerID, probeConfig)
+		if err != nil {
+			continue
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, 400*time.Millisecond)
+		err = a.dockerClient().ContainerExecStart(probeCtx, execResp.ID, types.ExecStartCheck{})
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		inspect, err := a.dockerClient().ContainerExecInspect(ctx, execResp.ID)
+		if err == nil && inspect.ExitCode == 0 {
+			return shellCmd
+		}
+	}
+	return ""
+}
+
 // handleStreamExec handles interactive container shell
 func (a *Agent) handleStreamExec(w http.ResponseWriter, r *http.Request) {
-    // Expected URL: /api/containers/{id}/exec
-    // We can extract ID from URL path since we are using ServeMux in agent.go
-    // But ServeMux pattern matching isn't as flexible as Chi.
-    // We'll rely on query param or simple path splitting if we use a specific prefix
-    
-    // Actually, in agent.go I will register "/api/containers/" handler which does prefix matching
-    // then creates a sub-handler or extracts ID.
-    // Or I can just use query param ?id=... which is easier with ServeMux
-    
     id := r.URL.Query().Get("id")
     if id == "" {
-        // Fallback: try to parse from path if registerd as /api/containers/exec/
-        // easier to use query param for internal agent API
         http.Error(w, "Missing container ID", http.StatusBadRequest)
         return
     }
@@ -101,12 +126,24 @@ func (a *Agent) handleStreamExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	preferredShell := r.URL.Query().Get("shell")
+	shellCmd := a.detectContainerShell(context.Background(), id, preferredShell)
+	if shellCmd == "" {
+		wsWriter := &WSWriter{Conn: ws}
+		msg := "\r\n\x1b[1;33m[Conman] ⚠️ No Shell Found in Container\x1b[0m\r\n\r\n" +
+			"\x1b[90mThis container appears to be built from a \x1b[1;37mscratch\x1b[0;90m or \x1b[1;37mdistroless\x1b[0;90m image without an internal shell (/bin/sh, /bin/bash, /bin/ash).\r\n\r\n" +
+			"Interactive terminal sessions require an installed shell binary inside the container.\r\n" +
+			"Containers packaging standalone static binaries (such as Dozzle, Traefik, or pure Go/Rust images) do not provide a shell.\x1b[0m\r\n\r\n"
+		_, _ = wsWriter.Write([]byte(msg))
+		return
+	}
+
 	execConfig := types.ExecConfig{
 		AttachStdin:  true,
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          true,
-		Cmd:          []string{"/bin/sh"},
+		Cmd:          []string{shellCmd},
 	}
 
 	execIDResp, err := a.dockerClient().ContainerExecCreate(context.Background(), id, execConfig)
