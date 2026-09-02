@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 
 interface ConfirmModalProps {
@@ -10,6 +10,7 @@ interface ConfirmModalProps {
   title: string;
   message: string;
   confirmText?: string;
+  loadingText?: string;
   cancelText?: string;
   isDestructive?: boolean;
   isLoading?: boolean;
@@ -22,6 +23,7 @@ export const ConfirmModal = ({
   title,
   message,
   confirmText = 'Confirm',
+  loadingText = 'Processing...',
   cancelText = 'Cancel',
   isDestructive = false,
   isLoading = false,
@@ -52,33 +54,47 @@ export const ConfirmModal = ({
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-xl text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
-                <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 rounded-xl">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-2xl text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-lg border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900">
+                <div className="p-6">
                   <div className="sm:flex sm:items-start">
-                    {isDestructive && (
-                      <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-500/10 sm:mx-0 sm:h-10 sm:w-10">
-                        <ExclamationTriangleIcon className="h-6 w-6 text-red-500" aria-hidden="true" />
+                    {isDestructive ? (
+                      <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-rose-500/10 border border-rose-500/20 sm:mx-0 sm:h-11 sm:w-11">
+                        <ExclamationTriangleIcon className="h-6 w-6 text-rose-500" aria-hidden="true" />
+                      </div>
+                    ) : (
+                      <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 border border-cyan-500/20 sm:mx-0 sm:h-11 sm:w-11">
+                        <InformationCircleIcon className="h-6 w-6 text-cyan-500" aria-hidden="true" />
                       </div>
                     )}
-                    <div className={clsx("mt-3 text-center sm:mt-0 sm:text-left", isDestructive && "sm:ml-4")}>
-                      <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-slate-900 dark:text-slate-100">
+                    <div className={clsx("mt-3 text-center sm:mt-0 sm:text-left", "sm:ml-4")}>
+                      <Dialog.Title as="h3" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                         {title}
                       </Dialog.Title>
                       <div className="mt-2">
-                        <p className="text-sm text-slate-600 dark:text-slate-400">
+                        <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                           {message}
                         </p>
                       </div>
                     </div>
                   </div>
-                  <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+
+                  {isLoading && (
+                    <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 flex items-center space-x-3">
+                      <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-cyan-500 animate-spin flex-shrink-0" />
+                      <div className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                        Backend task running on agent host... Please wait.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
                     <button
                       type="button"
                       disabled={isLoading}
                       className={clsx(
-                        "inline-flex w-full items-center justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm sm:w-auto transition-all disabled:opacity-60 disabled:cursor-not-allowed",
+                        "inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm sm:w-auto transition-all disabled:opacity-60 disabled:cursor-not-allowed",
                         isDestructive 
-                          ? "bg-red-600 hover:bg-red-500 shadow-red-500/20" 
+                          ? "bg-rose-600 hover:bg-rose-500 shadow-rose-500/20" 
                           : "bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/20"
                       )}
                       onClick={onConfirm}
@@ -86,12 +102,12 @@ export const ConfirmModal = ({
                       {isLoading && (
                         <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
                       )}
-                      {isLoading ? 'Removing...' : confirmText}
+                      {isLoading ? loadingText : confirmText}
                     </button>
                     <button
                       type="button"
                       disabled={isLoading}
-                      className="mt-3 inline-flex w-full justify-center rounded-md bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-white/10 hover:bg-slate-200 dark:hover:bg-white/10 sm:mt-0 sm:w-auto transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="mt-3 inline-flex w-full justify-center rounded-xl bg-slate-100 dark:bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-white/10 hover:bg-slate-200 dark:hover:bg-white/10 sm:mt-0 sm:w-auto transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={onClose}
                     >
                       {cancelText}
@@ -106,3 +122,5 @@ export const ConfirmModal = ({
     </Transition.Root>
   );
 };
+
+export default ConfirmModal;

@@ -18,6 +18,8 @@ import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { LoadingState } from '../components/ui/LoadingState';
+import { SituationalBanner } from '../components/ui/SituationalBanner';
 import { Pagination } from '../components/ui/Pagination';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
@@ -155,6 +157,7 @@ export const Networks = () => {
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
+  const [isPruningNetworks, setIsPruningNetworks] = useState(false);
   const [deletingNetworkIds, setDeletingNetworkIds] = useState<Record<string, boolean>>({});
 
   const handleRemoveNetwork = (id: string) => {
@@ -163,14 +166,18 @@ export const Networks = () => {
 
   const handlePruneNetworks = async () => {
       if (!currentHost) return;
+      setIsPruningNetworks(true);
       const toastId = toast.loading('Pruning unused networks...');
       try {
           const { data } = await api.post(`/agents/${currentHost.id}/networks/prune`);
           const count = data?.networks_deleted?.length || 0;
           toast.success(`Pruned ${count} unused networks`, { id: toastId });
+          setConfirmPrune(false);
           fetchNetworks();
-      } catch { 
-          toast.error('Failed to prune networks', { id: toastId }); 
+      } catch (err: any) { 
+          toast.error(`Failed to prune networks: ${err.response?.data?.error || err.message}`, { id: toastId }); 
+      } finally {
+          setIsPruningNetworks(false);
       }
   };
 

@@ -16,6 +16,8 @@ import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { LoadingState } from '../components/ui/LoadingState';
+import { SituationalBanner } from '../components/ui/SituationalBanner';
 import { Pagination } from '../components/ui/Pagination';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
@@ -147,6 +149,7 @@ export const Volumes = () => {
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
   const [deletingVolumeIds, setDeletingVolumeIds] = useState<Record<string, boolean>>({});
+  const [isPruningVolumes, setIsPruningVolumes] = useState(false);
 
   const handleRemoveVolume = (name: string) => {
       setConfirmDelete({ isOpen: true, id: name });
@@ -154,14 +157,18 @@ export const Volumes = () => {
 
   const handlePruneVolumes = async () => {
       if (!currentHost) return;
+      setIsPruningVolumes(true);
       const toastId = toast.loading('Pruning unused volumes...');
       try {
           const { data } = await api.post(`/agents/${currentHost.id}/volumes/prune`);
           const count = data?.volumes_deleted?.length || 0;
           toast.success(`Pruned ${count} unused volumes`, { id: toastId });
+          setConfirmPrune(false);
           fetchVolumes(true);
-      } catch { 
-          toast.error('Failed to prune volumes', { id: toastId }); 
+      } catch (err: any) { 
+          toast.error(`Failed to prune volumes: ${err.response?.data?.error || err.message}`, { id: toastId }); 
+      } finally {
+          setIsPruningVolumes(false);
       }
   };
 
@@ -368,8 +375,10 @@ export const Volumes = () => {
                     ) : sortedVolumes.length === 0 ? (
                         <tr><td colSpan={7} className="px-6 py-8 text-center text-slate-500">No volumes found.</td></tr>
                     ) : (
-                        paginatedVolumes.map((vol) => (
-                            <tr key={vol.name} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                        paginatedVolumes.map((vol) => {
+                            const isDeleting = !!deletingVolumeIds[vol.name];
+                            return (
+                            <tr key={vol.name} className={clsx("hover:bg-black/5 dark:hover:bg-white/5 transition-colors group relative", isDeleting && "opacity-50 bg-rose-500/5")}>
                                 <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-200">
                                     <div className="flex items-center space-x-3">
                                         <ArchiveBoxIcon className="w-5 h-5 text-amber-600 dark:text-amber-500/50" />
@@ -441,7 +450,8 @@ export const Volumes = () => {
                                     </div>
                                 </td>
                             </tr>
-                        ))
+                        );
+                    })
                     )}
                 </tbody>
             </table>

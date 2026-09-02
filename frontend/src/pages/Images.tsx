@@ -21,6 +21,8 @@ import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { LoadingState } from '../components/ui/LoadingState';
+import { SituationalBanner } from '../components/ui/SituationalBanner';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { Pagination } from '../components/ui/Pagination';
@@ -207,9 +209,10 @@ export const Images = () => {
           const { data } = await api.post(`/agents/${currentHost.id}/images/prune`);
           const space = data?.space_reclaimed || 0;
           toast.success(`Pruned unused images, reclaimed ${(space / 1024 / 1024).toFixed(1)} MB`, { id: toastId });
+          setConfirmPrune(false);
           fetchImages();
-      } catch { 
-          toast.error('Failed to prune images', { id: toastId }); 
+      } catch (err: any) { 
+          toast.error(`Failed to prune images: ${err.response?.data?.error || err.message}`, { id: toastId }); 
       } finally {
           setIsPruning(false);
       }
@@ -471,6 +474,11 @@ export const Images = () => {
           </select>
         </div>
       </GlassCard>
+
+      {/* Loading Skeleton */}
+      {loading && (
+        <LoadingState type="images" viewMode={viewMode} count={viewMode === 'grid' ? 8 : 6} />
+      )}
 
       {/* --- TABLE / LIST VIEW --- */}
       {!loading && viewMode === 'table' && (
@@ -782,12 +790,34 @@ export const Images = () => {
       />
       <ConfirmModal
           isOpen={confirmPrune}
-          onClose={() => setConfirmPrune(false)}
+          onClose={() => { if (!isPruning) setConfirmPrune(false); }}
           onConfirm={handlePruneImages}
           title="Prune Images"
-          message="Remove all unused (dangling) images? This cannot be undone."
-          confirmText="Prune"
+          message="Remove all unused (dangling) images? This will delete unreferenced layers and free disk space."
+          confirmText="Prune Images"
+          loadingText="Pruning Layers..."
+          isLoading={isPruning}
           isDestructive={true}
+      />
+
+      {/* Situational Background Activity Indicators */}
+      <SituationalBanner 
+          action="pruning"
+          title="Pruning Unused Images"
+          description="Deleting dangling layers and freeing host storage via Docker engine..."
+          isVisible={isPruning}
+      />
+      <SituationalBanner 
+          action="pulling"
+          title={`Pulling ${pullImageName || 'Docker Image'}`}
+          description="Streaming image manifest and unpacking layer blobs..."
+          isVisible={pulling}
+      />
+      <SituationalBanner 
+          action="updating"
+          title="Checking Image Updates"
+          description="Querying container registries for tag updates and hash changes..."
+          isVisible={checkingAll}
       />
     </div>
   );

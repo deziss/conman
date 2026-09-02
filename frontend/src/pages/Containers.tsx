@@ -26,6 +26,8 @@ import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
 import { PageTransition } from '../components/ui/PageTransition';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { LoadingState } from '../components/ui/LoadingState';
+import { SituationalBanner, ActionType } from '../components/ui/SituationalBanner';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSettings } from '../contexts/SettingsContext';
 import { Pagination } from '../components/ui/Pagination';
@@ -76,6 +78,15 @@ export const Containers = () => {
     setViewMode(mode);
     localStorage.setItem('conman_containers_view', mode);
   };
+
+  const [operatingContainers, setOperatingContainers] = useState<Record<string, string>>({});
+  const [isPruningContainers, setIsPruningContainers] = useState(false);
+  const [activeBanner, setActiveBanner] = useState<{ action: ActionType; title: string; description: string; isVisible: boolean }>({
+    action: 'generic',
+    title: '',
+    description: '',
+    isVisible: false
+  });
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState({
@@ -142,16 +153,34 @@ export const Containers = () => {
       if (action !== 'remove') endpoint += '/' + action;
       
       const method: 'post' | 'delete' = action === 'remove' ? 'delete' : 'post';
+      const actionName = `${action.charAt(0).toUpperCase() + action.slice(1)}ing`;
+      
+      setOperatingContainers(prev => ({ ...prev, [id]: actionName }));
+      setActiveBanner({
+        action: action === 'remove' ? 'deleting' : 'restarting',
+        title: `${actionName} Container`,
+        description: `Sending docker ${action} signal to container runtime...`,
+        isVisible: true
+      });
 
       try {
           await toast.promise(api[method](endpoint), {
-              loading: `${action.charAt(0).toUpperCase() + action.slice(1)}ing container...`,
+              loading: `${actionName} container...`,
               success: `Container ${action}ed successfully`,
               error: `Failed to ${action} container`
           });
           fetchContainers();
       } catch (e) {
           // Toast handles error display
+      } finally {
+          setOperatingContainers(prev => {
+              const next = { ...prev };
+              delete next[id];
+              return next;
+          });
+          setTimeout(() => {
+              setActiveBanner(prev => ({ ...prev, isVisible: false }));
+          }, 800);
       }
   };
 
@@ -373,10 +402,7 @@ export const Containers = () => {
 
       {/* Loading Skeleton */}
       {loading && containers.length === 0 && (
-          <GlassCard className="p-12 text-center space-y-4">
-              <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto" />
-              <p className="text-sm text-slate-500 font-mono animate-pulse">Fetching container workloads...</p>
-          </GlassCard>
+          <LoadingState type="containers" viewMode={viewMode} count={viewMode === 'grid' ? 8 : 6} />
       )}
 
       {/* --- TABLE / LIST VIEW (Dockhand Style) --- */}
