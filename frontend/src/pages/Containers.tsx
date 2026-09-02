@@ -694,12 +694,13 @@ export const Containers = () => {
 
       {/* --- GRID / CARDS VIEW --- */}
       {!loading && viewMode === 'grid' && (
-        <div className={`grid gap-6 ${isCollapsed ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+        <div className={`grid gap-6 items-stretch ${isCollapsed ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
         <AnimatePresence mode="popLayout">
           {paginatedContainers.map((container) => {
             const isSystem = isConmanSystemContainer(container.name, container.image);
             const isRunning = container.state === 'running';
             const parsedPorts = parseContainerPorts(container.ports, currentHost);
+            const hasNetworkInfo = container.ip_address || parsedPorts.length > 0;
 
             return (
               <motion.div
@@ -709,85 +710,95 @@ export const Containers = () => {
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
                 layout
+                className="h-full flex flex-col"
               >
-              <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group">
-                <div className="p-5 border-b border-slate-200 dark:border-slate-700/50 flex justify-between items-start bg-slate-50/30 dark:bg-slate-800/30">
-                    <div className="flex items-start space-x-3">
-                        <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500`}></div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <Link to={'/containers/' + container.id}>
-                                    <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[180px]" title={container.name}>
-                                        {container.name}
-                                    </h3>
-                                </Link>
-                                {isSystem && (
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Container">
-                                        <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                                        System
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                                <p className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-700/50 px-1.5 py-0.5 rounded truncate max-w-[160px]">{container.image}</p>
-                                <p className="text-xs text-slate-400">{container.status}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex space-x-1 opacity-80">
-                      <button 
-                            onClick={() => handleActionClick(container.id, isRunning ? 'stop' : 'start')}
-                            disabled={isRunning && isSystem}
-                            className={clsx(
-                                "p-1.5 rounded-lg transition-colors",
-                                isRunning && isSystem
-                                    ? "opacity-20 cursor-not-allowed text-slate-400"
-                                    : isRunning
-                                        ? "hover:bg-amber-500/10 text-amber-500"
-                                        : "hover:bg-emerald-500/10 text-emerald-500"
-                            )}
-                            title={isRunning && isSystem ? "Protected: Conman core system container cannot be stopped from itself" : isRunning ? 'Stop' : 'Start'}
-                        >
-                            {isRunning ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
-                        </button>
-                        <button 
-                            onClick={() => handleActionClick(container.id, 'remove')}
-                            disabled={isSystem}
-                            className={clsx(
-                                "p-1.5 rounded-lg transition-colors",
-                                isSystem
-                                    ? "opacity-25 cursor-not-allowed text-slate-400"
-                                    : "hover:bg-red-500/10 text-red-500"
-                            )}
-                            title={isSystem ? "Protected: Conman core system container cannot be removed from itself" : "Remove"}
-                        >
-                            <TrashIcon className="w-5 h-5" />
-                        </button>
-                        <button 
-                            onClick={(e) => handleInspect(container.id, e)}
-                            className="p-1.5 rounded-lg hover:bg-cyan-500/10 text-cyan-500 transition-colors"
-                            title="Inspect"
-                        >
-                            <EyeIcon className="w-5 h-5" />
-                        </button>
+              <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group h-full flex flex-col justify-between">
+                <div>
+                  {/* Standardized Header Slot */}
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-700/50 flex justify-between items-start bg-slate-50/30 dark:bg-slate-800/30 min-h-[82px]">
+                      <div className="flex items-start space-x-2.5 min-w-0 flex-1">
+                          <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500 flex-shrink-0`}></div>
+                          <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                  <Link to={'/containers/' + container.id} className="min-w-0">
+                                      <h3 className="font-semibold text-base text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[160px] sm:max-w-[190px]" title={container.name}>
+                                          {container.name}
+                                      </h3>
+                                  </Link>
+                                  {isSystem && (
+                                      <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Container">
+                                          <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                          System
+                                      </span>
+                                  )}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  <p className="text-[11px] font-mono text-slate-500 bg-slate-200/80 dark:bg-slate-700/60 px-1.5 py-0.5 rounded truncate max-w-[140px]" title={container.image}>{container.image}</p>
+                                  <p className="text-[11px] text-slate-400 truncate max-w-[120px]" title={container.status}>{container.status}</p>
+                              </div>
+                          </div>
+                      </div>
 
-                        <Link to={'/containers/' + container.id} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Details">
-                            <DocumentTextIcon className="w-5 h-5" />
-                        </Link>
-                    </div>
-                </div>
+                      {/* Header Actions */}
+                      <div className="flex space-x-1 opacity-80 flex-shrink-0 ml-2">
+                        <button 
+                              onClick={() => handleActionClick(container.id, isRunning ? 'stop' : 'start')}
+                              disabled={isRunning && isSystem}
+                              className={clsx(
+                                  "p-1.5 rounded-lg transition-colors",
+                                  isRunning && isSystem
+                                      ? "opacity-20 cursor-not-allowed text-slate-400"
+                                      : isRunning
+                                          ? "hover:bg-amber-500/10 text-amber-500"
+                                          : "hover:bg-emerald-500/10 text-emerald-500"
+                              )}
+                              title={isRunning && isSystem ? "Protected: Conman core system container cannot be stopped from itself" : isRunning ? 'Stop' : 'Start'}
+                          >
+                              {isRunning ? <StopIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+                          </button>
+                          <button 
+                              onClick={() => handleActionClick(container.id, 'remove')}
+                              disabled={isSystem}
+                              className={clsx(
+                                  "p-1.5 rounded-lg transition-colors",
+                                  isSystem
+                                      ? "opacity-25 cursor-not-allowed text-slate-400"
+                                      : "hover:bg-red-500/10 text-red-500"
+                              )}
+                              title={isSystem ? "Protected: Conman core system container cannot be removed from itself" : "Remove"}
+                          >
+                              <TrashIcon className="w-4 h-4" />
+                          </button>
+                          <button 
+                              onClick={(e) => handleInspect(container.id, e)}
+                              className="p-1.5 rounded-lg hover:bg-cyan-500/10 text-cyan-500 transition-colors"
+                              title="Inspect"
+                          >
+                              <EyeIcon className="w-4 h-4" />
+                          </button>
 
-                {/* IP & Ports Bar */}
-                {(container.ip_address || parsedPorts.length > 0) && (
-                  <div className="px-5 py-2.5 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    {container.ip_address && (
+                          <Link to={'/containers/' + container.id} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Details">
+                              <DocumentTextIcon className="w-4 h-4" />
+                          </Link>
+                      </div>
+                  </div>
+
+                  {/* Standardized IP & Ports Slot (Consistent Height Across All Cards) */}
+                  <div className="px-4 py-2 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-2 text-xs min-h-[38px]">
+                    {container.ip_address ? (
                       <div className="flex items-center gap-1 font-mono text-[11px]">
                         <span className="text-slate-400">IP:</span>
                         <span className="text-cyan-700 dark:text-cyan-400 font-semibold">{container.ip_address}</span>
                       </div>
+                    ) : (
+                      <div className="flex items-center gap-1 font-mono text-[11px] text-slate-400">
+                        <span>IP:</span>
+                        <span className="text-slate-400 italic">None</span>
+                      </div>
                     )}
-                    {parsedPorts.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5">
+
+                    {parsedPorts.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1">
                         {parsedPorts.map((port, pIdx) => (
                           port.url ? (
                             <a
@@ -808,16 +819,19 @@ export const Containers = () => {
                           )
                         ))}
                       </div>
+                    ) : (
+                      <span className="text-[10px] font-mono text-slate-400 italic">No exposed ports</span>
                     )}
                   </div>
-                )}
+                </div>
                 
-                <div className="p-5 grid grid-cols-2 gap-4">
+                {/* Standardized Metrics & Stats Footer */}
+                <div className="p-4 grid grid-cols-2 gap-4 flex-1 flex flex-col justify-between">
                     <div className="space-y-1">
-                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">CPU Usage</p>
+                        <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">CPU Usage</p>
                         <div className="flex items-end space-x-2">
-                            <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.cpu_usage || '0.00%'}</span>
-                            <div className="h-8 w-24">
+                            <span className="text-lg font-bold text-slate-700 dark:text-slate-200">{container.cpu_usage || '0.00%'}</span>
+                            <div className="h-6 w-20">
                               {statsHistory[container.id]?.cpu?.length > 0 && (
                                 <ResponsiveContainer width="100%" height="100%">
                                   <AreaChart data={statsHistory[container.id].cpu}>
@@ -829,10 +843,10 @@ export const Containers = () => {
                         </div>
                     </div>
                     <div className="space-y-1">
-                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Memory</p>
+                        <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Memory</p>
                         <div className="flex items-end space-x-2">
-                            <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.memory_usage || '0 B'}</span>
-                            <div className="h-8 w-24">
+                            <span className="text-lg font-bold text-slate-700 dark:text-slate-200">{container.memory_usage || '0 B'}</span>
+                            <div className="h-6 w-20">
                               {statsHistory[container.id]?.mem?.length > 0 && (
                                 <ResponsiveContainer width="100%" height="100%">
                                   <AreaChart data={statsHistory[container.id].mem}>
@@ -843,13 +857,13 @@ export const Containers = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="space-y-1">
-                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net I/O</p>
-                        <p className="text-sm font-mono text-slate-400">↓{formatNetBytes(container.network_rx)} ↑{formatNetBytes(container.network_tx)}</p>
+                    <div className="space-y-1 pt-2 border-t border-slate-100 dark:border-slate-800/60 mt-auto">
+                        <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Net I/O</p>
+                        <p className="text-xs font-mono text-slate-400">↓{formatNetBytes(container.network_rx)} ↑{formatNetBytes(container.network_tx)}</p>
                     </div>
-                    <div className="space-y-1">
-                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Block I/O</p>
-                        <p className="text-sm font-mono text-slate-400">{container.disk_io || '0 B / 0 B'}</p>
+                    <div className="space-y-1 pt-2 border-t border-slate-100 dark:border-slate-800/60 mt-auto">
+                        <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Block I/O</p>
+                        <p className="text-xs font-mono text-slate-400">{container.disk_io || '0 B / 0 B'}</p>
                     </div>
                 </div>
               </GlassCard>
