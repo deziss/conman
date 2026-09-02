@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/url"
 	"conman-backend/internal/service"
 	"context"
 	"encoding/json"
@@ -1086,6 +1087,9 @@ func (h *AgentHandler) ProxyStreamExec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetURL := scrapeURLtoWS(agent.ScrapeURL) + "/api/exec?id=" + containerID
+	if shell := r.URL.Query().Get("shell"); shell != "" {
+		targetURL += "&shell=" + url.QueryEscape(shell)
+	}
 
 	agentConn, _, err := wsDialer.DialContext(r.Context(), targetURL, nil)
 	if err != nil {
