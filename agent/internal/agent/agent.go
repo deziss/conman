@@ -292,6 +292,8 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
     mux.HandleFunc("/api/containers/start", a.handleStartContainer)
     mux.HandleFunc("/api/containers/stop", a.handleStopContainer)
     mux.HandleFunc("/api/containers/restart", a.handleRestartContainer)
+    mux.HandleFunc("/api/containers/top", a.handleContainerTop)
+    mux.HandleFunc("/api/containers/processes", a.handleContainerTop)
     mux.HandleFunc("/api/containers/remove", a.handleRemoveContainer)
     mux.HandleFunc("/api/images/remove", a.handleRemoveImage)
     mux.HandleFunc("/api/networks/remove", a.handleRemoveNetwork)

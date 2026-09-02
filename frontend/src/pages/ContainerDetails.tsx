@@ -3,6 +3,7 @@ import { GlassCard } from '../components/ui/GlassCard';
 import { Terminal } from '../components/Terminal';
 import { FileBrowser } from '../components/FileBrowser';
 import { ContainerLogs } from '../components/ContainerLogs';
+import { ContainerProcesses } from '../components/ContainerProcesses';
 
 import { StatsChart } from '../components/StatsChart';
 import { 
@@ -546,7 +547,7 @@ export const ContainerDetails = () => {
 
             {/* Tabs */}
             <div className="flex space-x-1 bg-slate-200/60 dark:bg-white/5 p-1 rounded-lg w-fit border border-slate-200 dark:border-white/5">
-                {(['overview', 'logs', 'shell', 'files', 'config', 'networks', 'resources'] as const).map((tab) => (
+                {(['overview', 'logs', 'processes', 'shell', 'files', 'config', 'networks', 'resources'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -648,6 +649,18 @@ export const ContainerDetails = () => {
                   <ContainerLogs 
                     containerId={id || ''} 
                     agentId={currentHost?.id}
+                  />
+              </div>
+          )}
+
+          {/* Processes Tab */}
+          {activeTab === 'processes' && (
+              <div className="h-full">
+                  <ContainerProcesses 
+                    containerId={id || ''} 
+                    agentId={currentHost?.id}
+                    containerState={container.State?.Status || (container.State?.Running ? 'running' : 'stopped')}
+                    onStartContainer={() => handleAction('start')}
                   />
               </div>
           )}

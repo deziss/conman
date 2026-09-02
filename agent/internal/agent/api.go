@@ -1078,3 +1078,34 @@ func (a *Agent) handleRemoveStack(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 }
+
+// handleContainerTop returns running processes inside a container
+func (a *Agent) handleContainerTop(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing ID", http.StatusBadRequest)
+		return
+	}
+	psArgs := r.URL.Query().Get("ps_args")
+
+	var top container.ContainerTopOKBody
+	var err error
+
+	if psArgs != "" {
+		top, err = a.dockerClient().ContainerTop(context.Background(), id, []string{psArgs})
+	} else {
+		// Try standard -ef first, fallback to default if unsupported
+		top, err = a.dockerClient().ContainerTop(context.Background(), id, []string{"-ef"})
+		if err != nil {
+			top, err = a.dockerClient().ContainerTop(context.Background(), id, nil)
+		}
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(top)
+}

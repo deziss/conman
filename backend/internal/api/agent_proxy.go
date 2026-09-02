@@ -260,3 +260,9 @@ func (h *AgentHandler) ProxyPruneNetworks(w http.ResponseWriter, r *http.Request
 func (h *AgentHandler) ProxySystemPrune(w http.ResponseWriter, r *http.Request) {
     h.proxyRequest(w, r, "POST", "/api/system/prune")
 }
+
+func (h *AgentHandler) ProxyContainerTop(w http.ResponseWriter, r *http.Request) {
+    containerID := chi.URLParam(r, "containerId")
+    path := fmt.Sprintf("/api/containers/top?id=%s", url.QueryEscape(containerID))
+    h.proxyRequest(w, r, "GET", path)
+}
