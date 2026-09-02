@@ -212,7 +212,10 @@ export const Containers = () => {
               title: `${action.charAt(0).toUpperCase() + action.slice(1)} Container`,
               message: `Are you sure you want to ${action} this container? This action cannot be undone.`,
               isDestructive: true,
-              onConfirm: async () => executeAction(id, action)
+              onConfirm: async () => {
+                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                  executeAction(id, action);
+              }
           });
       } else {
           executeAction(id, action);

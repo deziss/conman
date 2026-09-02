@@ -181,6 +181,15 @@ func (a *Agent) handleListFiles(w http.ResponseWriter, r *http.Request) {
 
 	execIDResp, err := a.dockerClient().ContainerExecCreate(context.Background(), id, execConfig)
 	if err != nil {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "not running") || strings.Contains(errLower, "is not running") || strings.Contains(errLower, "no such container") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(container.ContainerTopOKBody{
+				Titles:    []string{"PID", "USER", "TIME", "COMMAND"},
+				Processes: [][]string{},
+			})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
