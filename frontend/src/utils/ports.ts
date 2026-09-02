@@ -125,8 +125,12 @@ export const parseContainerPorts = (ports: any[], hostObjOrIp?: any): FormattedP
 
   const targetHost = resolveHostAddress(hostObjOrIp);
   const results: FormattedPort[] = [];
+  const seenKeys = new Set<string>();
 
   ports.forEach((p) => {
+    let portObj: FormattedPort | null = null;
+    let key = '';
+
     if (typeof p === 'object' && p !== null) {
       const pub = p.PublicPort || p.public_port || p.publicPort;
       const priv = p.PrivatePort || p.private_port || p.privatePort;
@@ -134,21 +138,23 @@ export const parseContainerPorts = (ports: any[], hostObjOrIp?: any): FormattedP
       const ip = p.IP || p.ip || '';
 
       if (pub && priv) {
-        results.push({
+        key = `${pub}:${priv}/${type}`;
+        portObj = {
           publicPort: pub,
           privatePort: priv,
           type,
           ip,
           display: `${pub}:${priv}`,
           url: `http://${targetHost}:${pub}`
-        });
+        };
       } else if (priv) {
-        results.push({
+        key = `${priv}/${type}`;
+        portObj = {
           privatePort: priv,
           type,
           ip,
           display: `${priv}/${type}`
-        });
+        };
       }
     } else if (typeof p === 'string') {
       const arrowMatch = p.match(/(?:.*:)?(\d+)->(\d+)(?:\/(\w+))?/);
@@ -156,31 +162,39 @@ export const parseContainerPorts = (ports: any[], hostObjOrIp?: any): FormattedP
         const pub = arrowMatch[1];
         const priv = arrowMatch[2];
         const type = (arrowMatch[3] || 'tcp').toLowerCase();
-        results.push({
+        key = `${pub}:${priv}/${type}`;
+        portObj = {
           publicPort: pub,
           privatePort: priv,
           type,
           display: `${pub}:${priv}`,
           url: `http://${targetHost}:${pub}`
-        });
-        return;
+        };
+      } else {
+        const colonMatch = p.match(/(\d+):(\d+)/);
+        if (colonMatch) {
+          const pub = colonMatch[1];
+          const priv = colonMatch[2];
+          key = `${pub}:${priv}/tcp`;
+          portObj = {
+            publicPort: pub,
+            privatePort: priv,
+            type: 'tcp',
+            display: `${pub}:${priv}`,
+            url: `http://${targetHost}:${pub}`
+          };
+        } else {
+          key = p.trim();
+          portObj = {
+            display: p.trim()
+          };
+        }
       }
-      const colonMatch = p.match(/(\d+):(\d+)/);
-      if (colonMatch) {
-        const pub = colonMatch[1];
-        const priv = colonMatch[2];
-        results.push({
-          publicPort: pub,
-          privatePort: priv,
-          type: 'tcp',
-          display: `${pub}:${priv}`,
-          url: `http://${targetHost}:${pub}`
-        });
-        return;
-      }
-      results.push({
-        display: p
-      });
+    }
+
+    if (portObj && key && !seenKeys.has(key)) {
+      seenKeys.add(key);
+      results.push(portObj);
     }
   });
 
