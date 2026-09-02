@@ -77,12 +77,12 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
     };
 
     return (
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col bg-white dark:bg-slate-900">
             {/* Breadcrumb / Navigation Bar */}
-            <div className="flex items-center space-x-2 p-4 bg-slate-800/50 border-b border-white/5">
+            <div className="flex items-center space-x-2 p-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-white/5">
                 <button 
                     onClick={() => setPath('/')}
-                    className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                    className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors"
                     title="Go Home"
                 >
                     <HomeIcon className="w-5 h-5" />
@@ -90,12 +90,12 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                 <button 
                     onClick={handleUp}
                     disabled={createPath === '/'}
-                    className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Go Up"
                 >
                     <ArrowUturnLeftIcon className="w-5 h-5" />
                 </button>
-                <div className="px-3 py-1.5 bg-slate-900/50 rounded-lg text-sm font-mono text-slate-300 flex-1 truncate border border-white/5">
+                <div className="px-3 py-1.5 bg-slate-100 dark:bg-slate-900/50 rounded-lg text-sm font-mono text-slate-800 dark:text-slate-300 flex-1 truncate border border-slate-200 dark:border-white/5">
                     {createPath}
                 </div>
             </div>
@@ -107,7 +107,7 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                 ) : (
                     <div className="grid grid-cols-1 gap-2">
                          {/* Header */}
-                         <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-slate-500 border-b border-white/5 uppercase tracking-wider">
+                         <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-semibold text-slate-500 border-b border-slate-200 dark:border-white/5 uppercase tracking-wider">
                              <div className="col-span-5">Name</div>
                              <div className="col-span-1 text-right">Size</div>
                              <div className="col-span-2 text-center">Permissions</div>
@@ -116,7 +116,7 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                          </div>
 
                         {files.length === 0 && (
-                            <div className="text-center text-slate-500 mt-10 p-10 bg-slate-800/30 rounded-lg border border-white/5 border-dashed">
+                            <div className="text-center text-slate-500 mt-10 p-10 bg-slate-50 dark:bg-slate-800/30 rounded-lg border border-slate-200 dark:border-white/5 border-dashed">
                                 Directory is empty
                             </div>
                         )}
@@ -127,15 +127,15 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                                 onClick={() => handleNavigate(file)}
                                 className={clsx(
                                     "grid grid-cols-12 gap-4 px-4 py-3 rounded-lg items-center transition-colors cursor-pointer border border-transparent",
-                                    "hover:bg-slate-800/50 hover:border-white/5",
-                                    file.is_dir ? "text-slate-200" : "text-slate-400"
+                                    "hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:border-slate-200 dark:hover:border-white/5",
+                                    file.is_dir ? "text-slate-900 dark:text-slate-200 font-medium" : "text-slate-700 dark:text-slate-400"
                                 )}
                             >
                                 <div className="col-span-5 flex items-center space-x-3 overflow-hidden">
                                     {file.is_dir ? (
-                                        <FolderIcon className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                                        <FolderIcon className="w-5 h-5 text-amber-500 flex-shrink-0" />
                                     ) : (
-                                        <DocumentIcon className="w-5 h-5 text-slate-500 flex-shrink-0" />
+                                        <DocumentIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
                                     )}
                                     <span className="truncate font-mono text-sm">{file.name}</span>
                                 </div>
@@ -157,7 +157,7 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
                                                 const url = `${api.defaults.baseURL}/agents/${targetAgentId}/containers/${containerId}/files/download?path=${encodeURIComponent(path)}`;
                                                 window.location.href = url;
                                             }}
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-400 hover:text-indigo-400 bg-slate-800/50 hover:bg-white/10 border border-white/5 rounded-md transition-colors"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/5 rounded-md transition-colors"
                                             title="Download"
                                         >
                                             <ArrowDownTrayIcon className="w-3.5 h-3.5" />
