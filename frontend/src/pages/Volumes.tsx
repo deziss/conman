@@ -146,6 +146,7 @@ export const Volumes = () => {
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
+  const [deletingVolumeIds, setDeletingVolumeIds] = useState<Record<string, boolean>>({});
 
   const handleRemoveVolume = (name: string) => {
       setConfirmDelete({ isOpen: true, id: name });
@@ -153,22 +154,39 @@ export const Volumes = () => {
 
   const handlePruneVolumes = async () => {
       if (!currentHost) return;
+      const toastId = toast.loading('Pruning unused volumes...');
       try {
           const { data } = await api.post(`/agents/${currentHost.id}/volumes/prune`);
           const count = data?.volumes_deleted?.length || 0;
-          toast.success(`Pruned ${count} unused volumes`);
+          toast.success(`Pruned ${count} unused volumes`, { id: toastId });
           fetchVolumes(true);
-      } catch { toast.error('Failed to prune volumes'); }
+      } catch { 
+          toast.error('Failed to prune volumes', { id: toastId }); 
+      }
   };
 
   const executeRemoveVolume = async () => {
+      const volName = confirmDelete.id;
+      if (!currentHost || !volName) return;
+
+      setDeletingVolumeIds(prev => ({ ...prev, [volName]: true }));
+      setConfirmDelete({ isOpen: false, id: '' });
+
+      const toastId = toast.loading('Removing volume...');
       try {
-          if (!currentHost) return;
-          await api.delete(`/agents/${currentHost.id}/volumes/${confirmDelete.id}`);
-          toast.success('Volume removed');
+          await api.delete(`/agents/${currentHost.id}/volumes/${encodeURIComponent(volName)}`);
+          toast.success('Volume removed', { id: toastId });
+          setVolumes(prev => prev.filter(v => v.name !== volName));
           fetchVolumes(true);
-      } catch (error) {
-          toast.error('Failed to remove volume. Ensure it is not in use.');
+      } catch (error: any) {
+          const errMsg = error.response?.data?.error || error.response?.data || error.message || 'Failed to remove volume. Ensure it is not in use.';
+          toast.error(`Failed to remove volume: ${errMsg}`, { id: toastId });
+      } finally {
+          setDeletingVolumeIds(prev => {
+              const next = { ...prev };
+              delete next[volName];
+              return next;
+          });
       }
   };
 

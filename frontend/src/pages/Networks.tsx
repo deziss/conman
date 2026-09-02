@@ -155,6 +155,7 @@ export const Networks = () => {
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
+  const [deletingNetworkIds, setDeletingNetworkIds] = useState<Record<string, boolean>>({});
 
   const handleRemoveNetwork = (id: string) => {
       setConfirmDelete({ isOpen: true, id });
@@ -162,22 +163,39 @@ export const Networks = () => {
 
   const handlePruneNetworks = async () => {
       if (!currentHost) return;
+      const toastId = toast.loading('Pruning unused networks...');
       try {
           const { data } = await api.post(`/agents/${currentHost.id}/networks/prune`);
           const count = data?.networks_deleted?.length || 0;
-          toast.success(`Pruned ${count} unused networks`);
+          toast.success(`Pruned ${count} unused networks`, { id: toastId });
           fetchNetworks();
-      } catch { toast.error('Failed to prune networks'); }
+      } catch { 
+          toast.error('Failed to prune networks', { id: toastId }); 
+      }
   };
 
   const executeRemoveNetwork = async () => {
+      const networkId = confirmDelete.id;
+      if (!currentHost || !networkId) return;
+
+      setDeletingNetworkIds(prev => ({ ...prev, [networkId]: true }));
+      setConfirmDelete({ isOpen: false, id: '' });
+
+      const toastId = toast.loading('Removing network...');
       try {
-          if (!currentHost) return;
-          await api.delete(`/agents/${currentHost.id}/networks/${confirmDelete.id}`);
-          toast.success('Network removed');
+          await api.delete(`/agents/${currentHost.id}/networks/${encodeURIComponent(networkId)}`);
+          toast.success('Network removed', { id: toastId });
+          setNetworks(prev => prev.filter(n => n.id !== networkId));
           fetchNetworks();
-      } catch (error) {
-          toast.error('Failed to remove network. Ensure no containers are using it.');
+      } catch (error: any) {
+          const errMsg = error.response?.data?.error || error.response?.data || error.message || 'Failed to remove network. Ensure no containers are using it.';
+          toast.error(`Failed to remove network: ${errMsg}`, { id: toastId });
+      } finally {
+          setDeletingNetworkIds(prev => {
+              const next = { ...prev };
+              delete next[networkId];
+              return next;
+          });
       }
   };
 

@@ -123,6 +123,8 @@ export const Images = () => {
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
+  const [deletingImageIds, setDeletingImageIds] = useState<Record<string, boolean>>({});
+  const [isPruning, setIsPruning] = useState(false);
 
   const handleRemoveImage = (id: string) => {
       setConfirmDelete({ isOpen: true, id });
@@ -130,23 +132,46 @@ export const Images = () => {
 
   const handlePruneImages = async () => {
       if (!currentHost) return;
+      setIsPruning(true);
+      const toastId = toast.loading('Pruning unused images...');
       try {
           const { data } = await api.post(`/agents/${currentHost.id}/images/prune`);
           const space = data?.space_reclaimed || 0;
-          toast.success(`Pruned unused images, reclaimed ${(space / 1024 / 1024).toFixed(1)} MB`);
+          toast.success(`Pruned unused images, reclaimed ${(space / 1024 / 1024).toFixed(1)} MB`, { id: toastId });
           fetchImages();
-      } catch { toast.error('Failed to prune images'); }
+      } catch { 
+          toast.error('Failed to prune images', { id: toastId }); 
+      } finally {
+          setIsPruning(false);
+      }
   };
 
   const executeRemoveImage = async () => {
+      const imageId = confirmDelete.id;
+      if (!currentHost || !imageId) return;
+
+      // Mark this specific image as deleting immediately for visual feedback
+      setDeletingImageIds(prev => ({ ...prev, [imageId]: true }));
+      setConfirmDelete({ isOpen: false, id: '' });
+
+      const toastId = toast.loading('Removing image...');
       try {
-          if (!currentHost) return;
-          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(confirmDelete.id)}`);
-          toast.success('Image removed');
+          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}`);
+          toast.success('Image removed successfully', { id: toastId });
+          // Optimistically update list for snappy UI
+          setImages(prev => prev.filter(img => img.id !== imageId));
           fetchImages();
       } catch (error: any) {
           console.error("Remove image failed", error);
-          toast.error(`Failed to remove image: ${error.response?.data || error.message}`);
+          const rawMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data || error.message || 'Failed to remove image';
+          const errMsg = typeof rawMsg === 'object' ? JSON.stringify(rawMsg) : String(rawMsg);
+          toast.error(`Failed to remove image: ${errMsg}`, { id: toastId });
+      } finally {
+          setDeletingImageIds(prev => {
+              const next = { ...prev };
+              delete next[imageId];
+              return next;
+          });
       }
   };
 
@@ -522,10 +547,34 @@ export const Images = () => {
                   ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' 
                   : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5'
               }`}>
-                {paginatedImages.map((img) => (
-                    <GlassCard key={img.id} className="p-3 flex flex-col justify-between group h-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors relative overflow-hidden">
+                {paginatedImages.map((img) => {
+                    const isDeleting = !!deletingImageIds[img.id];
+                    return (
+                    <GlassCard 
+                        key={img.id} 
+                        className={clsx(
+                            "p-3 flex flex-col justify-between group h-full transition-all duration-300 relative overflow-hidden",
+                            isDeleting 
+                                ? "opacity-75 scale-[0.98] border-rose-500/50 dark:border-rose-500/50 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/40" 
+                                : "hover:bg-black/5 dark:hover:bg-white/5"
+                        )}
+                    >
+                         {/* Deleting animation overlay */}
+                         {isDeleting && (
+                             <div className="absolute inset-0 bg-slate-900/85 backdrop-blur-[2px] z-30 flex flex-col items-center justify-center gap-2 p-3 text-center animate-fadeIn rounded-2xl">
+                                 <div className="relative flex items-center justify-center">
+                                     <div className="w-9 h-9 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />
+                                     <TrashIcon className="w-4 h-4 text-rose-400 absolute animate-pulse" />
+                                 </div>
+                                 <div>
+                                     <span className="text-xs font-semibold text-rose-400 block tracking-wide">Removing Image</span>
+                                     <span className="text-[10px] text-slate-400 font-mono block mt-0.5 animate-pulse">Untagging layers...</span>
+                                 </div>
+                             </div>
+                         )}
+
                          {/* "In use" dot — top-left corner */}
-                         {img.status === 'used' && (
+                         {img.status === 'used' && !isDeleting && (
                              <span className="absolute top-2 left-2 flex h-2.5 w-2.5" title="Used by container">
                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
@@ -547,13 +596,28 @@ export const Images = () => {
                             <div className="flex flex-shrink-0">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
-                                    disabled={updateStatuses[img.id]?.checking}
-                                    className={clsx("p-1 rounded transition-colors", updateStatuses[img.id]?.checking ? "text-blue-400" : "text-slate-400 hover:text-indigo-500")}
+                                    disabled={isDeleting || updateStatuses[img.id]?.checking}
+                                    className={clsx("p-1 rounded transition-colors", updateStatuses[img.id]?.checking ? "text-blue-400" : "text-slate-400 hover:text-indigo-500", (isDeleting || updateStatuses[img.id]?.checking) && "opacity-40 cursor-not-allowed")}
                                     title="Check for Updates"
                                 ><MagnifyingGlassIcon className={clsx("w-3.5 h-3.5", updateStatuses[img.id]?.checking && "animate-pulse")} /></button>
-                                <button onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }} className="p-1 text-slate-400 hover:text-emerald-500 rounded transition-colors" title="Pull Latest"><ArrowUpCircleIcon className="w-3.5 h-3.5" /></button>
-                                <button onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }} className="p-1 text-slate-400 hover:text-cyan-500 rounded transition-colors" title="Inspect"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                <button onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors" title="Remove"><TrashIcon className="w-3.5 h-3.5" /></button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }} 
+                                    disabled={isDeleting}
+                                    className={clsx("p-1 text-slate-400 hover:text-emerald-500 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
+                                    title="Pull Latest"
+                                ><ArrowUpCircleIcon className="w-3.5 h-3.5" /></button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }} 
+                                    disabled={isDeleting}
+                                    className={clsx("p-1 text-slate-400 hover:text-cyan-500 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
+                                    title="Inspect"
+                                ><EyeIcon className="w-3.5 h-3.5" /></button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} 
+                                    disabled={isDeleting}
+                                    className={clsx("p-1 text-slate-400 hover:text-rose-500 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
+                                    title="Remove"
+                                ><TrashIcon className="w-3.5 h-3.5" /></button>
                             </div>
                          </div>
                             
@@ -572,7 +636,8 @@ export const Images = () => {
                                 </div>
                             </div>
                     </GlassCard>
-                ))
+                );
+                })
             }
             </div>
         )}
