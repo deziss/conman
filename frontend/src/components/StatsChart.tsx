@@ -17,17 +17,18 @@ export const StatsChart = ({ data, color = '#22d3ee', unit = '', label = '' }: S
   const displayValue = data.length > 0
     ? `${data[data.length - 1].value.toFixed(2)}${unit ? ' ' + unit : ''}`
     : '-';
+  const chartHeight = label ? 120 : 140;
 
   return (
-    <div>
+    <div className="w-full min-w-0">
       {label && (
         <div className="flex justify-between items-center mb-2 px-1">
            <span className="text-xs font-mono text-slate-500 uppercase">{label}</span>
-           <span className="text-sm font-bold text-slate-200 font-mono">{displayValue}</span>
+           <span className="text-sm font-bold text-slate-700 dark:text-slate-200 font-mono">{displayValue}</span>
         </div>
       )}
-      <div style={{ width: '100%', height: label ? 120 : 140 }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div style={{ width: '100%', minWidth: 0, height: chartHeight }}>
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={chartHeight}>
           <AreaChart data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
