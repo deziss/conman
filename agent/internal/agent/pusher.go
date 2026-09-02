@@ -142,13 +142,22 @@ func (a *Agent) runEventWatcher(ctx context.Context) {
 				targetName = event.Actor.ID
 			}
 
+			var eventTs time.Time
+			if event.TimeNano > 0 {
+				eventTs = time.Unix(0, event.TimeNano)
+			} else if event.Time > 0 {
+				eventTs = time.Unix(event.Time, 0)
+			} else {
+				eventTs = time.Now()
+			}
+
 			containerEvent := protocol.ContainerEvent{
 				AgentID:       a.cfg.AgentID,
 				Type:          string(event.Type),
 				ContainerID:   event.Actor.ID,
 				ContainerName: targetName,
 				Action:        string(event.Action),
-				Timestamp:     time.Unix(event.Time, event.TimeNano),
+				Timestamp:     eventTs,
 				Attributes:    event.Actor.Attributes,
 			}
 

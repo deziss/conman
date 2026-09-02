@@ -707,11 +707,20 @@ func (d *DockerProvider) WatchEvents(ctx context.Context) (<-chan protocol.Conta
 				return
 			case event := <-dockerEvents:
 				if event.Type == "container" {
+					var eventTs time.Time
+					if event.TimeNano > 0 {
+						eventTs = time.Unix(0, event.TimeNano)
+					} else if event.Time > 0 {
+						eventTs = time.Unix(event.Time, 0)
+					} else {
+						eventTs = time.Now()
+					}
+
 					eventsCh <- protocol.ContainerEvent{
 						ContainerID:   event.Actor.ID,
 						ContainerName: event.Actor.Attributes["name"],
 						Action:        string(event.Action),
-						Timestamp:     time.Unix(event.Time, event.TimeNano),
+						Timestamp:     eventTs,
 						Attributes:    event.Actor.Attributes,
 					}
 				}

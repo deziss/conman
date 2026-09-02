@@ -27,6 +27,16 @@ interface ActivityTimelineProps {
   compact?: boolean;
 }
 
+const formatActivityTime = (rawTs: string | Date) => {
+  const d = new Date(rawTs);
+  const dateObj = (isNaN(d.getTime()) || d.getFullYear() > 2050 || d.getFullYear() < 2000) ? new Date() : d;
+  return {
+    time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    date: dateObj.toLocaleDateString([], { year: 'numeric', month: 'numeric', day: 'numeric' }),
+    full: dateObj.toLocaleString(),
+  };
+};
+
 export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({
   agentId,
   targetName,
@@ -294,15 +304,22 @@ export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({
                       >
                         {/* Time */}
                         <td className="px-4 py-3 whitespace-nowrap font-mono text-[11px] text-slate-500">
-                          <div className="flex items-center gap-1.5">
-                            <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
-                            <span title={new Date(act.timestamp).toLocaleString()}>
-                              {new Date(act.timestamp).toLocaleTimeString()}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">
-                            {new Date(act.timestamp).toLocaleDateString()}
-                          </span>
+                          {(() => {
+                            const formatted = formatActivityTime(act.timestamp);
+                            return (
+                              <>
+                                <div className="flex items-center gap-1.5">
+                                  <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
+                                  <span title={formatted.full}>
+                                    {formatted.time}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">
+                                  {formatted.date}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </td>
 
                         {/* Severity & Action */}
@@ -474,7 +491,7 @@ export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-sans mb-1">Timestamp</span>
                 <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-white/5 text-slate-700 dark:text-slate-300">
-                  {new Date(inspectActivity.timestamp).toISOString()}
+                  {formatActivityTime(inspectActivity.timestamp).full}
                 </div>
               </div>
             </div>

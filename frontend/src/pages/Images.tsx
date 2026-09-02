@@ -351,11 +351,12 @@ export const Images = () => {
 
   const formatTime = (timestamp: number) => {
       if (!timestamp) return 'Unknown';
-      const date = new Date(timestamp * 1000);
+      const ms = timestamp > 1e11 ? timestamp : timestamp * 1000;
+      const date = new Date(ms);
       const now = new Date();
       const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 3600 * 24));
       
-      if (diffDays === 0) return 'Today';
+      if (diffDays <= 0) return 'Today';
       if (diffDays === 1) return 'Yesterday';
       if (diffDays < 7) return `${diffDays} days ago`;
       if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
