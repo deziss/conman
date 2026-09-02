@@ -1,3 +1,4 @@
+import { isConmanSystemContainer } from '../utils/systemProtection';
 import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, ServerStackIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
@@ -142,6 +143,11 @@ export const Containers = () => {
   };
 
   const handleActionClick = (id: string, action: 'start' | 'stop' | 'remove') => {
+      const targetCont = containers.find(c => c.id === id);
+      if (action === 'remove' && targetCont && isConmanSystemContainer(targetCont.name, targetCont.image)) {
+          toast.error('Cannot remove Conman core system container from within the panel.');
+          return;
+      }
       if (action === 'remove' || action === 'stop') {
           setConfirmModal({
               isOpen: true,
@@ -280,11 +286,19 @@ export const Containers = () => {
                 <div className="flex items-start space-x-3">
                     <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500`}></div>
                     <div>
-                        <Link to={'/containers/' + container.id}>
-                            <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[200px]" title={container.name.replace(/^\//, '')}>
-                                {container.name.replace(/^\//, '')}
-                            </h3>
-                        </Link>
+                        <div className="flex items-center gap-2">
+                            <Link to={'/containers/' + container.id}>
+                                <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[200px]" title={container.name.replace(/^\//, '')}>
+                                    {container.name.replace(/^\//, '')}
+                                </h3>
+                            </Link>
+                            {isConmanSystemContainer(container.name, container.image) && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Container">
+                                    <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                    System
+                                </span>
+                            )}
+                        </div>
                         <div className="flex items-center gap-2 mt-1">
                              <p className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-700/50 px-1.5 py-0.5 rounded">{container.image.substring(0, 25)}{container.image.length > 25 ? '...' : ''}</p>
                              <p className="text-xs text-slate-400">{container.status}</p>
@@ -301,8 +315,14 @@ export const Containers = () => {
                     </button>
                     <button 
                         onClick={() => handleActionClick(container.id, 'remove')}
-                        className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
-                        title="Remove"
+                        disabled={isConmanSystemContainer(container.name, container.image)}
+                        className={clsx(
+                            "p-1.5 rounded-lg transition-colors",
+                            isConmanSystemContainer(container.name, container.image)
+                                ? "opacity-25 cursor-not-allowed text-slate-400"
+                                : "hover:bg-red-500/10 text-red-500"
+                        )}
+                        title={isConmanSystemContainer(container.name, container.image) ? "Protected: Conman core system container cannot be removed from itself" : "Remove"}
                     >
                         <TrashIcon className="w-5 h-5" />
                     </button>

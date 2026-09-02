@@ -600,13 +600,56 @@ func (a *Agent) handleRestartContainer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleRemoveContainer removes a container
+func isConmanProtectedContainer(name string, imageStr string) bool {
+	cleanName := strings.TrimPrefix(strings.ToLower(name), "/")
+	if strings.HasPrefix(cleanName, "conman-") || cleanName == "conman" || strings.HasPrefix(cleanName, "conman_") {
+		return true
+	}
+	cleanImg := strings.ToLower(imageStr)
+	if strings.Contains(cleanImg, "conman-server") ||
+		strings.Contains(cleanImg, "conman-agent") ||
+		strings.Contains(cleanImg, "conman-backend") ||
+		strings.Contains(cleanImg, "conman-frontend") ||
+		strings.Contains(cleanImg, "conman-local-agent") ||
+		strings.HasPrefix(cleanImg, "conman:") ||
+		strings.HasPrefix(cleanImg, "conman/") {
+		return true
+	}
+	return false
+}
+
+func isConmanProtectedImage(id string, tags []string) bool {
+	for _, tag := range tags {
+		cleanTag := strings.ToLower(tag)
+		if strings.HasPrefix(cleanTag, "conman-server") ||
+			strings.HasPrefix(cleanTag, "conman-agent") ||
+			strings.HasPrefix(cleanTag, "conman-backend") ||
+			strings.HasPrefix(cleanTag, "conman-frontend") ||
+			strings.HasPrefix(cleanTag, "conman-local-agent") ||
+			strings.HasPrefix(cleanTag, "conman:") ||
+			strings.HasPrefix(cleanTag, "conman/") ||
+			cleanTag == "conman" {
+			return true
+		}
+	}
+	cleanID := strings.ToLower(id)
+	return strings.Contains(cleanID, "conman-server") || strings.Contains(cleanID, "conman-agent")
+}
+
+// handleRemoveContainer removes a container with system protection
 func (a *Agent) handleRemoveContainer(w http.ResponseWriter, r *http.Request) {
-    // Agent endpoints use query params because we use standard http.ServeMux
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing ID", http.StatusBadRequest)
 		return
+	}
+
+	// Protect Conman's own containers from self-destruction
+	if info, err := a.dockerClient().ContainerInspect(context.Background(), id); err == nil {
+		if isConmanProtectedContainer(info.Name, info.Config.Image) {
+			http.Error(w, "Cannot remove Conman core system container from within the panel", http.StatusForbidden)
+			return
+		}
 	}
 
 	// Force remove? Usually good for UI.
@@ -619,12 +662,20 @@ func (a *Agent) handleRemoveContainer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleRemoveImage removes an image
+// handleRemoveImage removes an image with system protection
 func (a *Agent) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing ID", http.StatusBadRequest)
 		return
+	}
+
+	// Protect Conman's own images from removal
+	if info, _, err := a.dockerClient().ImageInspectWithRaw(context.Background(), id); err == nil {
+		if isConmanProtectedImage(info.ID, info.RepoTags) {
+			http.Error(w, "Cannot remove Conman core system image from within the panel", http.StatusForbidden)
+			return
+		}
 	}
 
 	_, err := a.dockerClient().ImageRemove(context.Background(), id, image.RemoveOptions{Force: true})

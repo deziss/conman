@@ -1,3 +1,4 @@
+import { isConmanSystemContainer } from '../utils/systemProtection';
 import { useParams, Link } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Terminal } from '../components/Terminal';
@@ -506,7 +507,7 @@ export const ContainerDetails = () => {
                         <ArrowLeftIcon className="w-5 h-5" />
                     </button>
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center space-x-3">
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center flex-wrap gap-2.5">
                             <span>{container.Name}</span>
                             <span className={clsx(
                                 "px-2 py-0.5 text-xs font-medium rounded uppercase",
@@ -514,6 +515,12 @@ export const ContainerDetails = () => {
                             )}>
                                 {container.State.Status}
                             </span>
+                            {isConmanSystemContainer(container.Name, container.Image) && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-1" title="Protected: Conman System Container">
+                                    <ShieldCheckIcon className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                                    Protected System Container
+                                </span>
+                            )}
                         </h1>
                         <div className="flex items-center space-x-4 text-xs text-slate-500 mt-1">
                             <span className="font-mono">{container.Id.substring(0, 12)}</span>
@@ -539,7 +546,17 @@ export const ContainerDetails = () => {
                             <PlayIcon className="w-5 h-5" />
                         </button>
                     )}
-                    <button onClick={() => handleAction('remove')} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 hover:text-rose-400" title="Remove">
+                    <button 
+                        onClick={() => handleAction('remove')} 
+                        disabled={isConmanSystemContainer(container.Name, container.Image)}
+                        className={clsx(
+                            "p-2 rounded-lg transition-colors",
+                            isConmanSystemContainer(container.Name, container.Image)
+                                ? "opacity-25 cursor-not-allowed text-slate-400"
+                                : "hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-rose-400"
+                        )} 
+                        title={isConmanSystemContainer(container.Name, container.Image) ? "Protected: Conman core system container cannot be removed from itself" : "Remove"}
+                    >
                         <TrashIcon className="w-5 h-5" />
                     </button>
                 </div>
