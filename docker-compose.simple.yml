@@ -14,6 +14,8 @@ services:
     restart: unless-stopped
     ports:
       - "5173:5173"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - conman_data:/app/data
@@ -45,10 +47,14 @@ services:
     image: conman-agent:latest
     container_name: conman-local-agent
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /tmp/conman-stacks:/tmp/conman-stacks
+      - conman_agent_data:/var/lib/conman-agent
     environment:
+      - AGENT_ID=local-agent
       - AGENT_NAME=Local Agent
       - CONMAN_SERVER_URL=http://conman-server:5173
       - CONMAN_SERVER_TOKEN=${AGENT_TOKEN:-conman-dev-token}
@@ -62,7 +68,6 @@ services:
         condition: service_started
     networks:
       - cm-net
-
 
   # PostgreSQL (optional - set DATABASE_DRIVER=postgres to use)
   conman-db:
@@ -87,6 +92,7 @@ services:
 
 volumes:
   conman_data:
+  conman_agent_data:
   conman_pgdata:
 
 networks:

@@ -40,8 +40,11 @@ services:
   # Local Agent (for testing multi-host architecture)
   agent:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.agent
+      context: ./agent
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
