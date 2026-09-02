@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/url"
 	"io"
 	"log"
 	"net/http"
@@ -86,25 +87,25 @@ func (h *AgentHandler) ProxyStartContainer(w http.ResponseWriter, r *http.Reques
     // Actually, simple way: Frontend calls /agents/{id}/containers/{cid}/start
     // Agent expects /api/containers/start?id={cid}
     
-    path := fmt.Sprintf("/api/containers/start?id=%s", containerID)
+    path := fmt.Sprintf("/api/containers/start?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "POST", path)
 }
 
 func (h *AgentHandler) ProxyStopContainer(w http.ResponseWriter, r *http.Request) {
     containerID := chi.URLParam(r, "containerId")
-    path := fmt.Sprintf("/api/containers/stop?id=%s", containerID)
+    path := fmt.Sprintf("/api/containers/stop?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "POST", path)
 }
 
 func (h *AgentHandler) ProxyRestartContainer(w http.ResponseWriter, r *http.Request) {
     containerID := chi.URLParam(r, "containerId")
-    path := fmt.Sprintf("/api/containers/restart?id=%s", containerID)
+    path := fmt.Sprintf("/api/containers/restart?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "POST", path)
 }
 
 func (h *AgentHandler) ProxyRemoveContainer(w http.ResponseWriter, r *http.Request) {
     containerID := chi.URLParam(r, "containerId")
-    path := fmt.Sprintf("/api/containers/remove?id=%s", containerID)
+    path := fmt.Sprintf("/api/containers/remove?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "DELETE", path)
 }
 
@@ -117,13 +118,13 @@ func (h *AgentHandler) ProxyPullImage(w http.ResponseWriter, r *http.Request) {
 
 func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) {
     imageID := chi.URLParam(r, "imageId") // Route will be /agents/{id}/images/{imageId}
-    path := fmt.Sprintf("/api/images/remove?id=%s", imageID)
+    path := fmt.Sprintf("/api/images/remove?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "DELETE", path)
 }
 
 func (h *AgentHandler) ProxyCheckImageUpdate(w http.ResponseWriter, r *http.Request) {
     imageID := chi.URLParam(r, "imageId")
-    path := fmt.Sprintf("/api/images/check-update?id=%s", imageID)
+    path := fmt.Sprintf("/api/images/check-update?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "GET", path)
 }
 
@@ -161,7 +162,7 @@ func (h *AgentHandler) ProxyCreateVolume(w http.ResponseWriter, r *http.Request)
 
 func (h *AgentHandler) ProxyRemoveVolume(w http.ResponseWriter, r *http.Request) {
     name := chi.URLParam(r, "name")
-    path := fmt.Sprintf("/api/volumes/remove?name=%s", name)
+    path := fmt.Sprintf("/api/volumes/remove?name=%s", url.QueryEscape(name))
     h.proxyRequest(w, r, "DELETE", path)
 }
 
@@ -179,7 +180,7 @@ func (h *AgentHandler) ProxyCreateNetwork(w http.ResponseWriter, r *http.Request
 
 func (h *AgentHandler) ProxyRemoveNetwork(w http.ResponseWriter, r *http.Request) {
     networkID := chi.URLParam(r, "networkId")
-    path := fmt.Sprintf("/api/networks/remove?id=%s", networkID)
+    path := fmt.Sprintf("/api/networks/remove?id=%s", url.QueryEscape(networkID))
     h.proxyRequest(w, r, "DELETE", path)
 }
 
@@ -213,25 +214,25 @@ func (h *AgentHandler) ProxyDownloadFile(w http.ResponseWriter, r *http.Request)
 
 func (h *AgentHandler) ProxyInspectContainer(w http.ResponseWriter, r *http.Request) {
     containerID := chi.URLParam(r, "containerId")
-    path := fmt.Sprintf("/api/containers/inspect?id=%s", containerID)
+    path := fmt.Sprintf("/api/containers/inspect?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "GET", path)
 }
 
 func (h *AgentHandler) ProxyInspectImage(w http.ResponseWriter, r *http.Request) {
     imageID := chi.URLParam(r, "imageId")
-    path := fmt.Sprintf("/api/images/inspect?id=%s", imageID)
+    path := fmt.Sprintf("/api/images/inspect?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "GET", path)
 }
 
 func (h *AgentHandler) ProxyInspectNetwork(w http.ResponseWriter, r *http.Request) {
     networkID := chi.URLParam(r, "networkId")
-    path := fmt.Sprintf("/api/networks/inspect?id=%s", networkID)
+    path := fmt.Sprintf("/api/networks/inspect?id=%s", url.QueryEscape(networkID))
     h.proxyRequest(w, r, "GET", path)
 }
 
 func (h *AgentHandler) ProxyInspectVolume(w http.ResponseWriter, r *http.Request) {
     name := chi.URLParam(r, "name")
-    path := fmt.Sprintf("/api/volumes/inspect?name=%s", name)
+    path := fmt.Sprintf("/api/volumes/inspect?name=%s", url.QueryEscape(name))
     h.proxyRequest(w, r, "GET", path)
 }
 

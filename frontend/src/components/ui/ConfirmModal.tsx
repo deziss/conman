@@ -12,6 +12,7 @@ interface ConfirmModalProps {
   confirmText?: string;
   cancelText?: string;
   isDestructive?: boolean;
+  isLoading?: boolean;
 }
 
 export const ConfirmModal = ({
@@ -23,10 +24,11 @@ export const ConfirmModal = ({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   isDestructive = false,
+  isLoading = false,
 }: ConfirmModalProps) => {
   return (
     <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog as="div" className="relative z-50" onClose={() => { if (!isLoading) onClose(); }}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -72,22 +74,24 @@ export const ConfirmModal = ({
                   <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
                     <button
                       type="button"
+                      disabled={isLoading}
                       className={clsx(
-                        "inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm sm:w-auto transition-all",
+                        "inline-flex w-full items-center justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm sm:w-auto transition-all disabled:opacity-60 disabled:cursor-not-allowed",
                         isDestructive 
                           ? "bg-red-600 hover:bg-red-500 shadow-red-500/20" 
                           : "bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/20"
                       )}
-                      onClick={() => {
-                        onConfirm();
-                        onClose();
-                      }}
+                      onClick={onConfirm}
                     >
-                      {confirmText}
+                      {isLoading && (
+                        <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
+                      )}
+                      {isLoading ? 'Removing...' : confirmText}
                     </button>
                     <button
                       type="button"
-                      className="mt-3 inline-flex w-full justify-center rounded-md bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-white/10 hover:bg-slate-200 dark:hover:bg-white/10 sm:mt-0 sm:w-auto transition-all"
+                      disabled={isLoading}
+                      className="mt-3 inline-flex w-full justify-center rounded-md bg-slate-100 dark:bg-white/5 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-white/10 hover:bg-slate-200 dark:hover:bg-white/10 sm:mt-0 sm:w-auto transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={onClose}
                     >
                       {cancelText}
