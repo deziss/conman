@@ -255,6 +255,10 @@ export const Images = () => {
           toast.error('Cannot remove Conman core system image from within the panel.');
           return;
       }
+      if (targetImg && targetImg.status === 'used') {
+          toast.error('Cannot remove image: It is currently in use by one or more active containers. Stop and remove the containers first.');
+          return;
+      }
       setConfirmDelete({ isOpen: true, id });
   };
 
@@ -311,9 +315,10 @@ export const Images = () => {
           toast.success(`Removed ${displayName}`);
           setImages(prev => prev.filter(img => img.id !== id));
       } catch (error: any) {
-          const errMsg = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to remove image';
+          const rawErr = error.response?.data?.error || error.response?.data?.message || (typeof error.response?.data === 'string' ? error.response?.data : null) || error.message || 'Failed to remove image';
+          const errMsg = typeof rawErr === 'string' ? rawErr : JSON.stringify(rawErr);
           task.fail(errMsg);
-          toast.error(`Error: ${errMsg}`);
+          toast.error(`Cannot remove ${displayName}: ${errMsg}`);
       } finally {
           setDeletingImageIds(prev => {
               const next = { ...prev };
@@ -845,20 +850,26 @@ export const Images = () => {
                                       </div>
 
                                       <div className="py-1">
-                                        <Menu.Item disabled={isDeleting || isSystem}>
+                                        <Menu.Item disabled={isDeleting || isSystem || img.status === 'used'}>
                                           {({ active }) => (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
-                                              disabled={isDeleting || isSystem}
+                                              disabled={isDeleting || isSystem || img.status === 'used'}
                                               className={clsx(
                                                 "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors",
-                                                isSystem 
+                                                (isSystem || img.status === 'used')
                                                   ? "opacity-30 cursor-not-allowed text-slate-400" 
                                                   : active 
                                                     ? "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400" 
                                                     : "text-rose-600 dark:text-rose-400"
                                               )}
-                                              title={isSystem ? "Protected: Conman core system image cannot be removed" : "Remove Image"}
+                                              title={
+                                                isSystem 
+                                                  ? "Protected: Conman core system image cannot be removed" 
+                                                  : img.status === 'used' 
+                                                    ? "In use: Image is currently being used by running container(s)" 
+                                                    : "Remove Image"
+                                              }
                                             >
                                               <TrashIcon className="w-3.5 h-3.5 text-rose-500" />
                                               <span>Remove Image</span>

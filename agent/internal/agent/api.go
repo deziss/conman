@@ -712,21 +712,31 @@ func (a *Agent) handleRemoveContainer(w http.ResponseWriter, r *http.Request) {
 func (a *Agent) handleRemoveImage(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
-		http.Error(w, "Missing ID", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Missing image ID"})
 		return
 	}
 
 	// Protect Conman's own images from removal
 	if info, _, err := a.dockerClient().ImageInspectWithRaw(context.Background(), id); err == nil {
 		if isConmanProtectedImage(info.ID, info.RepoTags) {
-			http.Error(w, "Cannot remove Conman core system image from within the panel", http.StatusForbidden)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Cannot remove Conman core system image from within the panel"})
 			return
 		}
 	}
 
 	_, err := a.dockerClient().ImageRemove(context.Background(), id, image.RemoveOptions{Force: true})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		errMsg := err.Error()
+		if strings.Contains(strings.ToLower(errMsg), "used by running container") || strings.Contains(strings.ToLower(errMsg), "is being used") {
+			errMsg = "Image is currently in use by one or more active containers. Stop and remove the containers first."
+		}
+		json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
 		return
 	}
 
