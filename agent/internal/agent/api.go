@@ -572,13 +572,22 @@ func (a *Agent) handleStartContainer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleStopContainer stops a container
+// handleStopContainer stops a container with system protection
 func (a *Agent) handleStopContainer(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing ID", http.StatusBadRequest)
 		return
 	}
+
+	// Protect Conman's own containers from being stopped from the panel
+	if info, err := a.dockerClient().ContainerInspect(context.Background(), id); err == nil {
+		if isConmanProtectedContainer(info.Name, info.Config.Image) {
+			http.Error(w, "Cannot stop Conman core system container from within the panel", http.StatusForbidden)
+			return
+		}
+	}
+
 	if err := a.dockerClient().ContainerStop(context.Background(), id, container.StopOptions{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
