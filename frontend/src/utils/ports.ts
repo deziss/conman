@@ -7,79 +7,117 @@ export interface FormattedPort {
   url?: string;
 }
 
-const isValidHostOrIp = (val?: string): boolean => {
+const isIPv4 = (val?: string): boolean => {
   if (!val || typeof val !== 'string') return false;
   const trimmed = val.trim();
-  if (!trimmed || trimmed.includes(' ') || trimmed.includes('%20')) return false;
-  const lower = trimmed.toLowerCase();
-  if (
-    lower === 'localhost' ||
-    lower === '127.0.0.1' ||
-    lower === '0.0.0.0' ||
-    lower === 'local agent' ||
-    lower === 'local-agent' ||
-    lower === 'local' ||
-    lower === 'unnamed'
-  ) {
-    return false;
-  }
-  // IPv4 regex, standard domain/hostname regex, or simple valid alphanumeric host
-  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  const hostRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-  const simpleHost = /^[a-zA-Z0-9\-_]+$/;
-  return ipRegex.test(trimmed) || hostRegex.test(trimmed) || simpleHost.test(trimmed);
+  const parts = trimmed.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every(p => {
+    const n = Number(p);
+    return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
+  });
 };
 
-export const resolveHostAddress = (host?: any): string => {
-  let fallback = window.location.hostname || 'localhost';
-  if (fallback === '0.0.0.0') fallback = 'localhost';
+const extractIPFromURL = (urlStr?: string): string | null => {
+  if (!urlStr) return null;
+  try {
+    const u = new URL(urlStr.startsWith('http') ? urlStr : `http://${urlStr}`);
+    if (isIPv4(u.hostname)) return u.hostname;
+    // If it's a domain/FQDN (e.g. host1.mycorp.internal)
+    if (u.hostname && u.hostname.includes('.') && !u.hostname.endsWith('.local') && u.hostname !== 'localhost') {
+      return u.hostname;
+    }
+  } catch {}
+  return null;
+};
 
-  if (!host) return fallback;
-
+export const isLocalAgent = (host?: any): boolean => {
+  if (!host) return true;
   if (typeof host === 'string') {
-    return isValidHostOrIp(host) ? host.trim() : fallback;
+    const s = host.toLowerCase().trim();
+    return s.includes('local') || s === 'localhost' || s === '127.0.0.1' || s.startsWith('conman');
   }
 
-  // 1. If scrape_url is set (e.g. http://192.168.1.100:5073)
+  const name = (host.name || '').toLowerCase().trim();
+  const id = (host.id || '').toLowerCase().trim();
+  const hostname = (host.host_info?.hostname || '').toLowerCase().trim();
+  const mode = (host.mode || '').toLowerCase().trim();
+  const tags = Array.isArray(host.tags) ? host.tags.map((t: string) => String(t).toLowerCase().trim()) : [];
+
+  if (
+    mode === 'local' ||
+    tags.includes('local') ||
+    name.includes('local') ||
+    name === 'conman' ||
+    name === 'conman-agent' ||
+    name === 'conman-local-agent' ||
+    hostname === 'conman-local-agent' ||
+    hostname === 'conman-server' ||
+    hostname.startsWith('conman-') ||
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    id === 'local' ||
+    id.includes('local')
+  ) {
+    return true;
+  }
+
   if (host.scrape_url) {
-    try {
-      const u = new URL(host.scrape_url.startsWith('http') ? host.scrape_url : `http://${host.scrape_url}`);
-      if (isValidHostOrIp(u.hostname)) {
-        return u.hostname;
-      }
-    } catch {}
-  }
-
-  // 2. If host.ip is set and valid
-  if (isValidHostOrIp(host.ip)) {
-    return host.ip.trim();
-  }
-
-  // 3. If host.address is set and valid
-  if (isValidHostOrIp(host.address)) {
-    return host.address.trim();
-  }
-
-  // 4. If host.endpoint is set
-  if (host.endpoint) {
-    try {
-      const ep = host.endpoint.startsWith('http') ? host.endpoint : `http://${host.endpoint}`;
-      const u = new URL(ep);
-      if (isValidHostOrIp(u.hostname)) {
-        return u.hostname;
-      }
-    } catch {}
-  }
-
-  // 5. If host_info.hostname is a valid network address (not "localhost" or local machine display name)
-  if (host.host_info?.hostname && isValidHostOrIp(host.host_info.hostname)) {
-    // Only use if it looks like an IP or FQDN
-    if (host.host_info.hostname.includes('.') && !host.host_info.hostname.toLowerCase().endsWith('.local')) {
-      return host.host_info.hostname.trim();
+    const s = host.scrape_url.toLowerCase();
+    if (s.includes('localhost') || s.includes('127.0.0.1') || s.includes('conman-local-agent') || s.includes('conman-server')) {
+      return true;
     }
   }
 
-  return fallback;
+  // If no remote IP or remote scrape URL is provided, it's local
+  if (!host.ip && !host.address && !host.scrape_url && !host.endpoint) {
+    return true;
+  }
+
+  return false;
+};
+
+export const resolveHostAddress = (host?: any): string => {
+  // If it is the local agent -> always localhost:<port>
+  if (!host || isLocalAgent(host)) {
+    return 'localhost';
+  }
+
+  // If host is a direct string IP or hostname
+  if (typeof host === 'string') {
+    if (isIPv4(host)) return host.trim();
+    return 'localhost';
+  }
+
+  // Remote agent: extract the remote IP / address
+  if (isIPv4(host.ip)) {
+    return host.ip.trim();
+  }
+
+  if (isIPv4(host.address)) {
+    return host.address.trim();
+  }
+
+  const scrapeIp = extractIPFromURL(host.scrape_url);
+  if (scrapeIp && scrapeIp !== '127.0.0.1' && scrapeIp !== '0.0.0.0' && scrapeIp !== 'localhost') {
+    return scrapeIp;
+  }
+
+  const endpointIp = extractIPFromURL(host.endpoint);
+  if (endpointIp && endpointIp !== '127.0.0.1' && endpointIp !== '0.0.0.0' && endpointIp !== 'localhost') {
+    return endpointIp;
+  }
+
+  if (host.host_info?.hostname && isIPv4(host.host_info.hostname)) {
+    return host.host_info.hostname.trim();
+  }
+
+  // If user is accessing Conman remotely (e.g. 10.10.110.42), use that IP if it's an IP
+  if (window.location.hostname && isIPv4(window.location.hostname)) {
+    return window.location.hostname;
+  }
+
+  return 'localhost';
 };
 
 export const parseContainerPorts = (ports: any[], hostObjOrIp?: any): FormattedPort[] => {
