@@ -150,6 +150,9 @@ func (h *AgentHandler) ProxyPullImage(w http.ResponseWriter, r *http.Request) {
 func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) {
     agentID := chi.URLParam(r, "id")
     imageID := chi.URLParam(r, "imageId")
+    if imageID == "" {
+        imageID = r.URL.Query().Get("id")
+    }
     user := getUserEmail(r)
     if h.Activity != nil {
         go h.Activity.RecordActivity(agentID, "", "image", "deleted", "warning", imageID, "", "user:"+user, "user", fmt.Sprintf("User %s removed image", user), "", "", nil, time.Now())
