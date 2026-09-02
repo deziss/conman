@@ -27,6 +27,7 @@ const Users = lazy(() => import('./pages/Users').then(m => ({ default: m.Users }
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const Stacks = lazy(() => import('./pages/Stacks').then(m => ({ default: m.Stacks })));
+const Activities = lazy(() => import('./pages/Activities').then(m => ({ default: m.Activities })));
 // const StackDetails = lazy(() => import('./pages/StackDetails').then(m => ({ default: m.StackDetails }))); // Commented out to fix build
 
 const ProtectedRoute = ({ children }: { children: ReactNode }) => {
@@ -63,7 +64,8 @@ function App() {
                           <Route path="/networks" element={<Networks />} />
                           <Route path="/networks/:id" element={<NetworkDetailsPage />} />
                           <Route path="/volumes" element={<Volumes />} />
-                          <Route path="/stacks" element={<Stacks />} /> 
+                          <Route path="/stacks" element={<Stacks />} />
+                          <Route path="/activities" element={<Activities />} /> 
                           {/* <Route path="/stacks/:id" element={<StackDetails />} /> */}
                           <Route path="/hosts" element={<Hosts />} />
                           <Route path="/hosts/:id" element={<HostDetails />} />

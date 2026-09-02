@@ -67,7 +67,7 @@ func main() {
 	}
 
 	// Auto Migrate
-	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{}, &models.LicenseCache{})
+	err = db.AutoMigrate(&models.User{}, &models.APIKey{}, &models.Environment{}, &models.Agent{}, &models.Stack{}, &models.AgentSnapshot{}, &models.AlertRule{}, &models.AlertChannel{}, &models.AlertEvent{}, &models.LicenseCache{}, &models.Activity{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
@@ -148,7 +148,9 @@ func main() {
     }))
 
 	// Handlers (hoisted for use by alert evaluator)
-	agentHandler := api.NewAgentHandler(db, metricsStore, licenseService)
+	activityService := service.NewActivityService(db)
+	activityHandler := api.NewActivityHandler(activityService)
+	agentHandler := api.NewAgentHandler(db, metricsStore, licenseService, activityService)
 
 	// API v1 Group
 	r.Route("/api/v1", func(r chi.Router) {
@@ -303,6 +305,12 @@ func main() {
 
             // Agent Management (Multi-Host)
             agentHandler.RegisterRoutes(r)
+
+            // Activity Log (Full-System Events, OOM Kills, User Audit)
+            r.Route("/activities", func(r chi.Router) {
+                r.Get("/", activityHandler.ListActivities)
+                r.Get("/stats", activityHandler.GetStats)
+            })
 
             // Alert Management (Pro+)
             r.Group(func(r chi.Router) {

@@ -1,6 +1,7 @@
 import { CubeIcon, CommandLineIcon, ChevronUpDownIcon, ServerStackIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
 import { NavLink } from 'react-router-dom';
-import { HomeIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Cog6ToothIcon, SunIcon, MoonIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, KeyIcon, QuestionMarkCircleIcon, LifebuoyIcon, LockClosedIcon } from '@heroicons/react/24/solid';
+import { HomeIcon,
+  BoltIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Cog6ToothIcon, SunIcon, MoonIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, KeyIcon, QuestionMarkCircleIcon, LifebuoyIcon, LockClosedIcon } from '@heroicons/react/24/solid';
 import { EnvelopeIcon } from '@heroicons/react/24/outline';
 import { useLicense } from '../contexts/LicenseContext';
 import { TIER_LABELS, TIER_COLORS } from '../types/license';
@@ -183,6 +184,25 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
                 </div>
                 <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
                   Images
+                </span>
+              </NavLink>
+
+              <NavLink
+                to="/activities"
+                title={isCollapsed ? "Activity Log" : ""}
+                className={({ isActive }) =>
+                  `flex items-center ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-2 text-sm font-medium rounded-lg transition-all duration-300 ${
+                    isActive
+                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`
+                }
+              >
+                <div className={`p-1 rounded-md bg-black/5 dark:bg-white/5 group-hover:bg-black/10 dark:group-hover:bg-white/10 transition-all duration-300 ${isCollapsed ? 'mr-0' : 'mr-3'}`}>
+                    <BoltIcon className="w-5 h-5" />
+                </div>
+                <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'}`}>
+                  Activity Log
                 </span>
               </NavLink>
 

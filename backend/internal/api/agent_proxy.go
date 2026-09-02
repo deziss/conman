@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+	"conman-backend/internal/models"
 	"fmt"
 	"net/url"
 	"io"
@@ -10,6 +12,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+func getUserEmail(r *http.Request) string {
+	if u, ok := r.Context().Value(models.UserContextKey).(*models.User); ok && u != nil && u.Email != "" {
+		return u.Email
+	}
+	return "admin"
+}
 
 // Generic Proxy function
 func (h *AgentHandler) proxyRequest(w http.ResponseWriter, r *http.Request, method string, targetPath string) {
@@ -79,32 +88,49 @@ func (h *AgentHandler) proxyRequest(w http.ResponseWriter, r *http.Request, meth
 // -- Container Proxies --
 
 func (h *AgentHandler) ProxyStartContainer(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
     containerID := chi.URLParam(r, "containerId")
-    // Agent expects ID in query usually? Or we can map path param to query.
-    // My agent implementation used r.URL.Query().Get("id").
-    // So I should append id=...
-    
-    // Actually, simple way: Frontend calls /agents/{id}/containers/{cid}/start
-    // Agent expects /api/containers/start?id={cid}
-    
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, containerID, "", "container.start")
+        go h.Activity.RecordActivity(agentID, "", "container", "started", "info", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s started container", user), "", "", nil, time.Now())
+    }
     path := fmt.Sprintf("/api/containers/start?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "POST", path)
 }
 
 func (h *AgentHandler) ProxyStopContainer(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
     containerID := chi.URLParam(r, "containerId")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, containerID, "", "container.stop")
+        go h.Activity.RecordActivity(agentID, "", "container", "stopped", "info", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s stopped container", user), "", "", nil, time.Now())
+    }
     path := fmt.Sprintf("/api/containers/stop?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "POST", path)
 }
 
 func (h *AgentHandler) ProxyRestartContainer(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
     containerID := chi.URLParam(r, "containerId")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, containerID, "", "container.restart")
+        go h.Activity.RecordActivity(agentID, "", "container", "restarted", "info", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s restarted container", user), "", "", nil, time.Now())
+    }
     path := fmt.Sprintf("/api/containers/restart?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "POST", path)
 }
 
 func (h *AgentHandler) ProxyRemoveContainer(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
     containerID := chi.URLParam(r, "containerId")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, containerID, "", "container.remove")
+        go h.Activity.RecordActivity(agentID, "", "container", "deleted", "warning", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s removed container", user), "", "", nil, time.Now())
+    }
     path := fmt.Sprintf("/api/containers/remove?id=%s", url.QueryEscape(containerID))
     h.proxyRequest(w, r, "DELETE", path)
 }
@@ -112,12 +138,22 @@ func (h *AgentHandler) ProxyRemoveContainer(w http.ResponseWriter, r *http.Reque
 // -- Image Proxies --
 
 func (h *AgentHandler) ProxyPullImage(w http.ResponseWriter, r *http.Request) {
+    agentID := chi.URLParam(r, "id")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        go h.Activity.RecordActivity(agentID, "", "image", "pulled", "info", "", "", "user:"+user, "user", fmt.Sprintf("User %s requested image pull", user), "", "", nil, time.Now())
+    }
     // Body contains { image: "name" }
     h.proxyRequest(w, r, "POST", "/api/images/pull")
 }
 
 func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) {
-    imageID := chi.URLParam(r, "imageId") // Route will be /agents/{id}/images/{imageId}
+    agentID := chi.URLParam(r, "id")
+    imageID := chi.URLParam(r, "imageId")
+    user := getUserEmail(r)
+    if h.Activity != nil {
+        go h.Activity.RecordActivity(agentID, "", "image", "deleted", "warning", imageID, "", "user:"+user, "user", fmt.Sprintf("User %s removed image", user), "", "", nil, time.Now())
+    }
     path := fmt.Sprintf("/api/images/remove?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "DELETE", path)
 }
