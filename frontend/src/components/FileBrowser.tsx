@@ -46,7 +46,11 @@ export const FileBrowser = ({ containerId, agentId }: FileBrowserProps) => {
             const { data } = await api.get(endpoint, {
                 params: { path: currentPath }
             });
-            setFiles(data);
+            if (Array.isArray(data)) {
+                setFiles(data.filter(f => f && f.name && !f.name.includes('executable file not found') && !f.name.includes('OCI runtime')));
+            } else {
+                setFiles([]);
+            }
         } catch (error) {
             console.error("Failed to list files", error);
             toast.error("Failed to list files");

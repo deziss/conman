@@ -302,6 +302,7 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
 	// Remote Control Endpoints
 	mux.HandleFunc("/api/exec", a.handleStreamExec)
 	mux.HandleFunc("/api/files", a.handleListFiles)
+	mux.HandleFunc("/api/files/download", a.handleDownloadFile)
 	mux.HandleFunc("/api/logs", a.handleStreamLogs)
 	mux.HandleFunc("/api/stats", a.handleStreamStats)
 
