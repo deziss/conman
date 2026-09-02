@@ -1,28 +1,32 @@
 package agent
 
 import (
-	"time"
-	"net/url"
+	"archive/tar"
 	"bytes"
-	"errors"
-	"net"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
-    "os"
-    "os/exec"
+	"net/url"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
-
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/gorilla/websocket"
 )
@@ -197,7 +201,100 @@ type FileEntry struct {
 	IsDir   bool   `json:"is_dir"`
 }
 
-// handleListFiles lists files in a container
+func isValidFileMode(mode string) bool {
+	if len(mode) < 9 || len(mode) > 11 {
+		return false
+	}
+	first := mode[0]
+	if first != '-' && first != 'd' && first != 'l' && first != 'c' && first != 'b' && first != 's' && first != 'p' {
+		return false
+	}
+	for _, ch := range mode[1:9] {
+		if ch != 'r' && ch != 'w' && ch != 'x' && ch != '-' && ch != 's' && ch != 't' && ch != 'S' && ch != 'T' {
+			return false
+		}
+	}
+	return true
+}
+
+func listContainerFilesViaArchive(ctx context.Context, cli *client.Client, containerID, targetPath string) ([]FileEntry, error) {
+	cleanTarget := path.Clean("/" + strings.TrimPrefix(targetPath, "/"))
+	if cleanTarget == "." {
+		cleanTarget = "/"
+	}
+
+	reader, _, err := cli.CopyFromContainer(ctx, containerID, cleanTarget)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	tarReader := tar.NewReader(reader)
+	files := []FileEntry{}
+	seen := make(map[string]bool)
+
+	prefix := strings.TrimPrefix(cleanTarget, "/")
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			break
+		}
+
+		rawName := strings.TrimPrefix(header.Name, "/")
+		if rawName == "" || rawName == "." {
+			continue
+		}
+
+		relPath := rawName
+		if prefix != "" && strings.HasPrefix(rawName, prefix) {
+			relPath = strings.TrimPrefix(rawName, prefix)
+		} else if prefix != "" && rawName == strings.TrimSuffix(prefix, "/") {
+			// Target folder itself
+			continue
+		}
+
+		relPath = strings.Trim(relPath, "/")
+		if relPath == "" {
+			continue
+		}
+
+		parts := strings.Split(relPath, "/")
+		childName := parts[0]
+		if seen[childName] {
+			continue
+		}
+		seen[childName] = true
+
+		isDir := header.Typeflag == tar.TypeDir || len(parts) > 1
+		modeStr := header.FileInfo().Mode().String()
+
+		files = append(files, FileEntry{
+			Name:    childName,
+			Size:    header.Size,
+			Mode:    modeStr,
+			ModTime: header.ModTime.Format("2006-01-02 15:04"),
+			IsDir:   isDir,
+		})
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].IsDir != files[j].IsDir {
+			return files[i].IsDir
+		}
+		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
+	})
+
+	return files, nil
+}
+
+// handleListFiles lists files in a container with native archive fallback for scratch/distroless containers
 func (a *Agent) handleListFiles(w http.ResponseWriter, r *http.Request) {
     id := r.URL.Query().Get("id")
     if id == "" {
@@ -205,97 +302,108 @@ func (a *Agent) handleListFiles(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-	path := r.URL.Query().Get("path")
-	if path == "" {
-		path = "/"
-	}
-
-	// Use standard ls -lan for better compatibility
-	execConfig := types.ExecConfig{
-		AttachStdout: true,
-		AttachStderr: true,
-		Cmd:          []string{"ls", "-lan", path},
-	}
-
-	execIDResp, err := a.dockerClient().ContainerExecCreate(context.Background(), id, execConfig)
-	if err != nil {
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "not running") || strings.Contains(errLower, "is not running") || strings.Contains(errLower, "no such container") {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(container.ContainerTopOKBody{
-				Titles:    []string{"PID", "USER", "TIME", "COMMAND"},
-				Processes: [][]string{},
-			})
-			return
-		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	resp, err := a.dockerClient().ContainerExecAttach(context.Background(), execIDResp.ID, types.ExecStartCheck{})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Close()
-
-	var outBuf bytes.Buffer
-	var errBuf bytes.Buffer
-
-	_, err = stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader)
-	if err != nil {
-		http.Error(w, "Failed to read exec output", http.StatusInternalServerError)
-		return
-	}
-
-	errMsg := errBuf.String()
-	if errMsg != "" {
-		http.Error(w, strings.TrimSpace(errMsg), http.StatusBadRequest)
-		return
-	}
-
-	files := []FileEntry{}
-	lines := strings.Split(outBuf.String(), "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "total") {
-			continue
-		}
-
-		// Example: drwxr-xr-x    1 0        0             4096 Jan 30 12:34 bin
-		fields := strings.Fields(line)
-		if len(fields) < 9 {
-			continue
-		}
-
-		mode := fields[0]
-		isDir := strings.HasPrefix(mode, "d")
-		
-		// Name starts at index 8
-		name := strings.Join(fields[8:], " ")
-		
-		// Construct basic mod time string like "Jan 30 12:34"
-		// Index 5, 6, 7
-		modTime := strings.Join(fields[5:8], " ")
-
-		// Parse size from field 4
-		var size int64
-		if parsed, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
-			size = parsed
-		}
-
-		files = append(files, FileEntry{
-			Name:    name,
-			Size:    size,
-			Mode:    mode,
-			ModTime: modTime,
-			IsDir:   isDir,
-		})
+	targetPath := r.URL.Query().Get("path")
+	if targetPath == "" {
+		targetPath = "/"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(files)
+
+	// Try standard "ls -lan" first
+	execConfig := types.ExecConfig{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          []string{"ls", "-lan", targetPath},
+	}
+
+	execIDResp, err := a.dockerClient().ContainerExecCreate(context.Background(), id, execConfig)
+	if err == nil {
+		resp, attachErr := a.dockerClient().ContainerExecAttach(context.Background(), execIDResp.ID, types.ExecStartCheck{})
+		if attachErr == nil {
+			defer resp.Close()
+			var outBuf bytes.Buffer
+			var errBuf bytes.Buffer
+			_, _ = stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader)
+
+			outStr := outBuf.String()
+			errStr := errBuf.String()
+
+			lsFailed := strings.Contains(outStr, "OCI runtime exec failed") ||
+				strings.Contains(outStr, "executable file not found in $PATH") ||
+				strings.Contains(errStr, "executable file not found in $PATH") ||
+				strings.Contains(errStr, "OCI runtime exec failed")
+
+			if !lsFailed {
+				files := []FileEntry{}
+				lines := strings.Split(outStr, "\n")
+
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if line == "" || strings.HasPrefix(line, "total") {
+						continue
+					}
+
+					fields := strings.Fields(line)
+					if len(fields) < 9 || !isValidFileMode(fields[0]) {
+						continue
+					}
+
+					mode := fields[0]
+					isDir := strings.HasPrefix(mode, "d")
+					name := strings.Join(fields[8:], " ")
+					modTime := strings.Join(fields[5:8], " ")
+
+					var size int64
+					if parsed, err := strconv.ParseInt(fields[4], 10, 64); err == nil {
+						size = parsed
+					}
+
+					files = append(files, FileEntry{
+						Name:    name,
+						Size:    size,
+						Mode:    mode,
+						ModTime: modTime,
+						IsDir:   isDir,
+					})
+				}
+
+				if len(files) > 0 {
+					json.NewEncoder(w).Encode(files)
+					return
+				}
+			}
+		}
+	}
+
+	// Fallback for scratch/distroless containers via Docker native Archive API
+	archiveFiles, archiveErr := listContainerFilesViaArchive(context.Background(), a.dockerClient(), id, targetPath)
+	if archiveErr != nil {
+		http.Error(w, archiveErr.Error(), http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(archiveFiles)
+}
+
+// handleDownloadFile streams a file or directory tarball from container
+func (a *Agent) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	targetPath := r.URL.Query().Get("path")
+	if id == "" || targetPath == "" {
+		http.Error(w, "Missing container ID or path", http.StatusBadRequest)
+		return
+	}
+
+	reader, _, err := a.dockerClient().CopyFromContainer(context.Background(), id, targetPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.tar\"", filepath.Base(targetPath)))
+	_, _ = io.Copy(w, reader)
 }
 
 // handleStreamLogs streams container logs via WebSocket
