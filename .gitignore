@@ -2,16 +2,19 @@
 node_modules/
 package-lock.json
 yarn.lock
+pnpm-lock.yaml
 
 # Environment files
 .env
 .env.local
 .env.*.local
+*.env.local
 
 # Build outputs
 dist/
 build/
 out/
+bin/
 
 # IDE and editor files
 .idea/
@@ -27,12 +30,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Testing
+# Testing & Coverage
 coverage/
+*.coverprofile
 
 # Temporary files
 tmp/
 temp/
+*.orig
+*.tmp
 
 # Python
 __pycache__/
@@ -49,11 +55,27 @@ venv/
 # Misc
 .cache/
 .temp/
+graphify-out/
+LOCAL_STACK_NOTES.md
+arcane-db-schema.md
+debug_stats.go
 
-# Go
+# AI / IDE Agent configs
+.agents/
+.claude/
+.specify/
+.agent/
+
+# Go Binaries & Local DBs
 backend/server
 backend/main
+backend/conman-server
 backend/conman-backend
+backend/agent
+agent/conman-agent
+agent/agent
+conman-server
+conman-agent
 *.exe
 *.exe~
 *.dll
@@ -62,10 +84,3 @@ backend/conman-backend
 go.work
 backend/app.db
 backend/cookies.txt
-arcane-db-schema.md
-
-
-graphify-out/
-.agents/
-.claude/
-.specify/
