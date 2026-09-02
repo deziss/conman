@@ -1,8 +1,23 @@
 import { isConmanSystemContainer } from '../utils/systemProtection';
-import { useState, useEffect } from 'react';
+import { parseContainerPorts, FormattedPort } from '../utils/ports';
+import { useState, useEffect, useMemo } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
-import { PlayIcon, StopIcon, ArrowPathIcon, CpuChipIcon, TrashIcon, EyeIcon, ServerStackIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
-import { AreaChart, Area, ResponsiveContainer, YAxis } from 'recharts';
+import { 
+  PlayIcon, 
+  StopIcon, 
+  ArrowPathIcon, 
+  CpuChipIcon, 
+  TrashIcon, 
+  EyeIcon, 
+  ServerStackIcon, 
+  DocumentTextIcon,
+  ShieldCheckIcon,
+  Squares2X2Icon,
+  TableCellsIcon,
+  ArrowTopRightOnSquareIcon,
+  CommandLineIcon
+} from '@heroicons/react/24/solid';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
@@ -14,6 +29,7 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSettings } from '../contexts/SettingsContext';
 import { Pagination } from '../components/ui/Pagination';
+import clsx from 'clsx';
 
 interface Container {
   id: string;
@@ -22,8 +38,9 @@ interface Container {
   state: string;
   status: string;
   created: number;
-  ports: string[];
-  ip_address: string;
+  ports: any[];
+  ip_address?: string;
+  labels?: Record<string, string>;
   cpu_usage: string;
   memory_usage: string;
   disk_io: string;
@@ -32,6 +49,7 @@ interface Container {
 }
 
 const formatNetBytes = (bytes: number): string => {
+  if (!bytes) return '0 B';
   if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -45,17 +63,26 @@ export const Containers = () => {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'running' | 'exited' | 'paused'>('all');
   const [sortOrder, setSortOrder] = useState<'name' | 'status' | 'state'>('state');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
+    return (localStorage.getItem('conman_containers_view') as 'table' | 'grid') || 'table';
+  });
   const [inspectData, setInspectData] = useState<any>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const { isCollapsed } = useSidebar();
   const { currentHost } = useHost();
+
+  const handleViewModeChange = (mode: 'table' | 'grid') => {
+    setViewMode(mode);
+    localStorage.setItem('conman_containers_view', mode);
+  };
 
   // Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: async () => {}, // Async void
+    onConfirm: async () => {},
     isDestructive: false,
   });
 
@@ -67,7 +94,7 @@ export const Containers = () => {
       setContainers((data || []).map((c: any) => ({
         ...c,
         name: c.name || (c.names && c.names.length > 0 ? c.names[0].replace(/^\//, '') : 'Unnamed'),
-        ports: c.ports || [] // Ensure ports is array
+        ports: c.ports || []
       })));
 
       setStatsHistory(prev => {
@@ -77,7 +104,6 @@ export const Containers = () => {
            if (!newHistory[id]) newHistory[id] = { cpu: [], mem: [] };
            
            const cpuVal = c.cpu_usage ? parseFloat(c.cpu_usage.replace('%', '')) : 0;
-           // Heuristic parsing for memory
            let memVal = 0;
            if (c.memory_usage) {
                memVal = parseFloat(c.memory_usage);
@@ -85,8 +111,8 @@ export const Containers = () => {
            }
 
            const maxPoints = 20;
-           const newCpu = [...newHistory[c.id].cpu, { value: cpuVal }].slice(-maxPoints);
-           const newMem = [...newHistory[c.id].mem, { value: memVal }].slice(-maxPoints);
+           const newCpu = [...(newHistory[c.id]?.cpu || []), { value: cpuVal }].slice(-maxPoints);
+           const newMem = [...(newHistory[c.id]?.mem || []), { value: memVal }].slice(-maxPoints);
            
            newHistory[c.id] = { cpu: newCpu, mem: newMem };
         });
@@ -109,7 +135,7 @@ export const Containers = () => {
     return () => clearInterval(interval);
   }, [currentHost, refreshInterval]);
 
-  const executeAction = async (id: string, action: 'start' | 'stop' | 'remove') => {
+  const executeAction = async (id: string, action: 'start' | 'stop' | 'restart' | 'remove') => {
       if (!currentHost) return;
       
       let endpoint = '/agents/' + currentHost.id + '/containers/' + id;
@@ -117,11 +143,8 @@ export const Containers = () => {
       
       const method: 'post' | 'delete' = action === 'remove' ? 'delete' : 'post';
 
-
-      const promise = method === 'delete' ? api.delete(endpoint) : api.post(endpoint);
-      
       try {
-          await toast.promise(promise, {
+          await toast.promise(api[method](endpoint), {
               loading: `${action.charAt(0).toUpperCase() + action.slice(1)}ing container...`,
               success: `Container ${action}ed successfully`,
               error: `Failed to ${action} container`
@@ -142,7 +165,7 @@ export const Containers = () => {
       } catch { toast.error('Failed to prune containers'); }
   };
 
-  const handleActionClick = (id: string, action: 'start' | 'stop' | 'remove') => {
+  const handleActionClick = (id: string, action: 'start' | 'stop' | 'restart' | 'remove') => {
       const targetCont = containers.find(c => c.id === id);
       if (action === 'remove' && targetCont && isConmanSystemContainer(targetCont.name, targetCont.image)) {
           toast.error('Cannot remove Conman core system container from within the panel.');
@@ -173,224 +196,597 @@ export const Containers = () => {
       } catch (error) {
           toast.error("Failed to inspect container");
       }
-  }
-
-  const getStatusColor = (state: string) => {
-      if (state === 'running') return 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]';
-      if (state === 'exited') return 'bg-slate-500';
-      return 'bg-amber-400';
   };
 
-  const formatTime = (created: number) => {
-      return new Date(created * 1000).toLocaleString();
-  }
+  const getStatusColor = (state: string) => {
+      switch(state) {
+          case 'running': return 'bg-emerald-500 shadow-emerald-500/50';
+          case 'exited': return 'bg-rose-500 shadow-rose-500/50';
+          case 'paused': return 'bg-amber-500 shadow-amber-500/50';
+          default: return 'bg-slate-500 shadow-slate-500/50';
+      }
+  };
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12);
+  const filteredContainers = useMemo(() => {
+    let list = containers;
 
-  const filteredContainers = containers
-    .filter(c => filterStatus === 'all' || c.state === filterStatus)
-    .sort((a, b) => {
+    if (filterStatus !== 'all') {
+      list = list.filter(c => c.state === filterStatus);
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      list = list.filter(c => 
+        c.name.toLowerCase().includes(query) ||
+        c.image.toLowerCase().includes(query) ||
+        (c.ip_address && c.ip_address.includes(query)) ||
+        (c.labels?.['com.docker.compose.project'] && c.labels['com.docker.compose.project'].toLowerCase().includes(query))
+      );
+    }
+
+    return [...list].sort((a, b) => {
       if (sortOrder === 'name') return a.name.localeCompare(b.name);
       if (sortOrder === 'status') return a.status.localeCompare(b.status);
-      const stateOrder = { running: 0, paused: 1, exited: 2 };
-      return (stateOrder[a.state as keyof typeof stateOrder] ?? 3) - (stateOrder[b.state as keyof typeof stateOrder] ?? 3);
+      if (sortOrder === 'state') {
+          if (a.state === 'running' && b.state !== 'running') return -1;
+          if (a.state !== 'running' && b.state === 'running') return 1;
+          return 0;
+      }
+      return 0;
     });
+  }, [containers, filterStatus, searchQuery, sortOrder]);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const paginatedContainers = filteredContainers.slice((page - 1) * pageSize, page * pageSize);
 
-  // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [filterStatus, sortOrder]);
+  useEffect(() => { setPage(1); }, [sortOrder, filterStatus, searchQuery]);
 
   return (
     <PageTransition>
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
-          Containers
-        </h2>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setConfirmModal({ isOpen: true, title: 'Prune Containers', message: 'Remove all stopped containers? This cannot be undone.', isDestructive: true, onConfirm: handlePrune })}
-            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
-          >
-            <TrashIcon className="w-4 h-4" />
-            Prune
-          </button>
-          <button onClick={() => fetchContainers()} className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
-            <ArrowPathIcon className="w-4 h-4" />
-            Refresh
-          </button>
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+              <span>Containers</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20">
+                {containers.length}
+              </span>
+           </h1>
+           <p className="text-sm text-slate-500 mt-1">Manage and inspect lifecycle of container workloads across hosts</p>
+        </div>
+        
+        {/* Actions & View Controls */}
+        <div className="flex flex-wrap items-center gap-3">
+             {/* Host Badge */}
+             {currentHost && (
+                <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium">
+                    <ServerStackIcon className="w-4 h-4 text-cyan-500" />
+                    <span>{currentHost.name}</span>
+                </div>
+            )}
+
+            {/* View Mode Toggle (Dockhand style) */}
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => handleViewModeChange('table')}
+                className={clsx(
+                  "p-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5",
+                  viewMode === 'table'
+                    ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                )}
+                title="List / Table View"
+              >
+                <TableCellsIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">List</span>
+              </button>
+              <button
+                onClick={() => handleViewModeChange('grid')}
+                className={clsx(
+                  "p-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5",
+                  viewMode === 'grid'
+                    ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                )}
+                title="Cards / Grid View"
+              >
+                <Squares2X2Icon className="w-4 h-4" />
+                <span className="hidden sm:inline">Grid</span>
+              </button>
+            </div>
+
+            {/* Prune */}
+            <button 
+                onClick={handlePrune}
+                className="flex items-center space-x-1.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                title="Prune stopped containers"
+            >
+                <TrashIcon className="w-4 h-4" />
+                <span>Prune</span>
+            </button>
+
+            {/* Refresh */}
+            <button 
+                onClick={fetchContainers}
+                className="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                title="Refresh containers list"
+            >
+                <ArrowPathIcon className={clsx("w-4 h-4", loading && "animate-spin text-cyan-500")} />
+                <span>Refresh</span>
+            </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <GlassCard className="p-6 relative overflow-hidden group">
-            <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-              <CpuChipIcon className="w-16 h-16 text-slate-900 dark:text-white" />
-            </div>
-            <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Total Containers</p>
-            <p className="text-4xl font-mono font-bold mt-2 text-slate-900 dark:text-slate-100">{containers.length}</p>
-        </GlassCard>
-         <GlassCard className="p-6 relative overflow-hidden group">
-            <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <PlayIcon className="w-16 h-16 text-emerald-500" />
-            </div>
-            <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Running</p>
-            <p className="text-4xl font-mono font-bold mt-2 text-emerald-500">{containers.filter(c => c.state === 'running').length}</p>
-        </GlassCard>
-        <GlassCard className="p-6 relative overflow-hidden group">
-            <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                <StopIcon className="w-16 h-16 text-amber-500" />
-            </div>
-             <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">Stopped</p>
-            <p className="text-4xl font-mono font-bold mt-2 text-amber-500">{containers.filter(c => c.state !== 'running').length}</p>
-        </GlassCard>
-      </div>
+      {/* Filter & Search Toolbar */}
+      <GlassCard className="p-3 flex flex-col md:flex-row items-center justify-between gap-3">
+          {/* Search Box */}
+          <div className="relative flex-1 w-full">
+              <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search containers, image, IP, stack..."
+                  className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              />
+          </div>
 
-      <div className="flex gap-4 mb-6">
-        <select 
-          value={filterStatus} 
-          onChange={(e) => setFilterStatus(e.target.value as any)}
-          className="bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        >
-          <option value="all">All Status</option>
-          <option value="running">Running</option>
-          <option value="exited">Exited</option>
-          <option value="paused">Paused</option>
-        </select>
-         <select 
-          value={sortOrder} 
-          onChange={(e) => setSortOrder(e.target.value as any)}
-          className="bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        >
-          <option value="state">Sort by State</option>
-          <option value="name">Sort by Name</option>
-          <option value="status">Sort by Status</option>
-        </select>
-      </div>
+          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+              {/* Status Filter */}
+              <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs">
+                  {(['all', 'running', 'exited', 'paused'] as const).map((status) => (
+                      <button
+                          key={status}
+                          onClick={() => setFilterStatus(status)}
+                          className={clsx(
+                              "px-2.5 py-1 rounded-md font-medium capitalize transition-all",
+                              filterStatus === status 
+                                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" 
+                                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                          )}
+                      >
+                          {status}
+                      </button>
+                  ))}
+              </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-      <AnimatePresence mode="popLayout">
-        {paginatedContainers.map(container => (
-          <motion.div
-            key={container.id}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            layout
-          >
-          <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group">
-             <div className="p-5 border-b border-slate-200 dark:border-slate-700/50 flex justify-between items-start bg-slate-50/30 dark:bg-slate-800/30">
-                <div className="flex items-start space-x-3">
-                    <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500`}></div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <Link to={'/containers/' + container.id}>
-                                <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[200px]" title={container.name.replace(/^\//, '')}>
-                                    {container.name.replace(/^\//, '')}
-                                </h3>
-                            </Link>
-                            {isConmanSystemContainer(container.name, container.image) && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Container">
-                                    <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                                    System
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1">
-                             <p className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-700/50 px-1.5 py-0.5 rounded">{container.image.substring(0, 25)}{container.image.length > 25 ? '...' : ''}</p>
-                             <p className="text-xs text-slate-400">{container.status}</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex space-x-1 opacity-80">
-                   <button 
-                        onClick={() => handleActionClick(container.id, container.state === 'running' ? 'stop' : 'start')}
-                        className={`p-1.5 rounded-lg transition-colors ${container.state === 'running' ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-emerald-500/10 text-emerald-500'}`}
-                        title={container.state === 'running' ? 'Stop' : 'Start'}
-                    >
-                        {container.state === 'running' ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
-                    </button>
-                    <button 
-                        onClick={() => handleActionClick(container.id, 'remove')}
-                        disabled={isConmanSystemContainer(container.name, container.image)}
-                        className={clsx(
-                            "p-1.5 rounded-lg transition-colors",
-                            isConmanSystemContainer(container.name, container.image)
-                                ? "opacity-25 cursor-not-allowed text-slate-400"
-                                : "hover:bg-red-500/10 text-red-500"
-                        )}
-                        title={isConmanSystemContainer(container.name, container.image) ? "Protected: Conman core system container cannot be removed from itself" : "Remove"}
-                    >
-                        <TrashIcon className="w-5 h-5" />
-                    </button>
-                     <button 
-                        onClick={(e) => handleInspect(container.id, e)}
-                        className="p-1.5 rounded-lg hover:bg-cyan-500/10 text-cyan-500 transition-colors"
-                        title="Inspect"
-                    >
-                        <EyeIcon className="w-5 h-5" />
-                    </button>
+              {/* Sort Order */}
+              <select 
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as any)}
+                  className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              >
+                  <option value="state">Sort by State</option>
+                  <option value="name">Sort by Name</option>
+                  <option value="status">Sort by Status</option>
+              </select>
+          </div>
+      </GlassCard>
 
-                    <Link to={'/containers/' + container.id} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Details">
-                        <DocumentTextIcon className="w-5 h-5" />
-                    </Link>
-                </div>
-             </div>
-             
-             <div className="p-5 grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">CPU Usage</p>
-                    <div className="flex items-end space-x-2">
-                        <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.cpu_usage}</span>
-                         <div className="h-8 w-24">
-                           {statsHistory[container.id]?.cpu.length > 0 && (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={statsHistory[container.id].cpu}>
-                                <Area type="monotone" dataKey="value" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                           )}
-                        </div>
-                    </div>
-                </div>
-                 <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Memory</p>
-                     <div className="flex items-end space-x-2">
-                        <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.memory_usage}</span>
-                        <div className="h-8 w-24">
-                           {statsHistory[container.id]?.mem.length > 0 && (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={statsHistory[container.id].mem}>
-                                <Area type="monotone" dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                           )}
-                        </div>
-                    </div>
-                </div>
-                 <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net I/O</p>
-                    <p className="text-sm font-mono text-slate-400">Rx/Tx {container.network_rx ? formatNetBytes(container.network_rx) : '--'} / {container.network_tx ? formatNetBytes(container.network_tx) : '--'}</p>
-                </div>
-                 <div className="space-y-1">
-                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Block I/O</p>
-                    <p className="text-sm font-mono text-slate-400">{container.disk_io}</p>
-                </div>
-             </div>
+      {/* Loading Skeleton */}
+      {loading && containers.length === 0 && (
+          <GlassCard className="p-12 text-center space-y-4">
+              <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto" />
+              <p className="text-sm text-slate-500 font-mono animate-pulse">Fetching container workloads...</p>
           </GlassCard>
-          </motion.div>
-        ))}
-        {filteredContainers.length === 0 && (
-            <div className="col-span-full py-12 text-center text-slate-500">
-                <p>No containers found matching filters.</p>
-            </div>
-        )}
-      </AnimatePresence>
-      </div>
+      )}
 
+      {/* --- TABLE / LIST VIEW (Dockhand Style) --- */}
+      {!loading && viewMode === 'table' && (
+        <GlassCard className="p-0 overflow-hidden shadow-xl border border-slate-200 dark:border-white/10">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+              <thead className="bg-slate-100/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-white/10 uppercase font-semibold tracking-wider text-[11px] sticky top-0 backdrop-blur-sm z-10">
+                <tr>
+                  <th className="px-4 py-3 min-w-[200px]">Name</th>
+                  <th className="px-4 py-3 min-w-[160px]">Image</th>
+                  <th className="px-4 py-3">State</th>
+                  <th className="px-4 py-3 min-w-[110px]">Uptime</th>
+                  <th className="px-4 py-3">CPU</th>
+                  <th className="px-4 py-3">Memory</th>
+                  <th className="px-4 py-3">Net I/O</th>
+                  <th className="px-4 py-3">Disk I/O</th>
+                  <th className="px-4 py-3">IP Address</th>
+                  <th className="px-4 py-3 min-w-[140px]">Ports</th>
+                  <th className="px-4 py-3">Stack</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-white/5 font-sans">
+                {filteredContainers.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="px-6 py-12 text-center text-slate-500">
+                      No containers matching filters found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedContainers.map((container) => {
+                    const isSystem = isConmanSystemContainer(container.name, container.image);
+                    const isRunning = container.state === 'running';
+                    const parsedPorts = parseContainerPorts(container.ports, currentHost?.ip || currentHost?.name);
+                    const stackName = container.labels?.['com.docker.compose.project'] || container.labels?.['com.docker.stack.namespace'] || '';
+
+                    return (
+                      <tr 
+                        key={container.id}
+                        className={clsx(
+                          "transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.03] group",
+                          isSystem && "bg-cyan-500/[0.02]"
+                        )}
+                      >
+                        {/* Name */}
+                        <td className="px-4 py-3 align-middle">
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            <span className={clsx("w-2.5 h-2.5 rounded-full shrink-0", getStatusColor(container.state))} />
+                            <div className="min-w-0">
+                              <Link 
+                                to={`/containers/${container.id}`}
+                                className="font-semibold text-slate-900 dark:text-slate-100 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors block truncate max-w-[190px]" 
+                                title={container.name}
+                              >
+                                {container.name}
+                              </Link>
+                              {isSystem && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 mt-0.5" title="Protected System Container">
+                                  <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                  System
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Image */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs">
+                          <span 
+                            className="text-slate-700 dark:text-slate-300 truncate block max-w-[150px]" 
+                            title={container.image}
+                          >
+                            {container.image}
+                          </span>
+                        </td>
+
+                        {/* State */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          <span className={clsx(
+                            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border",
+                            isRunning 
+                              ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
+                              : container.state === 'exited'
+                                ? "bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-500/20"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                          )}>
+                            <span>{isRunning ? '▷' : '▢'}</span>
+                            <span className="capitalize">{container.state}</span>
+                          </span>
+                        </td>
+
+                        {/* Uptime / Status */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-500 text-[11px]">
+                          {container.status}
+                        </td>
+
+                        {/* CPU */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                          {container.cpu_usage || '0.00%'}
+                        </td>
+
+                        {/* Memory */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                          {container.memory_usage || '0 B'}
+                        </td>
+
+                        {/* Net I/O */}
+                        <td className="px-4 py-3 align-middle font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap" title={`${formatNetBytes(container.network_rx)} received / ${formatNetBytes(container.network_tx)} sent`}>
+                          ↓{formatNetBytes(container.network_rx)} ↑{formatNetBytes(container.network_tx)}
+                        </td>
+
+                        {/* Disk I/O */}
+                        <td className="px-4 py-3 align-middle font-mono text-[11px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                          {container.disk_io || '0 B / 0 B'}
+                        </td>
+
+                        {/* IP Address */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs whitespace-nowrap">
+                          {container.ip_address ? (
+                            <span className="text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-200 dark:border-cyan-500/20">
+                              {container.ip_address}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* Ports with Clickable External Link */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          {parsedPorts.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
+                              {parsedPorts.map((port, pIdx) => (
+                                port.url ? (
+                                  <a
+                                    key={pIdx}
+                                    href={port.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 hover:underline transition-colors"
+                                    title={`Open http://${window.location.hostname}:${port.publicPort} in new tab`}
+                                  >
+                                    <span>{port.display}</span>
+                                    <ArrowTopRightOnSquareIcon className="w-3 h-3 text-indigo-500" />
+                                  </a>
+                                ) : (
+                                  <span
+                                    key={pIdx}
+                                    className="inline-block px-1.5 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                                  >
+                                    {port.display}
+                                  </span>
+                                )
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* Stack */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs whitespace-nowrap">
+                          {stackName ? (
+                            <span className="text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-500/20">
+                              {stackName}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100">
+                            {/* Start/Stop */}
+                            <button 
+                              onClick={() => handleActionClick(container.id, isRunning ? 'stop' : 'start')}
+                              className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isRunning 
+                                  ? "hover:bg-amber-500/10 text-amber-500" 
+                                  : "hover:bg-emerald-500/10 text-emerald-500"
+                              )}
+                              title={isRunning ? 'Stop Container' : 'Start Container'}
+                            >
+                              {isRunning ? <StopIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+                            </button>
+
+                            {/* Restart */}
+                            <button
+                              onClick={() => handleActionClick(container.id, 'restart')}
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-cyan-500 transition-colors"
+                              title="Restart Container"
+                            >
+                              <ArrowPathIcon className="w-4 h-4" />
+                            </button>
+
+                            {/* Terminal / Exec */}
+                            <Link
+                              to={`/containers/${container.id}`}
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-500 transition-colors"
+                              title="Open Terminal / Shell"
+                            >
+                              <CommandLineIcon className="w-4 h-4" />
+                            </Link>
+
+                            {/* Logs */}
+                            <Link 
+                              to={`/containers/${container.id}/logs`} 
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors" 
+                              title="View Logs"
+                            >
+                              <DocumentTextIcon className="w-4 h-4" />
+                            </Link>
+
+                            {/* Inspect */}
+                            <button 
+                              onClick={(e) => handleInspect(container.id, e)}
+                              className="p-1.5 rounded-lg hover:bg-cyan-500/10 text-slate-400 hover:text-cyan-500 transition-colors"
+                              title="Inspect JSON"
+                            >
+                              <EyeIcon className="w-4 h-4" />
+                            </button>
+
+                            {/* Remove (System Protected) */}
+                            <button 
+                              onClick={() => handleActionClick(container.id, 'remove')}
+                              disabled={isSystem}
+                              className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isSystem
+                                  ? "opacity-20 cursor-not-allowed text-slate-400"
+                                  : "hover:bg-rose-500/10 text-slate-400 hover:text-rose-500"
+                              )}
+                              title={isSystem ? "Protected: Conman core system container cannot be removed from itself" : "Remove Container"}
+                            >
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* --- GRID / CARDS VIEW --- */}
+      {!loading && viewMode === 'grid' && (
+        <div className={`grid gap-6 ${isCollapsed ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+        <AnimatePresence mode="popLayout">
+          {paginatedContainers.map((container) => {
+            const isSystem = isConmanSystemContainer(container.name, container.image);
+            const isRunning = container.state === 'running';
+            const parsedPorts = parseContainerPorts(container.ports, currentHost?.ip || currentHost?.name);
+
+            return (
+              <motion.div
+                key={container.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                layout
+              >
+              <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group">
+                <div className="p-5 border-b border-slate-200 dark:border-slate-700/50 flex justify-between items-start bg-slate-50/30 dark:bg-slate-800/30">
+                    <div className="flex items-start space-x-3">
+                        <div className={`w-3 h-3 mt-1.5 rounded-full ${getStatusColor(container.state)} transition-all duration-500`}></div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <Link to={'/containers/' + container.id}>
+                                    <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors cursor-pointer truncate max-w-[180px]" title={container.name}>
+                                        {container.name}
+                                    </h3>
+                                </Link>
+                                {isSystem && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Container">
+                                        <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                        System
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                                <p className="text-xs font-mono text-slate-500 bg-slate-200 dark:bg-slate-700/50 px-1.5 py-0.5 rounded truncate max-w-[160px]">{container.image}</p>
+                                <p className="text-xs text-slate-400">{container.status}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex space-x-1 opacity-80">
+                      <button 
+                            onClick={() => handleActionClick(container.id, isRunning ? 'stop' : 'start')}
+                            className={`p-1.5 rounded-lg transition-colors ${isRunning ? 'hover:bg-amber-500/10 text-amber-500' : 'hover:bg-emerald-500/10 text-emerald-500'}`}
+                            title={isRunning ? 'Stop' : 'Start'}
+                        >
+                            {isRunning ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                        </button>
+                        <button 
+                            onClick={() => handleActionClick(container.id, 'remove')}
+                            disabled={isSystem}
+                            className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isSystem
+                                    ? "opacity-25 cursor-not-allowed text-slate-400"
+                                    : "hover:bg-red-500/10 text-red-500"
+                            )}
+                            title={isSystem ? "Protected: Conman core system container cannot be removed from itself" : "Remove"}
+                        >
+                            <TrashIcon className="w-5 h-5" />
+                        </button>
+                        <button 
+                            onClick={(e) => handleInspect(container.id, e)}
+                            className="p-1.5 rounded-lg hover:bg-cyan-500/10 text-cyan-500 transition-colors"
+                            title="Inspect"
+                        >
+                            <EyeIcon className="w-5 h-5" />
+                        </button>
+
+                        <Link to={'/containers/' + container.id} className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500 transition-colors" title="Details">
+                            <DocumentTextIcon className="w-5 h-5" />
+                        </Link>
+                    </div>
+                </div>
+
+                {/* IP & Ports Bar */}
+                {(container.ip_address || parsedPorts.length > 0) && (
+                  <div className="px-5 py-2.5 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-200 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    {container.ip_address && (
+                      <div className="flex items-center gap-1 font-mono text-[11px]">
+                        <span className="text-slate-400">IP:</span>
+                        <span className="text-cyan-700 dark:text-cyan-400 font-semibold">{container.ip_address}</span>
+                      </div>
+                    )}
+                    {parsedPorts.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {parsedPorts.map((port, pIdx) => (
+                          port.url ? (
+                            <a
+                              key={pIdx}
+                              href={port.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20 hover:underline"
+                              title={`Open ${port.url}`}
+                            >
+                              <span>{port.display}</span>
+                              <ArrowTopRightOnSquareIcon className="w-2.5 h-2.5" />
+                            </a>
+                          ) : (
+                            <span key={pIdx} className="text-[10px] font-mono text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                              {port.display}
+                            </span>
+                          )
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                <div className="p-5 grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">CPU Usage</p>
+                        <div className="flex items-end space-x-2">
+                            <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.cpu_usage || '0.00%'}</span>
+                            <div className="h-8 w-24">
+                              {statsHistory[container.id]?.cpu?.length > 0 && (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <AreaChart data={statsHistory[container.id].cpu}>
+                                    <Area type="monotone" dataKey="value" stroke="#0ea5e9" fill="#0ea5e9" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
+                                  </AreaChart>
+                                </ResponsiveContainer>
+                              )}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Memory</p>
+                        <div className="flex items-end space-x-2">
+                            <span className="text-xl font-bold text-slate-700 dark:text-slate-200">{container.memory_usage || '0 B'}</span>
+                            <div className="h-8 w-24">
+                              {statsHistory[container.id]?.mem?.length > 0 && (
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <AreaChart data={statsHistory[container.id].mem}>
+                                    <Area type="monotone" dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
+                                  </AreaChart>
+                                </ResponsiveContainer>
+                              )}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net I/O</p>
+                        <p className="text-sm font-mono text-slate-400">↓{formatNetBytes(container.network_rx)} ↑{formatNetBytes(container.network_tx)}</p>
+                    </div>
+                    <div className="space-y-1">
+                        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Block I/O</p>
+                        <p className="text-sm font-mono text-slate-400">{container.disk_io || '0 B / 0 B'}</p>
+                    </div>
+                </div>
+              </GlassCard>
+              </motion.div>
+            );
+          })}
+          {filteredContainers.length === 0 && (
+              <div className="col-span-full py-12 text-center text-slate-500">
+                  <p>No containers found matching filters.</p>
+              </div>
+          )}
+        </AnimatePresence>
+        </div>
+      )}
+
+      {/* Pagination */}
       <Pagination
         currentPage={page}
         totalItems={filteredContainers.length}
@@ -412,7 +808,7 @@ export const Containers = () => {
         title={confirmModal.title}
         message={confirmModal.message}
         isDestructive={confirmModal.isDestructive}
-        confirmText={confirmModal.title.split(' ')[0]} // "Remove", "Stop"
+        confirmText={confirmModal.title.split(' ')[0]}
       />
     </div>
     </PageTransition>

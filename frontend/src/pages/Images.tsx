@@ -1,95 +1,73 @@
 import { isConmanSystemImage } from '../utils/systemProtection';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { 
-    CloudArrowDownIcon, 
-    TrashIcon, 
-    Square3Stack3DIcon, 
-    ArrowPathIcon,
-    EyeIcon,
-    ArrowUpCircleIcon,
-    CheckCircleIcon,
-    ExclamationCircleIcon,
-    MagnifyingGlassIcon,
-    ServerStackIcon
-} from '@heroicons/react/24/solid';
+  ArrowDownTrayIcon, 
+  TrashIcon, 
+  EyeIcon, 
+  ServerStackIcon, 
+  ArrowPathIcon,
+  CheckCircleIcon,
+  ArrowUpCircleIcon,
+  ExclamationCircleIcon,
+  MagnifyingGlassIcon,
+  ShieldCheckIcon,
+  TableCellsIcon,
+  Squares2X2Icon
+} from '@heroicons/react/24/outline';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useSidebar } from '../layouts/DashboardLayout';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { Link } from 'react-router-dom';
+import clsx from 'clsx';
 import { Pagination } from '../components/ui/Pagination';
-import { clsx } from 'clsx';
 
 interface Image {
   id: string;
-  repo_tags: string[]; // Updated from tags
+  repo_tags: string[];
   size: number;
   created: number;
-  status: string; // "used" | "unused"
+  status: 'used' | 'unused';
   update_available: boolean;
 }
 
-interface UpdateStatus {
+interface UpdateCheckStatus {
   checking: boolean;
-  available: boolean | null;
-  error: string | null;
-  lastChecked: Date | null;
-  currentTag: string | null;
-  availableTag?: string | null;
+  available?: boolean;
+  availableTag?: string;
+  error?: string;
+  checkedAt?: Date;
 }
 
 export const Images = () => {
   const [images, setImages] = useState<Image[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pullImageName, setPullImageName] = useState('');
   const [pulling, setPulling] = useState(false);
-  const [inspectData, setInspectData] = useState<any>(null); // Kept for modal props compatibility if needed, else remove.
-  const [inspectModalOpen, setInspectModalOpen] = useState(false);
-  const [sortOrder, setSortOrder] = useState<'name' | 'size' | 'created' | 'status'>('created');
+  const [pullImageName, setPullImageName] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'used' | 'unused'>('all');
-  
-  // Initialize from localStorage
-  const [updateStatuses, setUpdateStatuses] = useState<Record<string, UpdateStatus>>(() => {
-    try {
-      const saved = localStorage.getItem('conman_image_updates');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Restore Date objects and reset checking state
-        Object.keys(parsed).forEach(key => {
-          parsed[key].checking = false;
-          if (parsed[key].lastChecked) {
-            parsed[key].lastChecked = new Date(parsed[key].lastChecked);
-          }
-        });
-        return parsed;
-      }
-    } catch (e) {
-      console.warn("Failed to load image updates from storage", e);
-    }
-    return {};
+  const [sortOrder, setSortOrder] = useState<'created' | 'name' | 'size' | 'status'>('created');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
+    return (localStorage.getItem('conman_images_view') as 'table' | 'grid') || 'table';
   });
-
-  // Persist to localStorage
-  useEffect(() => {
-    const dataToSave = { ...updateStatuses };
-    // We don't need to manually convert dates, JSON.stringify handles it.
-    // We might want to ensure 'checking' is false in saved data, but resolving it on load is easier.
-    localStorage.setItem('conman_image_updates', JSON.stringify(dataToSave));
-  }, [updateStatuses]);
-
+  const [inspectData, setInspectData] = useState<any>(null);
+  const [inspectModalOpen, setInspectModalOpen] = useState(false);
+  const [updateStatuses, setUpdateStatuses] = useState<Record<string, UpdateCheckStatus>>({});
   const [checkingAll, setCheckingAll] = useState(false);
   const { isCollapsed } = useSidebar();
   const { currentHost } = useHost();
-  const navigate = useNavigate();
+
+  const handleViewModeChange = (mode: 'table' | 'grid') => {
+    setViewMode(mode);
+    localStorage.setItem('conman_images_view', mode);
+  };
 
   const fetchImages = async () => {
     try {
       if (!currentHost) return;
-      const endpoint = `/agents/${currentHost.id}/images`;
-      const { data } = await api.get(endpoint);
+      const { data } = await api.get('/agents/' + currentHost.id + '/images');
       setImages(data || []);
     } catch (error) {
       console.error("Failed to fetch images", error);
@@ -102,9 +80,94 @@ export const Images = () => {
     fetchImages();
   }, [currentHost]);
 
+  const checkImageUpdate = async (imageId: string) => {
+    if (!currentHost) return;
+    
+    setUpdateStatuses(prev => ({
+      ...prev,
+      [imageId]: { checking: true }
+    }));
+
+    try {
+      const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}/check-update`);
+      setUpdateStatuses(prev => ({
+        ...prev,
+        [imageId]: {
+          checking: false,
+          available: data.update_available,
+          availableTag: data.available_tag,
+          checkedAt: new Date()
+        }
+      }));
+    } catch (error: any) {
+      setUpdateStatuses(prev => ({
+        ...prev,
+        [imageId]: {
+          checking: false,
+          error: error.response?.data?.error || 'Failed to check update',
+          checkedAt: new Date()
+        }
+      }));
+    }
+  };
+
+  const checkAllUpdates = async () => {
+    if (!currentHost || checkingAll) return;
+    setCheckingAll(true);
+    const toastId = toast.loading(`Checking updates for ${images.length} images...`);
+
+    let updatedCount = 0;
+    for (const img of images) {
+      try {
+        const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(img.id)}/check-update`);
+        if (data.update_available) updatedCount++;
+        setUpdateStatuses(prev => ({
+          ...prev,
+          [img.id]: {
+            checking: false,
+            available: data.update_available,
+            availableTag: data.available_tag,
+            checkedAt: new Date()
+          }
+        }));
+      } catch (e) {
+        // Continue with others
+      }
+    }
+
+    setCheckingAll(false);
+    if (updatedCount > 0) {
+      toast.success(`Found ${updatedCount} image update${updatedCount > 1 ? 's' : ''}!`, { id: toastId });
+    } else {
+      toast.success('All images are up to date', { id: toastId });
+    }
+  };
+
+  const handleUpdateImage = async (img: Image) => {
+    if (!currentHost) return;
+    const tag = img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0] : null;
+    if (!tag) {
+      toast.error('Cannot update image without repository tag');
+      return;
+    }
+
+    const toastId = toast.loading(`Pulling latest ${tag}...`);
+    try {
+      await api.post(`/agents/${currentHost.id}/images/pull`, { image: tag });
+      toast.success(`Successfully updated ${tag}`, { id: toastId });
+      setUpdateStatuses(prev => ({
+        ...prev,
+        [img.id]: { checking: false, available: false, checkedAt: new Date() }
+      }));
+      fetchImages();
+    } catch (err: any) {
+      toast.error(`Failed to pull ${tag}: ${err.response?.data?.error || err.message}`, { id: toastId });
+    }
+  };
+
   const handlePullImage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pullImageName) return;
+    if (!pullImageName.trim()) return;
 
     setPulling(true);
     const toastId = toast.loading(`Pulling image ${pullImageName}...`);
@@ -153,217 +216,83 @@ export const Images = () => {
   };
 
   const executeRemoveImage = async () => {
-      const imageId = confirmDelete.id;
-      if (!currentHost || !imageId) return;
-
-      // Mark this specific image as deleting immediately for visual feedback
-      setDeletingImageIds(prev => ({ ...prev, [imageId]: true }));
+      const id = confirmDelete.id;
+      if (!currentHost || !id) return;
+      
+      setDeletingImageIds(prev => ({ ...prev, [id]: true }));
       setConfirmDelete({ isOpen: false, id: '' });
 
-      const toastId = toast.loading('Removing image...');
+      const targetImg = images.find(img => img.id === id);
+      const displayName = targetImg?.repo_tags?.[0] || id.substring(0, 12);
+      const toastId = toast.loading(`Removing ${displayName}...`);
+
       try {
-          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}`);
-          toast.success('Image removed successfully', { id: toastId });
-          // Optimistically update list for snappy UI
-          setImages(prev => prev.filter(img => img.id !== imageId));
-          fetchImages();
+          await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
+          toast.success(`Removed ${displayName}`, { id: toastId });
+          setImages(prev => prev.filter(img => img.id !== id));
       } catch (error: any) {
-          console.error("Remove image failed", error);
-          const rawMsg = error.response?.data?.error || error.response?.data?.message || error.response?.data || error.message || 'Failed to remove image';
-          const errMsg = typeof rawMsg === 'object' ? JSON.stringify(rawMsg) : String(rawMsg);
-          toast.error(`Failed to remove image: ${errMsg}`, { id: toastId });
+          const errMsg = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to remove image';
+          toast.error(`Error: ${errMsg}`, { id: toastId });
       } finally {
           setDeletingImageIds(prev => {
               const next = { ...prev };
-              delete next[imageId];
+              delete next[id];
               return next;
           });
+          fetchImages();
       }
   };
 
   const handleInspect = async (id: string) => {
-      try {
-        // Fetch detailed inspect data
-        // Backend proxy: /agents/{id}/images/{imageId} -> Agent: /api/images/inspect?id={imageId}
+    try {
         if (!currentHost) return;
-        const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
-        // data is the Inspect result
+        const endpoint = `/agents/${currentHost.id}/images/${encodeURIComponent(id)}`;
+        const { data } = await api.get(endpoint);
         setInspectData(data);
         setInspectModalOpen(true);
-      } catch (error) {
-          toast.error("Failed to inspect image");
-      }
-  }
-
-  const checkImageUpdate = async (imageId: string) => {
-    setUpdateStatuses(prev => ({
-      ...prev,
-      [imageId]: { checking: true, available: null, error: null, lastChecked: null, currentTag: null }
-    }));
-
-    try {
-      if (!currentHost) return;
-      // Backend: /agents/{id}/images/{imageId}/check-update -> Agent: /api/images/check-update?id={imageId}
-      const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}/check-update`);
-      setUpdateStatuses(prev => ({
-        ...prev,
-        [imageId]: { 
-          checking: false, 
-          available: data.update_available, 
-          error: data.error || null,
-          lastChecked: new Date(),
-          currentTag: data.current_tag || null,
-          availableTag: data.available_tag || null
-        }
-      }));
-      
-      if (data.update_available) {
-        toast.success('Update available!');
-      } else if (data.error) {
-        toast.error(`Check failed: ${data.error}`);
-      } else {
-        toast('Image is up to date', { icon: '✓' });
-      }
-    } catch (error: any) {
-      setUpdateStatuses(prev => ({
-        ...prev,
-        [imageId]: { 
-          checking: false, 
-          available: null, 
-          error: error.message || 'Failed to check',
-          lastChecked: new Date(),
-          currentTag: null
-        }
-      }));
-      toast.error('Failed to check for updates');
-    }
-  };
-
-  const checkAllUpdates = async () => {
-    setCheckingAll(true);
-    const toastId = toast.loading('Checking all images for updates...');
-    
-    let updatesFound = 0;
-    let errors = 0;
-    
-    for (const img of images) {
-      if (!img.repo_tags || img.repo_tags.length === 0) continue;
-      
-      setUpdateStatuses(prev => ({
-        ...prev,
-        [img.id]: { checking: true, available: null, error: null, lastChecked: null, currentTag: null }
-      }));
-
-      try {
-        if (!currentHost) continue;
-        const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(img.id)}/check-update`);
-        setUpdateStatuses(prev => ({
-          ...prev,
-          [img.id]: { 
-            checking: false, 
-            available: data.update_available, 
-            error: data.error || null,
-            lastChecked: new Date(),
-            currentTag: data.current_tag || null,
-            availableTag: data.available_tag || null
-          }
-        }));
-        if (data.update_available) updatesFound++;
-        if (data.error) errors++;
-      } catch (error: any) {
-        setUpdateStatuses(prev => ({
-          ...prev,
-          [img.id]: { 
-            checking: false, 
-            available: null, 
-            error: error.message || 'Failed',
-            lastChecked: new Date(),
-            currentTag: null
-          }
-        }));
-        errors++;
-      }
-    }
-    
-    setCheckingAll(false);
-    if (updatesFound > 0) {
-      toast.success(`Found ${updatesFound} image(s) with updates available`, { id: toastId });
-    } else if (errors > 0) {
-      toast.error(`Check complete with ${errors} error(s)`, { id: toastId });
-    } else {
-      toast.success('All images are up to date!', { id: toastId });
-    }
-  };
-
-  const handleUpdateImage = async (img: Image) => {
-    if (!img.repo_tags || img.repo_tags.length === 0) {
-      toast.error('Cannot update: image has no tag');
-      return;
-    }
-    
-    const imageName = img.repo_tags[0];
-    const toastId = toast.loading(`Pulling latest ${imageName}...`);
-    
-    try {
-      if (!currentHost) return;
-      await api.post(`/agents/${currentHost.id}/images/pull`, { image: imageName });
-      toast.success(`Successfully updated ${imageName}`, { id: toastId });
-      
-      // Clear update status and refresh
-      setUpdateStatuses(prev => {
-        const newState = { ...prev };
-        delete newState[img.id];
-        return newState;
-      });
-      fetchImages();
     } catch (error) {
-      toast.error(`Failed to update ${imageName}`, { id: toastId });
+        toast.error("Failed to inspect image");
     }
   };
 
   const formatSize = (bytes: number) => {
     if (!bytes) return '0 B';
-    const k = 1000;
+    const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const formatTime = (created: number) => {
-      return new Date(created * 1000).toLocaleDateString();
-  }
+  const formatTime = (timestamp: number) => {
+      if (!timestamp) return 'Unknown';
+      const date = new Date(timestamp * 1000);
+      const now = new Date();
+      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 3600 * 24));
+      
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return `${diffDays} days ago`;
+      if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+      return `${Math.floor(diffDays / 30)} months ago`;
+  };
 
   const getUpdateStatusBadge = (imageId: string) => {
     const status = updateStatuses[imageId];
     if (!status) return null;
-    
+
     if (status.checking) {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse">
-          <ArrowPathIcon className="w-3 h-3 mr-1 animate-spin" />
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse">
+          <ArrowPathIcon className="w-2.5 h-2.5 mr-1 animate-spin" />
           Checking...
         </span>
       );
     }
     
     if (status.error) {
-      // Check for common non-critical errors (local images, auth required)
-      const isSkipped = status.error.toLowerCase().includes('authentication') || 
-                        status.error.toLowerCase().includes('not found') || 
-                        status.error.toLowerCase().includes('manifest');
-      
-      if (isSkipped) {
-        return (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-500/10 text-slate-500 border border-slate-500/20" title={status.error}>
-              <ExclamationCircleIcon className="w-3 h-3 mr-1" />
-              Local / Private
-            </span>
-        );
-      }
-
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30" title={status.error}>
-          <ExclamationCircleIcon className="w-3 h-3 mr-1" />
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20" title={status.error}>
+          <ExclamationCircleIcon className="w-2.5 h-2.5 mr-1" />
           Error
         </span>
       );
@@ -371,8 +300,8 @@ export const Images = () => {
     
     if (status.available === true) {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse" title="A newer version is available on the registry">
-          <ArrowUpCircleIcon className="w-3 h-3 mr-1" />
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse" title="A newer version is available">
+          <ArrowUpCircleIcon className="w-2.5 h-2.5 mr-1" />
           {status.availableTag ? status.availableTag : 'Update Available'}
         </span>
       );
@@ -380,8 +309,8 @@ export const Images = () => {
     
     if (status.available === false) {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-500/20 text-slate-400 border border-slate-500/30">
-          <CheckCircleIcon className="w-3 h-3 mr-1" />
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 text-slate-400 border border-slate-500/30">
+          <CheckCircleIcon className="w-2.5 h-2.5 mr-1" />
           Up to date
         </span>
       );
@@ -414,126 +343,126 @@ export const Images = () => {
   const [pageSize, setPageSize] = useState(24);
   const paginatedImages = sortedImages.slice((page - 1) * pageSize, page * pageSize);
 
-  // Reset page when sort/filter changes
   useEffect(() => { setPage(1); }, [sortOrder, statusFilter]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
+            <span>Images</span>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20">
+              {images.length}
+            </span>
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">Docker image inventory and update management</p>
+        </div>
 
-        <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-800 to-slate-500 dark:from-slate-100 dark:to-slate-400">
-          Images
-        </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {currentHost && (
-            <span className="inline-flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-white/10">
-              <ServerStackIcon className="w-4 h-4" />
+            <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
+              <ServerStackIcon className="w-4 h-4 text-indigo-500" />
               {currentHost.name}
             </span>
           )}
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => handleViewModeChange('table')}
+              className={clsx(
+                "p-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5",
+                viewMode === 'table'
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              )}
+              title="List / Table View"
+            >
+              <TableCellsIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">List</span>
+            </button>
+            <button
+              onClick={() => handleViewModeChange('grid')}
+              className={clsx(
+                "p-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5",
+                viewMode === 'grid'
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              )}
+              title="Cards / Grid View"
+            >
+              <Squares2X2Icon className="w-4 h-4" />
+              <span className="hidden sm:inline">Grid</span>
+            </button>
+          </div>
+
           <button
             onClick={checkAllUpdates}
             disabled={checkingAll}
-            className={clsx(
-              "inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition-colors",
-              checkingAll
-                ? "bg-blue-500/10 text-blue-400 cursor-wait"
-                : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-            )}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
+            title="Check all images for newer tags"
           >
-              <MagnifyingGlassIcon className={clsx("w-4 h-4", checkingAll && "animate-pulse")} />
-              {checkingAll ? 'Checking...' : 'Check All Updates'}
+            <ArrowPathIcon className={clsx("w-3.5 h-3.5", checkingAll && "animate-spin text-indigo-500")} />
+            <span>Check Updates</span>
           </button>
+
           <button
             onClick={() => setConfirmPrune(true)}
-            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-rose-200 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
+            disabled={isPruning}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 transition-colors disabled:opacity-50"
           >
-              <TrashIcon className="w-4 h-4" />
-              Prune
-          </button>
-          <button
-            onClick={fetchImages}
-            className="inline-flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-          >
-              <ArrowPathIcon className="w-4 h-4" />
-              Refresh
+            <TrashIcon className="w-3.5 h-3.5" />
+            <span>Prune Unused</span>
           </button>
         </div>
       </div>
-       {/* Stats + Pull — 3 cards in a row */}
-       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <GlassCard className="p-5 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <Square3Stack3DIcon className="w-16 h-16 text-blue-500" />
-                </div>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Images</p>
-                <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">{images.length}</p>
-                <div className="mt-3 flex items-center text-xs text-slate-500">
-                    <span className="text-blue-500 font-medium">{formatSize(images.reduce((acc, img) => acc + img.size, 0))}</span>
-                    <span className="ml-1">total size</span>
-                </div>
-            </GlassCard>
 
-            <GlassCard className="p-5 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                    <ServerStackIcon className="w-16 h-16 text-emerald-500" />
-                </div>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Used Images</p>
-                <p className="text-3xl font-bold text-slate-800 dark:text-slate-100 mt-1">
-                    {images.filter(img => img.status === 'used').length}
-                </p>
-                <div className="mt-3 flex items-center text-xs text-slate-500">
-                    <span className="text-emerald-500 font-medium">
-                        {Math.round((images.filter(img => img.status === 'used').length / (images.length || 1)) * 100)}%
-                    </span>
-                    <span className="ml-1">in use by containers</span>
-                </div>
-            </GlassCard>
-
-            <GlassCard className="p-5 flex flex-col justify-between">
-                <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 flex items-center mb-3">
-                    <CloudArrowDownIcon className="w-4 h-4 mr-1.5 text-cyan-600 dark:text-cyan-400" />
-                    Pull New Image
-                </h3>
-                <form onSubmit={handlePullImage} className="flex gap-2">
-                    <input
-                        type="text"
-                        value={pullImageName}
-                        onChange={(e) => setPullImageName(e.target.value)}
-                        placeholder="e.g. nginx:alpine"
-                        className="flex-1 min-w-0 bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
-                    />
-                    <button
-                        type="submit"
-                        disabled={pulling || !pullImageName}
-                        className="bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg shadow-cyan-500/20 whitespace-nowrap"
-                    >
-                        {pulling ? 'Pulling...' : 'Pull'}
-                    </button>
-                </form>
-                <p className="text-[11px] text-slate-400 mt-2">Docker Hub, ghcr.io, private registries</p>
-            </GlassCard>
-       </div>
-
+       {/* Pull Image Card */}
+       <GlassCard className="p-4">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2 flex items-center gap-2">
+                <ArrowDownTrayIcon className="w-4 h-4 text-indigo-500" />
+                <span>Pull New Image</span>
+            </h3>
+            <form onSubmit={handlePullImage} className="flex gap-2">
+                <input
+                    type="text"
+                    value={pullImageName}
+                    onChange={(e) => setPullImageName(e.target.value)}
+                    placeholder="e.g. nginx:alpine, redis:latest, postgres:16"
+                    className="flex-1 min-w-0 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-slate-100 placeholder-slate-400 rounded-lg px-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all"
+                />
+                <button
+                    type="submit"
+                    disabled={pulling || !pullImageName}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-all shadow-md shadow-indigo-500/20 whitespace-nowrap flex items-center gap-1.5"
+                >
+                    <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                    <span>{pulling ? 'Pulling...' : 'Pull Image'}</span>
+                </button>
+            </form>
+        </GlassCard>
 
         {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mt-8 mb-4 gap-4">
-        <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-300">Image List</h3>
+      <GlassCard className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+          Showing {filteredImages.length} of {images.length} images
+        </span>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block p-2 outline-none"
+            className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
           >
-            <option value="all">All Images ({images.length})</option>
+            <option value="all">All Statuses ({images.length})</option>
             <option value="used">Used ({images.filter(i => i.status === 'used').length})</option>
             <option value="unused">Unused ({images.filter(i => i.status === 'unused').length})</option>
           </select>
           <select
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value as any)}
-            className="bg-white dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 text-slate-700 dark:text-slate-300 text-xs rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block p-2 outline-none"
+            className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
           >
             <option value="created">Sort by Created</option>
             <option value="name">Sort by Name</option>
@@ -541,13 +470,173 @@ export const Images = () => {
             <option value="status">Sort by Status</option>
           </select>
         </div>
-      </div>
+      </GlassCard>
 
-      {/* Image Grid */}
-      <div className="space-y-4">
-        {loading ? (
-           <div className="text-slate-500 text-center py-10 animate-pulse">Loading images...</div>
-        ) : (
+      {/* --- TABLE / LIST VIEW --- */}
+      {!loading && viewMode === 'table' && (
+        <GlassCard className="p-0 overflow-hidden shadow-xl border border-slate-200 dark:border-white/10">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+              <thead className="bg-slate-100/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-white/10 uppercase font-semibold tracking-wider text-[11px] sticky top-0 backdrop-blur-sm z-10">
+                <tr>
+                  <th className="px-4 py-3 min-w-[220px]">Repository & Tag</th>
+                  <th className="px-4 py-3 min-w-[130px]">Image ID</th>
+                  <th className="px-4 py-3">Size</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3 min-w-[140px]">Update Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-white/5 font-sans">
+                {paginatedImages.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                      No images matching filters found.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedImages.map((img) => {
+                    const isDeleting = !!deletingImageIds[img.id];
+                    const isSystem = isConmanSystemImage(img.repo_tags, img.id);
+                    const repo = img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>';
+                    const tag = img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[1] || 'latest' : '<none>';
+
+                    return (
+                      <tr
+                        key={img.id}
+                        className={clsx(
+                          "transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.03] group",
+                          isDeleting && "opacity-50 bg-rose-500/5",
+                          isSystem && "bg-cyan-500/[0.02]"
+                        )}
+                      >
+                        {/* Repository & Tag */}
+                        <td className="px-4 py-3 align-middle">
+                          <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <Link
+                              to={`/images/${encodeURIComponent(img.id)}`}
+                              className="font-semibold text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors truncate max-w-[200px]"
+                              title={img.repo_tags?.[0]}
+                            >
+                              {repo}
+                            </Link>
+                            <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              {tag}
+                            </span>
+                            {isSystem && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20" title="Protected System Image">
+                                <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                System
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Image ID */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs text-slate-500 whitespace-nowrap">
+                          {img.id.substring(7, 19)}
+                        </td>
+
+                        {/* Size */}
+                        <td className="px-4 py-3 align-middle font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                          {formatSize(img.size)}
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          <span className={clsx(
+                            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border",
+                            img.status === 'used'
+                              ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                          )}>
+                            <span className={clsx("w-1.5 h-1.5 rounded-full", img.status === 'used' ? "bg-emerald-500" : "bg-slate-400")} />
+                            <span>{img.status === 'used' ? 'In Use' : 'Unused'}</span>
+                          </span>
+                        </td>
+
+                        {/* Created */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-500 text-[11px]">
+                          {formatTime(img.created)}
+                        </td>
+
+                        {/* Update Status */}
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
+                          {getUpdateStatusBadge(img.id) || (
+                            <button
+                              onClick={() => checkImageUpdate(img.id)}
+                              className="text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                              Check
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100">
+                            {/* Check Update */}
+                            <button
+                              onClick={() => checkImageUpdate(img.id)}
+                              disabled={isDeleting || updateStatuses[img.id]?.checking}
+                              className={clsx("p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-indigo-500 transition-colors", (isDeleting || updateStatuses[img.id]?.checking) && "opacity-40 cursor-not-allowed")}
+                              title="Check for Updates"
+                            >
+                              <MagnifyingGlassIcon className={clsx("w-3.5 h-3.5", updateStatuses[img.id]?.checking && "animate-pulse")} />
+                            </button>
+
+                            {/* Pull Latest */}
+                            <button
+                              onClick={() => handleUpdateImage(img)}
+                              disabled={isDeleting}
+                              className={clsx("p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-emerald-500 transition-colors", isDeleting && "opacity-40 cursor-not-allowed")}
+                              title="Pull Latest Version"
+                            >
+                              <ArrowUpCircleIcon className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Inspect */}
+                            <button
+                              onClick={() => handleInspect(img.id)}
+                              disabled={isDeleting}
+                              className={clsx("p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-400 hover:text-cyan-500 transition-colors", isDeleting && "opacity-40 cursor-not-allowed")}
+                              title="Inspect JSON"
+                            >
+                              <EyeIcon className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Remove */}
+                            <button
+                              onClick={() => handleRemoveImage(img.id)}
+                              disabled={isDeleting || isSystem}
+                              className={clsx(
+                                "p-1.5 rounded-lg transition-colors",
+                                isSystem
+                                  ? "opacity-20 cursor-not-allowed text-slate-400"
+                                  : isDeleting
+                                    ? "opacity-40 cursor-not-allowed text-slate-400"
+                                    : "hover:bg-rose-500/10 text-slate-400 hover:text-rose-500"
+                              )}
+                              title={isSystem ? "Protected: Conman core system image cannot be removed from itself" : "Remove Image"}
+                            >
+                              <TrashIcon className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* --- GRID / CARDS VIEW --- */}
+      {!loading && viewMode === 'grid' && (
+        <div className="space-y-4">
             <div className={`grid gap-6 ${
                 isCollapsed 
                   ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' 
@@ -555,14 +644,15 @@ export const Images = () => {
               }`}>
                 {paginatedImages.map((img) => {
                     const isDeleting = !!deletingImageIds[img.id];
+                    const isSystem = isConmanSystemImage(img.repo_tags, img.id);
+
                     return (
                     <GlassCard 
                         key={img.id} 
                         className={clsx(
-                            "p-3 flex flex-col justify-between group h-full transition-all duration-300 relative overflow-hidden",
-                            isDeleting 
-                                ? "opacity-75 scale-[0.98] border-rose-500/50 dark:border-rose-500/50 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/40" 
-                                : "hover:bg-black/5 dark:hover:bg-white/5"
+                            "p-4 relative transition-all duration-300 group overflow-hidden border border-slate-200 dark:border-white/10",
+                            isDeleting ? "ring-2 ring-rose-500/50 pointer-events-none" : "hover:ring-1 hover:ring-indigo-500/30",
+                            isSystem && "bg-cyan-500/[0.02]"
                         )}
                     >
                          {/* Deleting animation overlay */}
@@ -586,6 +676,7 @@ export const Images = () => {
                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                              </span>
                          )}
+
                          {/* Header: name + actions */}
                          <div className="flex justify-between items-start gap-2 mb-2">
                             <div className="min-w-0">
@@ -593,7 +684,7 @@ export const Images = () => {
                                     <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-200 truncate" title={img.repo_tags && img.repo_tags[0]}>
                                         {img.repo_tags && img.repo_tags.length > 0 ? img.repo_tags[0].split(':')[0] : '<none>'}
                                     </h4>
-                                    {isConmanSystemImage(img.repo_tags, img.id) && (
+                                    {isSystem && (
                                         <span className="text-[10px] font-semibold text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 px-1.5 py-px rounded border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-0.5 shrink-0" title="Protected: Conman System Image">
                                             <ShieldCheckIcon className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
                                             System
@@ -628,16 +719,16 @@ export const Images = () => {
                                 ><EyeIcon className="w-3.5 h-3.5" /></button>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} 
-                                    disabled={isDeleting || isConmanSystemImage(img.repo_tags, img.id)}
+                                    disabled={isDeleting || isSystem}
                                     className={clsx(
                                         "p-1 rounded transition-colors",
-                                        isConmanSystemImage(img.repo_tags, img.id)
+                                        isSystem
                                             ? "opacity-25 cursor-not-allowed text-slate-400"
                                             : isDeleting 
                                                 ? "opacity-40 cursor-not-allowed text-slate-400"
                                                 : "text-slate-400 hover:text-rose-500"
                                     )} 
-                                    title={isConmanSystemImage(img.repo_tags, img.id) ? "Protected: Conman core system image cannot be removed from itself" : "Remove"}
+                                    title={isSystem ? "Protected: Conman core system image cannot be removed from itself" : "Remove"}
                                 ><TrashIcon className="w-3.5 h-3.5" /></button>
                             </div>
                          </div>
@@ -661,9 +752,10 @@ export const Images = () => {
                 })
             }
             </div>
-        )}
-      </div>
+        </div>
+      )}
 
+      {/* Pagination */}
       <Pagination
         currentPage={page}
         totalItems={sortedImages.length}
@@ -679,24 +771,24 @@ export const Images = () => {
         data={inspectData}
       />
 
-            <ConfirmModal
-                isOpen={confirmDelete.isOpen}
-                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
-                onConfirm={executeRemoveImage}
-                title="Remove Image"
-                message="Are you sure you want to remove this image? This cannot be undone."
-                confirmText="Remove"
-                isDestructive={true}
-            />
-            <ConfirmModal
-                isOpen={confirmPrune}
-                onClose={() => setConfirmPrune(false)}
-                onConfirm={handlePruneImages}
-                title="Prune Images"
-                message="Remove all unused (dangling) images? This cannot be undone."
-                confirmText="Prune"
-                isDestructive={true}
-            />
+      <ConfirmModal
+          isOpen={confirmDelete.isOpen}
+          onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+          onConfirm={executeRemoveImage}
+          title="Remove Image"
+          message="Are you sure you want to remove this image? This cannot be undone."
+          confirmText="Remove"
+          isDestructive={true}
+      />
+      <ConfirmModal
+          isOpen={confirmPrune}
+          onClose={() => setConfirmPrune(false)}
+          onConfirm={handlePruneImages}
+          title="Prune Images"
+          message="Remove all unused (dangling) images? This cannot be undone."
+          confirmText="Prune"
+          isDestructive={true}
+      />
     </div>
   );
 };

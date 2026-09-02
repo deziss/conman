@@ -93,6 +93,7 @@ type AgentContainerResponse struct {
 	Labels      map[string]string `json:"labels,omitempty"`
 	NetworkMode string            `json:"network_mode"`
 	Mounts      []protocol.Mount  `json:"mounts,omitempty"`
+	IPAddress   string            `json:"ip_address,omitempty"`
 	CPUUsage    string            `json:"cpu_usage"`
 	MemoryUsage string            `json:"memory_usage"`
 	DiskIO      string            `json:"disk_io"`
@@ -842,6 +843,7 @@ func (h *AgentHandler) GetAgentContainers(w http.ResponseWriter, r *http.Request
 			Labels:      c.Labels,
 			NetworkMode: c.NetworkMode,
 			Mounts:      c.Mounts,
+			IPAddress:   c.IPAddress,
 			CPUUsage:    cpuUsage,
 			MemoryUsage: memUsage,
 			DiskIO:      diskIO,

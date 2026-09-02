@@ -49,6 +49,7 @@ type Container struct {
 	Labels     map[string]string `json:"labels,omitempty"`
 	NetworkMode string           `json:"network_mode"`
 	Mounts     []Mount           `json:"mounts,omitempty"`
+	IPAddress  string            `json:"ip_address,omitempty"`
 }
 
 // Port represents a container port mapping
