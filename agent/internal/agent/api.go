@@ -779,82 +779,73 @@ func (a *Agent) handleRemoveVolume(w http.ResponseWriter, r *http.Request) {
 
 // handleCheckImageUpdate checks if a newer version of the image is available
 func (a *Agent) handleCheckImageUpdate(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
     id := r.URL.Query().Get("id")
     if id == "" {
-        http.Error(w, "Missing image ID", http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "update_available": false,
+            "error":            "Missing image ID",
+        })
         return
     }
 
     // Inspect local image to get repo tag
     info, _, err := a.dockerClient().ImageInspectWithRaw(context.Background(), id)
     if err != nil {
-        http.Error(w, fmt.Sprintf("Failed to inspect image: %v", err), http.StatusNotFound)
-        return
-    }
-
-    if len(info.RepoTags) == 0 {
-        http.Error(w, "Image has no tags", http.StatusBadRequest)
-        return
-    }
-
-    tag := info.RepoTags[0] // Use first tag
-    parts := strings.Split(tag, ":")
-    if len(parts) != 2 {
-        // Fallback for implicit latest or weird tags
-        if len(parts) == 1 {
-            tag = parts[0] + ":latest"
-        } else {
-             http.Error(w, "Invalid tag format", http.StatusBadRequest)
-             return
-        }
-    }
-
-    // Get remote distribution info
-    // Note: DistributionInspect requires authentication for private repos.
-    // Ideally we should pass auth string from headers or use configured auth.
-    // For now, we try without auth (public images) or rely on dockerd default creds.
-    
-    // DistributionInspect returns distribution inspection for the image
-    // It compares the image on the registry with the local one? 
-    // No, it gets metadata from registry.
-    
-    dist, err := a.dockerClient().DistributionInspect(context.Background(), tag, "")
-    if err != nil {
-        // This often fails for private repos without auth or rate limits
-        w.Header().Set("Content-Type", "application/json")
         json.NewEncoder(w).Encode(map[string]interface{}{
             "update_available": false,
-            "error": fmt.Sprintf("Registry check failed: %v", err),
+            "error":            fmt.Sprintf("Failed to inspect image: %v", err),
         })
         return
     }
 
-    // Compare digests
-    // dist.Descriptor.Digest is the digest of the manifest in the registry
-    // info.RepoDigests contains the digests of the local image as known at pull time?
-    // Actually info.ID is the config digest.
-    // We should compare RepoDigests.
-    
-    // Simplified logic: If the Digest from registry is present in RepoDigests, it's up to date.
-    // If not, and we successfully got a digest for the same TAG, then it's an update.
-    
+    if len(info.RepoTags) == 0 {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "update_available": false,
+            "error":            "Image has no repository tags",
+        })
+        return
+    }
+
+    tag := info.RepoTags[0]
+    if tag == "<none>:<none>" || strings.HasPrefix(tag, "<none>") {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "update_available": false,
+            "error":            "Untagged image layer",
+        })
+        return
+    }
+
+    parts := strings.Split(tag, ":")
+    if len(parts) == 1 {
+        tag = parts[0] + ":latest"
+    }
+
+    dist, err := a.dockerClient().DistributionInspect(context.Background(), tag, "")
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "update_available": false,
+            "current_tag":      tag,
+            "error":            fmt.Sprintf("Registry check: %v", err),
+        })
+        return
+    }
+
     remoteDigest := dist.Descriptor.Digest.String()
     updateAvailable := true
-    
+
     for _, localDigest := range info.RepoDigests {
-        // Format is name@sha256:hex
         if strings.Contains(localDigest, remoteDigest) {
             updateAvailable = false
             break
         }
     }
 
-    w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]interface{}{
         "update_available": updateAvailable,
-        "current_tag": tag,
-        "available_tag": tag, // It's still the same tag name, but new content
-        "remote_digest": remoteDigest,
+        "current_tag":      tag,
+        "available_tag":    tag,
+        "remote_digest":    remoteDigest,
     })
 }
 

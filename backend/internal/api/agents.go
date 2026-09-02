@@ -305,10 +305,11 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router) {
 	r.Delete("/agents/{id}/containers/{containerId}", h.ProxyRemoveContainer)
     
 	// Image Management
+    r.Get("/agents/{id}/images/check-update", h.ProxyCheckImageUpdate)
+    r.Get("/agents/{id}/images/{imageId}/check-update", h.ProxyCheckImageUpdate)
     r.Get("/agents/{id}/images/{imageId}", h.ProxyInspectImage)
 	r.Post("/agents/{id}/images/pull", h.ProxyPullImage)
 	r.Delete("/agents/{id}/images/{imageId}", h.ProxyRemoveImage)
-    r.Get("/agents/{id}/images/{imageId}/check-update", h.ProxyCheckImageUpdate)
     
 	// Volume Management
     r.Get("/agents/{id}/volumes/{name}", h.ProxyInspectVolume)
