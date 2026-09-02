@@ -6,19 +6,21 @@ version: '3.8'
 services:
   conman-agent:
     build:
-      context: ./backend
-      dockerfile: Dockerfile.agent
+      context: ./agent
+      dockerfile: Dockerfile
     image: conman-agent:latest
     container_name: conman-agent
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Identity - auto-generated if not set
       - AGENT_ID=
       - AGENT_NAME=${HOSTNAME:-docker-host}
 
       # Central server connection
-      - CONMAN_SERVER_URL=http://your-conman-server:8080
-      - CONMAN_SERVER_TOKEN=${AGENT_TOKEN:-}
+      - CONMAN_SERVER_URL=http://host.docker.internal:5173
+      - CONMAN_SERVER_TOKEN=${AGENT_TOKEN:-conman-dev-token}
 
       # Communication mode: push, scrape, or hybrid
       - AGENT_MODE=hybrid
@@ -47,6 +49,7 @@ services:
       - COLLECT_EVENTS=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - conman_agent_data:/var/lib/conman-agent
     ports:
       - "9090:9090"    # Scrape endpoint
     deploy:
@@ -60,9 +63,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
     networks:
       - cm-agent-net
+
+volumes:
+  conman_agent_data:
 
 networks:
   cm-agent-net:

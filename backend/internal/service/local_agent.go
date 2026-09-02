@@ -32,6 +32,12 @@ func DetectAndRegisterLocalAgent(db *gorm.DB, registrar LocalAgentRegistrar) {
 		}
 	}()
 
+	// Allow disabling local agent auto-detection via env var
+	if os.Getenv("AUTO_DETECT_LOCAL_HOST") == "false" || os.Getenv("ENABLE_LOCAL_AGENT") == "false" {
+		log.Println("Local agent detect: disabled by configuration")
+		return
+	}
+
 	// Small delay to let the server fully start
 	time.Sleep(3 * time.Second)
 	log.Println("Local agent detect: starting runtime detection...")
@@ -39,6 +45,13 @@ func DetectAndRegisterLocalAgent(db *gorm.DB, registrar LocalAgentRegistrar) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		log.Printf("Local agent detect: could not get hostname: %v", err)
+		return
+	}
+
+	// Check if any agent already exists
+	var count int64
+	if err := db.Model(&models.Agent{}).Count(&count).Error; err == nil && count > 0 {
+		log.Printf("Local agent detect: %d agent(s) already registered, skipping auto-detection", count)
 		return
 	}
 

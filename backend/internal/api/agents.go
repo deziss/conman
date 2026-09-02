@@ -380,17 +380,56 @@ func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 		existing.HostInfo = dbAgent.HostInfo
 		existing.Status = "healthy"
 		existing.ScrapeURL = dbAgent.ScrapeURL
+		existing.Mode = dbAgent.Mode
+		existing.RuntimeType = dbAgent.RuntimeType
 		h.DB.Save(&existing)
-	} else {
-		// Create new — check host limit
-		if h.License != nil && !h.License.CanAddHost() {
-			state := h.License.GetState()
-			ErrorJSON(w, http.StatusForbidden, fmt.Sprintf(
-				"Host limit reached. Your %s plan allows %d host(s). Upgrade to add more.",
-				state.Tier, state.MaxHosts))
-			return
+	} else if reg.Mode == "local" || reg.AgentID == "local-agent" {
+		// If this is a local agent, check if an auto-detected placeholder agent exists and adopt it
+		var placeholder models.Agent
+		if err := h.DB.Where("agent_id LIKE ? OR mode = ?", "local-%", "local").First(&placeholder).Error; err == nil {
+			placeholder.AgentID = reg.AgentID
+			placeholder.Name = dbAgent.Name
+			placeholder.LastHeartbeat = dbAgent.LastHeartbeat
+			placeholder.HostInfo = dbAgent.HostInfo
+			placeholder.Status = "healthy"
+			placeholder.ScrapeURL = dbAgent.ScrapeURL
+			placeholder.Mode = dbAgent.Mode
+			placeholder.RuntimeType = dbAgent.RuntimeType
+			h.DB.Save(&placeholder)
+		} else {
+			if h.License != nil && !h.License.CanAddHost() {
+				state := h.License.GetState()
+				ErrorJSON(w, http.StatusForbidden, fmt.Sprintf(
+					"Host limit reached. Your %s plan allows %d host(s). Upgrade to add more.",
+					state.Tier, state.MaxHosts))
+				return
+			}
+			h.DB.Create(&dbAgent)
 		}
-		h.DB.Create(&dbAgent)
+	} else {
+		// Check if an un-reported local placeholder can be reclaimed
+		var placeholder models.Agent
+		if h.License != nil && !h.License.CanAddHost() {
+			if err := h.DB.Where("agent_id LIKE ? AND (last_report IS NULL OR last_report = ?)", "local-%", time.Time{}).First(&placeholder).Error; err == nil {
+				placeholder.AgentID = reg.AgentID
+				placeholder.Name = dbAgent.Name
+				placeholder.LastHeartbeat = dbAgent.LastHeartbeat
+				placeholder.HostInfo = dbAgent.HostInfo
+				placeholder.Status = "healthy"
+				placeholder.ScrapeURL = dbAgent.ScrapeURL
+				placeholder.Mode = dbAgent.Mode
+				placeholder.RuntimeType = dbAgent.RuntimeType
+				h.DB.Save(&placeholder)
+			} else {
+				state := h.License.GetState()
+				ErrorJSON(w, http.StatusForbidden, fmt.Sprintf(
+					"Host limit reached. Your %s plan allows %d host(s). Upgrade to add more.",
+					state.Tier, state.MaxHosts))
+				return
+			}
+		} else {
+			h.DB.Create(&dbAgent)
+		}
 	}
 
 	state := &AgentState{

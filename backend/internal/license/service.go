@@ -188,10 +188,13 @@ func (svc *LicenseService) CanAddHost() bool {
 	return count < state.MaxHosts
 }
 
-// GetHostCount returns the number of registered agents.
+// GetHostCount returns the number of active registered agents.
+// Placeholder local agents without active telemetry reports do not consume the host limit.
 func (svc *LicenseService) GetHostCount() int {
 	var count int64
-	svc.db.Model(&models.Agent{}).Count(&count)
+	svc.db.Model(&models.Agent{}).
+		Where("agent_id NOT LIKE 'local-%' OR (last_report IS NOT NULL AND last_report > ?)", time.Time{}).
+		Count(&count)
 	return int(count)
 }
 
