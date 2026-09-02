@@ -13,8 +13,11 @@ import {
   MagnifyingGlassIcon,
   ShieldCheckIcon,
   TableCellsIcon,
-  Squares2X2Icon
+  Squares2X2Icon,
+  EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
+import { Menu, Transition } from '@headlessui/react';
+import { Fragment } from 'react';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
@@ -781,38 +784,91 @@ export const Images = () => {
                                     {getUpdateStatusBadge(img.id)}
                                 </div>
                             </div>
-                            <div className="flex flex-shrink-0">
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
-                                    disabled={isDeleting || updateStatuses[img.id]?.checking}
-                                    className={clsx("p-1 rounded transition-colors", updateStatuses[img.id]?.checking ? "text-blue-400" : "text-slate-400 hover:text-indigo-500", (isDeleting || updateStatuses[img.id]?.checking) && "opacity-40 cursor-not-allowed")}
-                                    title="Check for Updates"
-                                ><MagnifyingGlassIcon className={clsx("w-3.5 h-3.5", updateStatuses[img.id]?.checking && "animate-pulse")} /></button>
+                            <div className="flex items-center space-x-1 flex-shrink-0">
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); handleUpdateImage(img); }} 
                                     disabled={isDeleting}
-                                    className={clsx("p-1 text-slate-400 hover:text-emerald-500 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
-                                    title="Pull Latest"
-                                ><ArrowUpCircleIcon className="w-3.5 h-3.5" /></button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }} 
-                                    disabled={isDeleting}
-                                    className={clsx("p-1 text-slate-400 hover:text-cyan-500 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
-                                    title="Inspect"
-                                ><EyeIcon className="w-3.5 h-3.5" /></button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }} 
-                                    disabled={isDeleting || isSystem}
-                                    className={clsx(
-                                        "p-1 rounded transition-colors",
-                                        isSystem
-                                            ? "opacity-25 cursor-not-allowed text-slate-400"
-                                            : isDeleting 
-                                                ? "opacity-40 cursor-not-allowed text-slate-400"
-                                                : "text-slate-400 hover:text-rose-500"
-                                    )} 
-                                    title={isSystem ? "Protected: Conman core system image cannot be removed from itself" : "Remove"}
-                                ><TrashIcon className="w-3.5 h-3.5" /></button>
+                                    className={clsx("p-1 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded transition-colors", isDeleting && "opacity-40 cursor-not-allowed")} 
+                                    title="Pull Latest Version"
+                                ><ArrowUpCircleIcon className="w-4 h-4" /></button>
+
+                                <Menu as="div" className="relative inline-block text-left">
+                                  <Menu.Button 
+                                    className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors"
+                                    title="More Options"
+                                  >
+                                    <EllipsisVerticalIcon className="w-4 h-4" />
+                                  </Menu.Button>
+
+                                  <Transition
+                                    as={Fragment}
+                                    enter="transition ease-out duration-100"
+                                    enterFrom="transform opacity-0 scale-95"
+                                    enterTo="transform opacity-100 scale-100"
+                                    leave="transition ease-in duration-75"
+                                    leaveFrom="transform opacity-100 scale-100"
+                                    leaveTo="transform opacity-0 scale-95"
+                                  >
+                                    <Menu.Items className="absolute right-0 mt-2 w-44 origin-top-right rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl focus:outline-none z-50 p-1 divide-y divide-slate-100 dark:divide-slate-800">
+                                      <div className="py-1">
+                                        <Menu.Item>
+                                          {({ active }) => (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); checkImageUpdate(img.id); }}
+                                              disabled={isDeleting || updateStatuses[img.id]?.checking}
+                                              className={clsx(
+                                                "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors",
+                                                active ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-300"
+                                              )}
+                                            >
+                                              <MagnifyingGlassIcon className={clsx("w-3.5 h-3.5 text-indigo-500", updateStatuses[img.id]?.checking && "animate-pulse")} />
+                                              <span>Check for Updates</span>
+                                            </button>
+                                          )}
+                                        </Menu.Item>
+
+                                        <Menu.Item>
+                                          {({ active }) => (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleInspect(img.id); }}
+                                              disabled={isDeleting}
+                                              className={clsx(
+                                                "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors",
+                                                active ? "bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" : "text-slate-700 dark:text-slate-300"
+                                              )}
+                                            >
+                                              <EyeIcon className="w-3.5 h-3.5 text-cyan-500" />
+                                              <span>Inspect JSON</span>
+                                            </button>
+                                          )}
+                                        </Menu.Item>
+                                      </div>
+
+                                      <div className="py-1">
+                                        <Menu.Item disabled={isDeleting || isSystem}>
+                                          {({ active }) => (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleRemoveImage(img.id); }}
+                                              disabled={isDeleting || isSystem}
+                                              className={clsx(
+                                                "w-full flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-colors",
+                                                isSystem 
+                                                  ? "opacity-30 cursor-not-allowed text-slate-400" 
+                                                  : active 
+                                                    ? "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400" 
+                                                    : "text-rose-600 dark:text-rose-400"
+                                              )}
+                                              title={isSystem ? "Protected: Conman core system image cannot be removed" : "Remove Image"}
+                                            >
+                                              <TrashIcon className="w-3.5 h-3.5 text-rose-500" />
+                                              <span>Remove Image</span>
+                                            </button>
+                                          )}
+                                        </Menu.Item>
+                                      </div>
+                                    </Menu.Items>
+                                  </Transition>
+                                </Menu>
                             </div>
                          </div>
                             
