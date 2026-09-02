@@ -411,7 +411,7 @@ export const Containers = () => {
                   paginatedContainers.map((container) => {
                     const isSystem = isConmanSystemContainer(container.name, container.image);
                     const isRunning = container.state === 'running';
-                    const parsedPorts = parseContainerPorts(container.ports, currentHost?.ip || currentHost?.name);
+                    const parsedPorts = parseContainerPorts(container.ports, currentHost);
                     const stackName = container.labels?.['com.docker.compose.project'] || container.labels?.['com.docker.stack.namespace'] || '';
 
                     return (
@@ -637,7 +637,7 @@ export const Containers = () => {
           {paginatedContainers.map((container) => {
             const isSystem = isConmanSystemContainer(container.name, container.image);
             const isRunning = container.state === 'running';
-            const parsedPorts = parseContainerPorts(container.ports, currentHost?.ip || currentHost?.name);
+            const parsedPorts = parseContainerPorts(container.ports, currentHost);
 
             return (
               <motion.div
