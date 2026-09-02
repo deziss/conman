@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { useState, useEffect, useMemo } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { 
@@ -17,6 +18,7 @@ import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
+import { useTask } from '../contexts/TaskContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
 import { SituationalBanner } from '../components/ui/SituationalBanner';
@@ -38,6 +40,11 @@ interface Network {
 type SortField = 'name' | 'driver' | 'scope' | 'created' | 'id';
 type SortDirection = 'asc' | 'desc';
 
+const isPredefinedNetwork = (name: string, driver?: string) => {
+    const n = (name || '').toLowerCase().trim();
+    return n === 'bridge' || n === 'host' || n === 'none' || driver === 'null' || driver === 'host';
+};
+
 export const Networks = () => {
   const [networks, setNetworks] = useState<Network[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +59,7 @@ export const Networks = () => {
   const [containers, setContainers] = useState<any[]>([]); // Simple list
 
   const { currentHost } = useHost();
+  const { startTask } = useTask();
   
   // Sort State
   const [sortField, setSortField] = useState<SortField>('name');
@@ -161,21 +169,37 @@ export const Networks = () => {
   const [deletingNetworkIds, setDeletingNetworkIds] = useState<Record<string, boolean>>({});
 
   const handleRemoveNetwork = (id: string) => {
+      const net = networks.find(n => n.id === id);
+      if (net && isPredefinedNetwork(net.name, net.driver)) {
+          toast.error(`Predefined Docker network '${net.name}' cannot be removed.`);
+          return;
+      }
       setConfirmDelete({ isOpen: true, id });
   };
 
   const handlePruneNetworks = async () => {
       if (!currentHost) return;
       setIsPruningNetworks(true);
-      const toastId = toast.loading('Pruning unused networks...');
+      const task = startTask({
+          type: 'prune',
+          title: 'Pruning Docker Networks',
+          resource: 'Unused bridge/overlay networks',
+          initialLog: 'Sending network prune command to Docker daemon...'
+      });
+
       try {
+          task.setProgress(35);
           const { data } = await api.post(`/agents/${currentHost.id}/networks/prune`);
           const count = data?.networks_deleted?.length || 0;
-          toast.success(`Pruned ${count} unused networks`, { id: toastId });
+          task.appendLog(`Docker pruned ${count} unused networks.`);
+          task.complete(`Pruned ${count} unused networks`);
+          toast.success(`Pruned ${count} unused networks`);
           setConfirmPrune(false);
           fetchNetworks();
       } catch (err: any) { 
-          toast.error(`Failed to prune networks: ${err.response?.data?.error || err.message}`, { id: toastId }); 
+          const errMsg = err.response?.data?.error || err.message || 'Failed to prune networks';
+          task.fail(errMsg);
+          toast.error(`Failed to prune networks: ${errMsg}`); 
       } finally {
           setIsPruningNetworks(false);
       }
@@ -328,12 +352,19 @@ export const Networks = () => {
                     ) : networks.length === 0 ? (
                         <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">No networks found.</td></tr>
                     ) : (
-                        paginatedNetworks.map((net) => (
-                            <tr key={net.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                        paginatedNetworks.map((net) => {
+                            const isPredefined = isPredefinedNetwork(net.name, net.driver);
+                            return (
+                            <tr key={net.id} className={clsx("hover:bg-black/5 dark:hover:bg-white/5 transition-colors group", isPredefined && "bg-cyan-500/[0.01]")}>
                                 <td className="px-6 py-4 font-medium text-slate-900 dark:text-slate-200">
-                                    <div className="flex items-center space-x-3">
-                                        <SignalIcon className="w-5 h-5 text-purple-600 dark:text-purple-500/50" />
+                                    <div className="flex items-center space-x-3 flex-wrap">
+                                        <SignalIcon className="w-5 h-5 text-purple-600 dark:text-purple-500/50 flex-shrink-0" />
                                         <span title={net.name} className="truncate max-w-[200px]">{net.name}</span>
+                                        {isPredefined && (
+                                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-200 dark:border-cyan-500/20" title="Protected: Predefined Docker Network">
+                                                System
+                                            </span>
+                                        )}
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 font-mono text-xs text-slate-500">
@@ -391,8 +422,14 @@ export const Networks = () => {
                                         
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleRemoveNetwork(net.id); }}
-                                            className="p-1.5 text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10 rounded-lg transition-colors"
-                                            title="Remove"
+                                            disabled={isPredefined}
+                                            className={clsx(
+                                                "p-1.5 rounded-lg transition-colors",
+                                                isPredefined 
+                                                    ? "text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-40" 
+                                                    : "text-slate-500 hover:text-rose-600 dark:hover:text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-500/10"
+                                            )}
+                                            title={isPredefined ? "Predefined Docker network cannot be removed" : "Remove"}
                                         >
                                             <TrashIcon className="w-4 h-4" />
                                         </button>
@@ -400,7 +437,8 @@ export const Networks = () => {
                                     </div>
                                 </td>
                             </tr>
-                        ))
+                        );
+                        })
                     )}
                 </tbody>
             </table>
