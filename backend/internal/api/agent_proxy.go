@@ -160,6 +160,9 @@ func (h *AgentHandler) ProxyRemoveImage(w http.ResponseWriter, r *http.Request) 
 
 func (h *AgentHandler) ProxyCheckImageUpdate(w http.ResponseWriter, r *http.Request) {
     imageID := chi.URLParam(r, "imageId")
+    if imageID == "" {
+        imageID = r.URL.Query().Get("id")
+    }
     path := fmt.Sprintf("/api/images/check-update?id=%s", url.QueryEscape(imageID))
     h.proxyRequest(w, r, "GET", path)
 }

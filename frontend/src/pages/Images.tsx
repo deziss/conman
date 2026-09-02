@@ -93,16 +93,20 @@ export const Images = () => {
     }));
 
     try {
-      const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}/check-update`);
+      const { data } = await api.get(`/agents/${currentHost.id}/images/check-update?id=${encodeURIComponent(imageId)}`);
       setUpdateStatuses(prev => ({
         ...prev,
         [imageId]: {
           checking: false,
-          available: data.update_available,
-          availableTag: data.available_tag,
+          available: !!data?.update_available,
+          availableTag: data?.available_tag,
+          error: data?.error,
           checkedAt: new Date()
         }
       }));
+      if (data?.update_available) {
+        toast.success(`New version available for ${data?.current_tag || 'image'}`);
+      }
     } catch (error: any) {
       setUpdateStatuses(prev => ({
         ...prev,
@@ -118,32 +122,54 @@ export const Images = () => {
   const checkAllUpdates = async () => {
     if (!currentHost || checkingAll) return;
     setCheckingAll(true);
-    const toastId = toast.loading(`Checking updates for ${images.length} images...`);
+    
+    const task = startTask({
+      type: 'generic',
+      title: 'Checking Image Updates',
+      resource: `${images.length} images`,
+      initialLog: `Checking remote container registries for ${images.length} images...`
+    });
 
     let updatedCount = 0;
-    for (const img of images) {
-      try {
-        const { data } = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(img.id)}/check-update`);
-        if (data.update_available) updatedCount++;
-        setUpdateStatuses(prev => ({
-          ...prev,
-          [img.id]: {
-            checking: false,
-            available: data.update_available,
-            availableTag: data.available_tag,
-            checkedAt: new Date()
-          }
-        }));
-      } catch (e) {
-        // Continue with others
-      }
-    }
+    try {
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const tag = img.repo_tags?.[0] || img.id.substring(0, 12);
+        task.appendLog(`Querying registry digest for ${tag}...`);
 
-    setCheckingAll(false);
-    if (updatedCount > 0) {
-      toast.success(`Found ${updatedCount} image update${updatedCount > 1 ? 's' : ''}!`, { id: toastId });
-    } else {
-      toast.success('All images are up to date', { id: toastId });
+        try {
+          const { data } = await api.get(`/agents/${currentHost.id}/images/check-update?id=${encodeURIComponent(img.id)}`);
+          if (data?.update_available) {
+            updatedCount++;
+            task.appendLog(`Update found for ${tag}!`, 'success');
+          }
+          setUpdateStatuses(prev => ({
+            ...prev,
+            [img.id]: {
+              checking: false,
+              available: !!data?.update_available,
+              availableTag: data?.available_tag,
+              error: data?.error,
+              checkedAt: new Date()
+            }
+          }));
+        } catch (e) {
+          // Continue with next image
+        }
+        task.setProgress(Math.round(((i + 1) / images.length) * 100));
+      }
+
+      task.complete(`Check complete: ${updatedCount} update(s) found`);
+      if (updatedCount > 0) {
+        toast.success(`Found ${updatedCount} image update${updatedCount > 1 ? 's' : ''}!`);
+      } else {
+        toast.success('All images are up to date');
+      }
+    } catch (err: any) {
+      task.fail(err.message || 'Failed to check image updates');
+      toast.error('Failed to complete update check');
+    } finally {
+      setCheckingAll(false);
     }
   };
 
@@ -155,17 +181,28 @@ export const Images = () => {
       return;
     }
 
-    const toastId = toast.loading(`Pulling latest ${tag}...`);
+    const task = startTask({
+      type: 'pull',
+      title: 'Updating Image',
+      resource: tag,
+      initialLog: `Pulling latest version of ${tag}...`
+    });
+
     try {
+      task.setProgress(30);
       await api.post(`/agents/${currentHost.id}/images/pull`, { image: tag });
-      toast.success(`Successfully updated ${tag}`, { id: toastId });
+      task.appendLog(`Successfully pulled and updated ${tag}.`);
+      task.complete(`Updated ${tag}`);
+      toast.success(`Successfully updated ${tag}`);
       setUpdateStatuses(prev => ({
         ...prev,
         [img.id]: { checking: false, available: false, checkedAt: new Date() }
       }));
       fetchImages();
     } catch (err: any) {
-      toast.error(`Failed to pull ${tag}: ${err.response?.data?.error || err.message}`, { id: toastId });
+      const errMsg = err.response?.data?.error || err.message || 'Failed to pull image';
+      task.fail(errMsg);
+      toast.error(`Failed to pull ${tag}: ${errMsg}`);
     }
   };
 
