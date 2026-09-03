@@ -715,7 +715,7 @@ export const Containers = () => {
                 layout
                 className="h-full flex flex-col"
               >
-              <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group h-full flex flex-col justify-between">
+              <GlassCard className="p-0 overflow-hidden hover:ring-1 hover:ring-cyan-500/30 transition-all duration-300 group h-full flex flex-col justify-between hover:z-20 focus-within:z-30">
                 <div>
                   {/* Standardized Header Slot */}
                   <div className="p-4 border-b border-slate-200 dark:border-slate-700/50 flex justify-between items-start bg-slate-50/30 dark:bg-slate-800/30 min-h-[82px]">
