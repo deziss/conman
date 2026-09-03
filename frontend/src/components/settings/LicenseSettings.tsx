@@ -4,12 +4,15 @@ import { TIER_LABELS, TIER_COLORS, FEATURE_LABELS, ALL_FEATURES } from '../../ty
 import { GlassCard } from '../ui/GlassCard';
 import { toast } from 'react-hot-toast';
 import { ShieldCheckIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
+import { SparklesIcon, RocketLaunchIcon } from '@heroicons/react/24/outline';
+import { SubscriptionModal } from '../modals/SubscriptionModal';
 
 export const LicenseSettings = () => {
   const { license, loading, activateLicense, deactivateLicense, refreshLicense, hasFeature } = useLicense();
   const [keyInput, setKeyInput] = useState('');
   const [activating, setActivating] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
 
   const handleActivate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,9 +69,18 @@ export const LicenseSettings = () => {
             <ShieldCheckIcon className="w-6 h-6 text-cyan-500" />
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Current Plan</h3>
           </div>
-          <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${tierColor}`}>
-            {TIER_LABELS[license.tier]}
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${tierColor}`}>
+              {TIER_LABELS[license.tier]}
+            </span>
+            <button
+              onClick={() => setIsSubscriptionModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 rounded-xl shadow-md shadow-cyan-500/20 transition-all"
+            >
+              <SparklesIcon className="w-3.5 h-3.5" />
+              <span>{license.tier === 'enterprise' ? 'Manage Subscription' : 'Upgrade Plan'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Host Usage */}
@@ -190,6 +202,37 @@ export const LicenseSettings = () => {
           </button>
         </div>
       </GlassCard>
+
+      {/* Licencia Subscription Banner */}
+      <GlassCard className="p-6 bg-gradient-to-r from-cyan-500/[0.04] via-indigo-500/[0.03] to-purple-500/[0.04] border-cyan-500/20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-500 shrink-0">
+              <RocketLaunchIcon className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-900 dark:text-white">
+                Licencia Subscription Plans & Benefits
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
+                Compare Community, Pro, and Enterprise tiers. Unlock Docker Compose stacks, multi-host fleets, tamper-evident audit logs, and priority Com0 alerts.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsSubscriptionModalOpen(true)}
+            className="px-4 py-2 text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-500 rounded-xl shadow-md transition-all shrink-0 self-start sm:self-center flex items-center gap-1.5"
+          >
+            <SparklesIcon className="w-4 h-4" />
+            <span>View All Plans & Benefits</span>
+          </button>
+        </div>
+      </GlassCard>
+
+      <SubscriptionModal
+        isOpen={isSubscriptionModalOpen}
+        onClose={() => setIsSubscriptionModalOpen(false)}
+      />
     </div>
   );
 };

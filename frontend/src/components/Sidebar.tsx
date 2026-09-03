@@ -13,6 +13,8 @@ import { APP_CONFIG } from '../constants/app';
 import { HelpModal } from './modals/HelpModal';
 import { SupportModal } from './modals/SupportModal';
 import { ContactModal } from './modals/ContactModal';
+import { SubscriptionModal } from './modals/SubscriptionModal';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 import { useState, useRef, useEffect } from 'react';
 
 interface SidebarProps {
@@ -25,6 +27,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
+  const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
   const { logout, user } = useAuth();
   const { hosts, currentHost, setCurrentHost } = useHost();
   const { license, hasFeature } = useLicense();
@@ -415,9 +418,14 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
                 {APP_CONFIG.FULL_VERSION}
               </span>
               {license && (
-                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${TIER_COLORS[license.tier]}`}>
-                  {TIER_LABELS[license.tier]}
-                </span>
+                <button
+                  onClick={() => setIsSubscriptionOpen(true)}
+                  className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${TIER_COLORS[license.tier]} hover:brightness-110 hover:scale-105 transition-all cursor-pointer flex items-center gap-1`}
+                  title="Click to view subscription plans & benefits"
+                >
+                  <span>{TIER_LABELS[license.tier]}</span>
+                  {license.tier !== 'enterprise' && <SparklesIcon className="w-2.5 h-2.5 text-cyan-400" />}
+                </button>
               )}
             </div>
           </div>
@@ -427,6 +435,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       <SupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
       <ContactModal isOpen={isContactOpen} onClose={() => setIsContactOpen(false)} />
+      <SubscriptionModal isOpen={isSubscriptionOpen} onClose={() => setIsSubscriptionOpen(false)} />
     </>
   );
 };

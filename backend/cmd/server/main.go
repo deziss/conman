@@ -189,6 +189,7 @@ func main() {
             // License Management
             licenseHandler := api.NewLicenseHandler(licenseService)
             r.Get("/license", licenseHandler.GetLicenseInfo)
+            r.Get("/license/plans", licenseHandler.GetPlans)
             r.Post("/license/activate", licenseHandler.ActivateLicense)
             r.Post("/license/deactivate", licenseHandler.DeactivateLicense)
             r.Post("/license/validate", licenseHandler.ValidateLicense)
