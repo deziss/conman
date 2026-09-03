@@ -148,9 +148,14 @@ func (s *ImageScannerService) ScanImage(ctx context.Context, imageRef, imageID s
 	var stdout, stderr bytes.Buffer
 	var cmd *exec.Cmd
 
-	// Priority A: Docker container run (standard for Conman host daemon)
+	// Priority A1: If conman-trivy managed container is running, execute directly inside it (fastest, zero spin-up)
 	dockerPath, err := exec.LookPath("docker")
-	if err == nil && dockerPath != "" {
+	if err == nil && dockerPath != "" && s.IsTrivyContainerRunning(scanCtx) {
+		cmd = exec.CommandContext(scanCtx, "docker", "exec", "conman-trivy",
+			"trivy", "image", "--server", "http://127.0.0.1:4954", "--format", "json", "--quiet", imageRef,
+		)
+	} else if err == nil && dockerPath != "" {
+		// Priority A2: On-demand docker container run
 		cmd = exec.CommandContext(scanCtx, "docker", "run", "--rm",
 			"-v", "/var/run/docker.sock:/var/run/docker.sock",
 			"-v", "conman-trivy-cache:/root/.cache/",
@@ -308,4 +313,117 @@ func (s *ImageScannerService) recordFailedScan(imageID, imageRef, errMsg string)
 			ScannedAt:    time.Now(),
 		})
 	}
+}
+
+// --- Trivy Container Stack Management ---
+
+type TrivyStatus struct {
+	Installed   bool   `json:"installed"`
+	Running     bool   `json:"running"`
+	ContainerID string `json:"container_id,omitempty"`
+	Status      string `json:"status"` // "running", "stopped", "not_found"
+	CacheSize   string `json:"cache_size"`
+}
+
+func (s *ImageScannerService) IsTrivyContainerRunning(ctx context.Context) bool {
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}", "conman-trivy")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "running"
+}
+
+func (s *ImageScannerService) GetTrivyStatus(ctx context.Context) TrivyStatus {
+	status := TrivyStatus{
+		Installed: false,
+		Running:   false,
+		Status:    "not_found",
+		CacheSize: "Unknown",
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.Id}}|{{.State.Status}}", "conman-trivy")
+	out, err := cmd.Output()
+	if err == nil {
+		parts := strings.Split(strings.TrimSpace(string(out)), "|")
+		if len(parts) >= 2 {
+			status.Installed = true
+			status.ContainerID = parts[0]
+			status.Status = parts[1]
+			status.Running = (parts[1] == "running")
+		}
+	}
+
+	// Read cache size
+	sizeCmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", "conman-trivy-cache:/cache", "alpine", "du", "-sh", "/cache")
+	if sizeOut, err := sizeCmd.Output(); err == nil {
+		fields := strings.Fields(string(sizeOut))
+		if len(fields) > 0 {
+			status.CacheSize = fields[0]
+		}
+	}
+
+	return status
+}
+
+func (s *ImageScannerService) StartTrivyContainer(ctx context.Context) error {
+	// Check if already running
+	if s.IsTrivyContainerRunning(ctx) {
+		return nil
+	}
+
+	// Check if container exists (stopped)
+	checkCmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.State.Status}}", "conman-trivy")
+	out, err := checkCmd.Output()
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		// Existing stopped container, start it
+		startCmd := exec.CommandContext(ctx, "docker", "start", "conman-trivy")
+		if startErr := startCmd.Run(); startErr != nil {
+			// If starting fails, remove and recreate
+			_ = exec.CommandContext(ctx, "docker", "rm", "-f", "conman-trivy").Run()
+		} else {
+			log.Printf("[Scanner] Started existing conman-trivy container")
+			return nil
+		}
+	}
+
+	// Create and run new conman-trivy server container
+	// Connect to network cm-net if present, otherwise default bridge
+	args := []string{
+		"run", "-d",
+		"--name", "conman-trivy",
+		"--restart", "unless-stopped",
+		"-v", "/var/run/docker.sock:/var/run/docker.sock",
+		"-v", "conman-trivy-cache:/root/.cache/",
+		"aquasec/trivy:latest",
+		"server", "--listen", "0.0.0.0:4954",
+	}
+
+	runCmd := exec.CommandContext(ctx, "docker", args...)
+	if runOut, err := runCmd.CombinedOutput(); err != nil {
+		log.Printf("[Scanner] Failed to run conman-trivy container: %s (%v)", string(runOut), err)
+		return fmt.Errorf("failed to start conman-trivy container: %s: %w", string(runOut), err)
+	}
+
+	log.Printf("[Scanner] Successfully launched conman-trivy container in server mode")
+	return nil
+}
+
+func (s *ImageScannerService) StopTrivyContainer(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "docker", "rm", "-f", "conman-trivy")
+	_ = cmd.Run()
+	log.Printf("[Scanner] Stopped and removed conman-trivy container to reclaim memory")
+	return nil
+}
+
+func (s *ImageScannerService) PruneTrivyCache(ctx context.Context) error {
+	// Remove container first
+	_ = s.StopTrivyContainer(ctx)
+	// Remove volume
+	cmd := exec.CommandContext(ctx, "docker", "volume", "rm", "-f", "conman-trivy-cache")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to prune trivy cache: %s", string(out))
+	}
+	log.Printf("[Scanner] Pruned conman-trivy-cache volume")
+	return nil
 }

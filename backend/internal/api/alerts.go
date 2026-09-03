@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"conman-backend/internal/models"
@@ -286,7 +287,7 @@ func (h *AlertHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]string{"message": "Channel deleted"})
 }
 
-// TestChannel sends a ping to the configured webhook channel
+// TestChannel sends a ping to the configured channel (webhook or com0)
 func (h *AlertHandler) TestChannel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var channel models.AlertChannel
@@ -295,6 +296,62 @@ func (h *AlertHandler) TestChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if channel.Type == "com0" {
+		var cfg struct {
+			Endpoint string `json:"endpoint"`
+			APIKey   string `json:"api_key"`
+			Channel  string `json:"channel"`
+			To       string `json:"to"`
+		}
+		if err := json.Unmarshal(channel.Config, &cfg); err != nil {
+			ErrorJSON(w, http.StatusBadRequest, "Invalid Com0 configuration")
+			return
+		}
+
+		endpoint := cfg.Endpoint
+		if endpoint == "" {
+			endpoint = "http://localhost:3000"
+		}
+		endpoint = strings.TrimRight(endpoint, "/") + "/v1/messages"
+
+		body := map[string]interface{}{
+			"channel": strings.ToUpper(cfg.Channel),
+			"to":      cfg.To,
+			"body": map[string]string{
+				"text": "Conman Test Notification: Alert channel is configured correctly.",
+			},
+		}
+		data, _ := json.Marshal(body)
+
+		req, err := http.NewRequestWithContext(r.Context(), "POST", endpoint, bytes.NewBuffer(data))
+		if err != nil {
+			ErrorJSON(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if cfg.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+		}
+
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			ErrorJSON(w, http.StatusBadGateway, fmt.Sprintf("Failed to reach Com0 endpoint %s: %v", endpoint, err))
+			return
+		}
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+
+		if resp.StatusCode >= 400 {
+			ErrorJSON(w, http.StatusBadGateway, fmt.Sprintf("Com0 returned HTTP %d", resp.StatusCode))
+			return
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]string{"message": "Com0 test notification dispatched successfully"})
+		return
+	}
+
+	// Standard Webhook test
 	var cfg struct {
 		URL string `json:"url"`
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"conman-backend/internal/models"
@@ -169,6 +170,8 @@ func (e *Evaluator) notify(rule models.AlertRule, agent AgentInfo, message strin
 		switch ch.Type {
 		case "webhook", "slack":
 			go sendWebhook(ch, payload)
+		case "com0":
+			go sendCom0(ch, payload)
 		default:
 			log.Printf("Alert: unsupported channel type %q", ch.Type)
 		}
@@ -211,5 +214,73 @@ func sendWebhook(channel models.AlertChannel, payload WebhookPayload) {
 
 	if resp.StatusCode >= 300 {
 		log.Printf("Alert webhook: %q returned status %d", channel.Name, resp.StatusCode)
+	}
+}
+
+type Com0ChannelConfig struct {
+	Endpoint string `json:"endpoint"`
+	APIKey   string `json:"api_key"`
+	Channel  string `json:"channel"`
+	To       string `json:"to"`
+}
+
+func sendCom0(channel models.AlertChannel, payload WebhookPayload) {
+	var cfg Com0ChannelConfig
+	if err := json.Unmarshal(channel.Config, &cfg); err != nil {
+		log.Printf("Alert com0: invalid config for channel %q: %v", channel.Name, err)
+		return
+	}
+
+	endpoint := cfg.Endpoint
+	if endpoint == "" {
+		endpoint = "http://localhost:3000"
+	}
+	endpoint = strings.TrimRight(endpoint, "/") + "/v1/messages"
+
+	chType := strings.ToUpper(cfg.Channel)
+	if chType == "" {
+		chType = "SMS"
+	}
+
+	body := map[string]interface{}{
+		"channel": chType,
+		"to":      cfg.To,
+		"body": map[string]string{
+			"text": fmt.Sprintf("[%s] %s - %s", strings.ToUpper(payload.Severity), payload.AlertName, payload.Message),
+		},
+		"metadata": map[string]interface{}{
+			"source":     "conman-container-manager",
+			"rule_type":  payload.RuleType,
+			"agent_name": payload.AgentName,
+		},
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(data))
+	if err != nil {
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Alert com0: failed to send to %q: %v", channel.Name, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		log.Printf("Alert com0: %q returned status %d", channel.Name, resp.StatusCode)
+	} else {
+		log.Printf("Alert com0: notification dispatched via %s to %s", chType, cfg.To)
 	}
 }

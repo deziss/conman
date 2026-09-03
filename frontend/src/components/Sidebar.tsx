@@ -10,6 +10,9 @@ import { useAuth, getInitials } from '../contexts/AuthContext';
 import { useHost } from '../contexts/HostContext';
 import { ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
 import { APP_CONFIG } from '../constants/app';
+import { HelpModal } from './modals/HelpModal';
+import { SupportModal } from './modals/SupportModal';
+import { ContactModal } from './modals/ContactModal';
 import { useState, useRef, useEffect } from 'react';
 
 interface SidebarProps {
@@ -19,6 +22,9 @@ interface SidebarProps {
 
 export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
   const { theme, toggleTheme } = useTheme();
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false);
   const { logout, user } = useAuth();
   const { hosts, currentHost, setCurrentHost } = useHost();
   const { license, hasFeature } = useLicense();
@@ -37,6 +43,7 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
   }, []);
 
   return (
+    <>
     <div 
       className={`${
         isCollapsed ? 'w-20' : 'w-64'
@@ -377,15 +384,30 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
         {!isCollapsed && (
           <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between px-1">
-               <a href={APP_CONFIG.HELP_URL} target="_blank" rel="noopener" className="text-xs text-slate-500 hover:text-cyan-500 transition-colors flex items-center gap-1" title="Help">
+               <button 
+                 type="button" 
+                 onClick={() => setIsHelpOpen(true)} 
+                 className="text-xs text-slate-500 hover:text-cyan-500 transition-colors flex items-center gap-1 focus:outline-none" 
+                 title="Help & Shortcuts"
+               >
                  <QuestionMarkCircleIcon className="w-3 h-3" /> Help
-               </a>
-               <a href={APP_CONFIG.SUPPORT_URL} target="_blank" rel="noopener" className="text-xs text-slate-500 hover:text-purple-500 transition-colors flex items-center gap-1" title="Support">
+               </button>
+               <button 
+                 type="button" 
+                 onClick={() => setIsSupportOpen(true)} 
+                 className="text-xs text-slate-500 hover:text-purple-500 transition-colors flex items-center gap-1 focus:outline-none" 
+                 title="Support & Diagnostics"
+               >
                  <LifebuoyIcon className="w-3 h-3" /> Support
-               </a>
-               <a href={`mailto:${APP_CONFIG.CONTACT_EMAIL}`} className="text-xs text-slate-500 hover:text-amber-500 transition-colors flex items-center gap-1" title="Contact">
+               </button>
+               <button 
+                 type="button" 
+                 onClick={() => setIsContactOpen(true)} 
+                 className="text-xs text-slate-500 hover:text-amber-500 transition-colors flex items-center gap-1 focus:outline-none" 
+                 title="Contact & Feedback"
+               >
                  <EnvelopeIcon className="w-3 h-3" /> Contact
-               </a>
+               </button>
             </div>
             
             <div className="flex items-center justify-center gap-2">
@@ -402,5 +424,9 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
         )}
       </div>
     </div>
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+      <SupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+      <ContactModal isOpen={isContactOpen} onClose={() => setIsContactOpen(false)} />
+    </>
   );
 };

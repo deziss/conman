@@ -157,3 +157,62 @@ func (h *ScannerHandler) GetImageVulnerabilities(w http.ResponseWriter, r *http.
 
 	WriteJSON(w, http.StatusOK, toResponse(report))
 }
+
+// RegisterRoutes registers scanner management routes
+func (h *ScannerHandler) RegisterRoutes(r chi.Router) {
+	r.Route("/scanner", func(r chi.Router) {
+		r.Get("/trivy/status", h.GetTrivyStatus)
+		r.Post("/trivy/start", h.StartTrivy)
+		r.Post("/trivy/stop", h.StopTrivy)
+		r.Post("/trivy/prune-cache", h.PruneCache)
+	})
+}
+
+func (h *ScannerHandler) GetTrivyStatus(w http.ResponseWriter, r *http.Request) {
+	scanner := service.GetScannerService()
+	if scanner == nil {
+		ErrorJSON(w, http.StatusServiceUnavailable, "Scanner service not initialized")
+		return
+	}
+	status := scanner.GetTrivyStatus(r.Context())
+	WriteJSON(w, http.StatusOK, status)
+}
+
+func (h *ScannerHandler) StartTrivy(w http.ResponseWriter, r *http.Request) {
+	scanner := service.GetScannerService()
+	if scanner == nil {
+		ErrorJSON(w, http.StatusServiceUnavailable, "Scanner service not initialized")
+		return
+	}
+	if err := scanner.StartTrivyContainer(r.Context()); err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "Trivy container started successfully"})
+}
+
+func (h *ScannerHandler) StopTrivy(w http.ResponseWriter, r *http.Request) {
+	scanner := service.GetScannerService()
+	if scanner == nil {
+		ErrorJSON(w, http.StatusServiceUnavailable, "Scanner service not initialized")
+		return
+	}
+	if err := scanner.StopTrivyContainer(r.Context()); err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "Trivy container stopped"})
+}
+
+func (h *ScannerHandler) PruneCache(w http.ResponseWriter, r *http.Request) {
+	scanner := service.GetScannerService()
+	if scanner == nil {
+		ErrorJSON(w, http.StatusServiceUnavailable, "Scanner service not initialized")
+		return
+	}
+	if err := scanner.PruneTrivyCache(r.Context()); err != nil {
+		ErrorJSON(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "Trivy cache volume removed"})
+}

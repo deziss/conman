@@ -327,6 +327,12 @@ func main() {
                 alertHandler := api.NewAlertHandler(db)
                 alertHandler.RegisterRoutes(r)
             })
+
+            // Scanner & Trivy Lifecycle Management
+            r.Group(func(r chi.Router) {
+                scannerHandler := api.NewScannerHandler()
+                scannerHandler.RegisterRoutes(r)
+            })
         })
 	})
 

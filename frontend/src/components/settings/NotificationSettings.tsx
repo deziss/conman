@@ -39,8 +39,13 @@ export const NotificationSettings: React.FC = () => {
     const [testingChannelId, setTestingChannelId] = useState<number | null>(null);
 
     // New Channel Form
+    const [channelType, setChannelType] = useState<'webhook' | 'com0'>('webhook');
     const [newWebhookName, setNewWebhookName] = useState('');
     const [newWebhookUrl, setNewWebhookUrl] = useState('');
+    const [com0Endpoint, setCom0Endpoint] = useState('http://localhost:3000');
+    const [com0ApiKey, setCom0ApiKey] = useState('');
+    const [com0SubChannel, setCom0SubChannel] = useState('whatsapp');
+    const [com0Recipient, setCom0Recipient] = useState('');
     const [addingChannel, setAddingChannel] = useState(false);
 
     // Add Rule Modal
@@ -122,21 +127,44 @@ export const NotificationSettings: React.FC = () => {
     const addWebhook = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newWebhookName.trim()) return toast.error('Channel name is required');
-        if (!newWebhookUrl.trim()) return toast.error('Webhook URL is required');
 
         setAddingChannel(true);
         try {
-            await api.post('/alerts/channels', {
-                name: newWebhookName.trim(),
-                type: 'webhook',
-                config: JSON.stringify({ url: newWebhookUrl.trim() }),
-            });
-            toast.success('Notification channel added');
-            setNewWebhookName('');
-            setNewWebhookUrl('');
+            if (channelType === 'com0') {
+                if (!com0Recipient.trim()) {
+                    setAddingChannel(false);
+                    return toast.error('Recipient phone number or email is required');
+                }
+                await api.post('/alerts/channels', {
+                    name: newWebhookName.trim(),
+                    type: 'com0',
+                    config: JSON.stringify({
+                        endpoint: com0Endpoint.trim() || 'http://localhost:3000',
+                        api_key: com0ApiKey.trim(),
+                        channel: com0SubChannel,
+                        to: com0Recipient.trim(),
+                    }),
+                });
+                toast.success('Com0 notification channel added');
+                setNewWebhookName('');
+                setCom0Recipient('');
+            } else {
+                if (!newWebhookUrl.trim()) {
+                    setAddingChannel(false);
+                    return toast.error('Webhook URL is required');
+                }
+                await api.post('/alerts/channels', {
+                    name: newWebhookName.trim(),
+                    type: 'webhook',
+                    config: JSON.stringify({ url: newWebhookUrl.trim() }),
+                });
+                toast.success('Webhook notification channel added');
+                setNewWebhookName('');
+                setNewWebhookUrl('');
+            }
             fetchData();
         } catch (error: any) {
-            const msg = error.response?.data?.error || 'Failed to add webhook channel';
+            const msg = error.response?.data?.error || 'Failed to add notification channel';
             toast.error(msg);
         } finally {
             setAddingChannel(false);
@@ -303,7 +331,9 @@ export const NotificationSettings: React.FC = () => {
                     <div className="space-y-3 mb-6">
                         {channels.map((ch) => {
                             const cfg = parseConfig(ch.Config);
-                            const url = cfg.url || ch.Config || '';
+                            const displaySummary = ch.Type === 'com0' 
+                                ? `Com0 [${(cfg.channel || 'SMS').toUpperCase()}]: ${cfg.to} via ${cfg.endpoint || 'http://localhost:3000'}`
+                                : (cfg.url || ch.Config || '');
                             const isTesting = testingChannelId === ch.ID;
 
                             return (
@@ -318,8 +348,8 @@ export const NotificationSettings: React.FC = () => {
                                                 {ch.Type}
                                             </span>
                                         </div>
-                                        <p className="text-xs text-slate-500 font-mono truncate max-w-xl mt-1" title={url}>
-                                            {url}
+                                        <p className="text-xs text-slate-500 font-mono truncate max-w-xl mt-1" title={displaySummary}>
+                                            {displaySummary}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
@@ -348,33 +378,117 @@ export const NotificationSettings: React.FC = () => {
 
                 {/* Add Channel Form */}
                 <form onSubmit={addWebhook} className="space-y-3 pt-2">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Add New Webhook Channel
-                    </h4>
-                    <div className="flex flex-col sm:flex-row gap-2.5">
-                        <input
-                            type="text"
-                            value={newWebhookName}
-                            onChange={(e) => setNewWebhookName(e.target.value)}
-                            placeholder="Channel Name (e.g. #devops-alerts)"
-                            className="sm:w-64 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                        />
-                        <input
-                            type="url"
-                            value={newWebhookUrl}
-                            onChange={(e) => setNewWebhookUrl(e.target.value)}
-                            placeholder="Webhook URL (https://hooks.slack.com/services/...)"
-                            className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                        />
-                        <button
-                            type="submit"
-                            disabled={addingChannel}
-                            className="px-5 py-2.5 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-xl transition-all shadow-md hover:shadow-cyan-500/20 shrink-0 flex items-center justify-center gap-1.5"
-                        >
-                            <PlusIcon className="w-4 h-4" />
-                            <span>{addingChannel ? 'Adding...' : 'Add Channel'}</span>
-                        </button>
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            Add Notification Channel
+                        </h4>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setChannelType('webhook')}
+                                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                                    channelType === 'webhook'
+                                        ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30'
+                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                }`}
+                            >
+                                Webhook (Slack / Discord)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setChannelType('com0')}
+                                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors ${
+                                    channelType === 'com0'
+                                        ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                }`}
+                            >
+                                Com0 (WhatsApp / SMS / Push)
+                            </button>
+                        </div>
                     </div>
+
+                    {channelType === 'webhook' ? (
+                        <div className="flex flex-col sm:flex-row gap-2.5">
+                            <input
+                                type="text"
+                                value={newWebhookName}
+                                onChange={(e) => setNewWebhookName(e.target.value)}
+                                placeholder="Channel Name (e.g. #devops-alerts)"
+                                className="sm:w-64 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                            />
+                            <input
+                                type="url"
+                                value={newWebhookUrl}
+                                onChange={(e) => setNewWebhookUrl(e.target.value)}
+                                placeholder="Webhook URL (https://hooks.slack.com/services/...)"
+                                className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                            />
+                            <button
+                                type="submit"
+                                disabled={addingChannel}
+                                className="px-5 py-2.5 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-xl transition-all shadow-md hover:shadow-cyan-500/20 shrink-0 flex items-center justify-center gap-1.5"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                <span>{addingChannel ? 'Adding...' : 'Add Webhook'}</span>
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="p-3.5 rounded-xl bg-purple-500/[0.03] border border-purple-500/20 space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                <input
+                                    type="text"
+                                    value={newWebhookName}
+                                    onChange={(e) => setNewWebhookName(e.target.value)}
+                                    placeholder="Channel Name (e.g. WhatsApp Ops)"
+                                    className="bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                />
+                                <select
+                                    value={com0SubChannel}
+                                    onChange={(e) => setCom0SubChannel(e.target.value)}
+                                    className="bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                >
+                                    <option value="whatsapp">WhatsApp (Com0)</option>
+                                    <option value="sms">SMS (Com0)</option>
+                                    <option value="email">Email (Com0)</option>
+                                    <option value="push">Push Notification (Com0)</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    value={com0Recipient}
+                                    onChange={(e) => setCom0Recipient(e.target.value)}
+                                    placeholder="Recipient (+15555550123 / email)"
+                                    className="bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <input
+                                    type="url"
+                                    value={com0Endpoint}
+                                    onChange={(e) => setCom0Endpoint(e.target.value)}
+                                    placeholder="Com0 Endpoint (http://localhost:3000)"
+                                    className="bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        type="password"
+                                        value={com0ApiKey}
+                                        onChange={(e) => setCom0ApiKey(e.target.value)}
+                                        placeholder="Com0 API Key (Optional for local)"
+                                        className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-300 dark:border-white/10 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={addingChannel}
+                                        className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-xl transition-all shadow-md hover:shadow-purple-500/20 shrink-0 flex items-center justify-center gap-1.5"
+                                    >
+                                        <PlusIcon className="w-4 h-4" />
+                                        <span>{addingChannel ? 'Adding...' : 'Add Com0'}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </form>
             </GlassCard>
 

@@ -3,17 +3,21 @@ export const APP_CONFIG = {
   // Application Info
   NAME: 'CONMAN',
   VERSION: '1.1.0',
+  BUILD: 'v1.0.1',
   FULL_VERSION: 'CONMAN v1.1.0',
   
-  // Support Links
-  HELP_URL: 'https://github.com/conman/docs',
-  SUPPORT_URL: 'https://github.com/conman/support',
-  CONTACT_EMAIL: 'support@conman.io',
+  // Official Links & Support
+  GITHUB_URL: 'https://github.com/deziss/conman',
+  DOCS_URL: 'https://github.com/deziss/conman/tree/main/docs',
+  SUPPORT_URL: 'https://github.com/deziss/conman/issues',
+  UPDATES_URL: 'https://github.com/deziss/conman/releases',
+  CONTACT_EMAIL: 'support@deziss.com',
+  COMMUNITY_URL: 'https://github.com/deziss/conman/discussions',
   
   // Branding
-  TAGLINE: 'Container Management Platform',
+  AUTHOR: 'Deziss',
+  TAGLINE: 'Next-Generation Docker Container Manager',
 } as const;
 
-// Export individual values for convenience
 export const APP_NAME = APP_CONFIG.NAME;
 export const APP_VERSION = APP_CONFIG.VERSION;
