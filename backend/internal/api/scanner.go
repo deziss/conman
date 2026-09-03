@@ -69,16 +69,29 @@ func NewScannerHandler() *ScannerHandler {
 	}
 }
 
+func cleanScannerImageID(rawID string) string {
+	id := rawID
+	for i := 0; i < 3; i++ {
+		if strings.Contains(id, "%") {
+			if unescaped, err := url.QueryUnescape(id); err == nil && unescaped != "" {
+				id = unescaped
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	return strings.TrimSpace(id)
+}
+
 // ScanImage triggers a Trivy vulnerability scan for an image
 func (h *ScannerHandler) ScanImage(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		id = r.URL.Query().Get("id")
 	}
-	decodedID, err := url.QueryUnescape(id)
-	if err != nil {
-		decodedID = id
-	}
+	decodedID := cleanScannerImageID(id)
 
 	force := r.URL.Query().Get("force") == "true"
 	imageRef := r.URL.Query().Get("image")
@@ -122,10 +135,7 @@ func (h *ScannerHandler) GetImageVulnerabilities(w http.ResponseWriter, r *http.
 	if id == "" {
 		id = r.URL.Query().Get("id")
 	}
-	decodedID, err := url.QueryUnescape(id)
-	if err != nil {
-		decodedID = id
-	}
+	decodedID := cleanScannerImageID(id)
 
 	imageRef := r.URL.Query().Get("image")
 

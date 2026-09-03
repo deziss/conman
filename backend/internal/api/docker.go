@@ -121,8 +121,27 @@ func (h *DockerHandler) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func sanitizeImageID(rawID string) string {
+	id := rawID
+	for i := 0; i < 3; i++ {
+		if strings.Contains(id, "%") {
+			if unescaped, err := url.QueryUnescape(id); err == nil && unescaped != "" {
+				id = unescaped
+			} else {
+				break
+			}
+		} else {
+			break
+		}
+	}
+	return strings.TrimSpace(id)
+}
+
 func (h *DockerHandler) RemoveImage(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := sanitizeImageID(chi.URLParam(r, "id"))
+	if id == "" {
+		id = sanitizeImageID(r.URL.Query().Get("id"))
+	}
 	cli := service.GetDockerClient()
 
 	_, err := cli.ImageRemove(context.Background(), id, image.RemoveOptions{Force: true})
@@ -158,9 +177,9 @@ func (h *DockerHandler) PullImage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DockerHandler) InspectImage(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := sanitizeImageID(chi.URLParam(r, "id"))
 	if id == "" {
-		id = r.URL.Query().Get("id")
+		id = sanitizeImageID(r.URL.Query().Get("id"))
 	}
 	cli := service.GetDockerClient()
 
@@ -188,16 +207,14 @@ func (h *DockerHandler) GetSystemDF(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DockerHandler) CheckUpdate(w http.ResponseWriter, r *http.Request) {
-    id := chi.URLParam(r, "id")
-    // URL-decode the id (browser sends sha256%3A... but Docker needs sha256:...)
-    decodedID, err := url.QueryUnescape(id)
-    if err != nil {
-        decodedID = id // fallback to original if decode fails
-    }
+	id := sanitizeImageID(chi.URLParam(r, "id"))
+	if id == "" {
+		id = sanitizeImageID(r.URL.Query().Get("id"))
+	}
 	cli := service.GetDockerClient()
 	
 	// We need image info to get repo:tag
-	info, _, err := cli.ImageInspectWithRaw(context.Background(), decodedID)
+	info, _, err := cli.ImageInspectWithRaw(context.Background(), id)
 	if err != nil {
 		ErrorJSON(w, http.StatusInternalServerError, err.Error())
 		return

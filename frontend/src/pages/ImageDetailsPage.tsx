@@ -2,6 +2,8 @@ import { isConmanSystemImage } from '../utils/systemProtection';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { useHost } from '../contexts/HostContext';
+import { useSettings } from '../contexts/SettingsContext';
 import {
     CubeIcon,
     ArrowLeftIcon,
@@ -96,46 +98,78 @@ const Badge = ({ children, className }: { children: React.ReactNode, className?:
 export const ImageDetailsPage = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { currentHost } = useHost();
+    const { trivySecurityEnabled, trivySeverityThreshold, updateSettings } = useSettings();
     const [image, setImage] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [showConfirm, setShowConfirm] = useState(false);
 
     // Security Scanner State
     const [scanReport, setScanReport] = useState<VulnerabilityReport | null>(null);
     const [isScanning, setIsScanning] = useState(false);
     const [loadingReport, setLoadingReport] = useState(false);
-    const [severityFilter, setSeverityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL');
+    const [severityFilter, setSeverityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>(
+        () => trivySeverityThreshold || 'ALL'
+    );
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedCves, setExpandedCves] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         const fetchImage = async () => {
             if (!id) return;
+            setLoading(true);
+            setFetchError(null);
             try {
-                const { data } = await api.get(`/docker/images/${encodeURIComponent(id)}`);
-                setImage(data);
+                let res;
+                try {
+                    if (currentHost?.id) {
+                        res = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
+                    } else {
+                        res = await api.get(`/docker/images/${encodeURIComponent(id)}`);
+                    }
+                } catch (err: any) {
+                    res = await api.get(`/docker/images/${encodeURIComponent(id)}`);
+                }
+                setImage(res.data);
 
-                // Check for existing vulnerability report
-                const primaryTag = data.RepoTags && data.RepoTags.length > 0 ? data.RepoTags[0] : '';
-                fetchVulnerabilityReport(id, primaryTag);
-            } catch (error) {
+                // Check for existing vulnerability report only if Trivy scanning is enabled
+                if (trivySecurityEnabled) {
+                    const primaryTag = res.data.RepoTags && res.data.RepoTags.length > 0 ? res.data.RepoTags[0] : '';
+                    fetchVulnerabilityReport(id, primaryTag);
+                }
+            } catch (error: any) {
                 console.error("Failed to fetch image details", error);
-                toast.error("Failed to load image details");
-                navigate('/images');
+                const msg = error.response?.data?.error || error.message || "Failed to load image details";
+                setFetchError(msg);
+                toast.error(`Failed to load image details: ${msg}`);
             } finally {
                 setLoading(false);
             }
         };
         fetchImage();
-    }, [id, navigate]);
+    }, [id, currentHost, trivySecurityEnabled]);
 
     const fetchVulnerabilityReport = async (imageId: string, imageTag?: string) => {
         setLoadingReport(true);
         try {
-            const { data } = await api.get(`/docker/images/${encodeURIComponent(imageId)}/vulnerabilities`, {
-                params: imageTag ? { image: imageTag } : undefined
-            });
-            setScanReport(data);
+            let res;
+            try {
+                if (currentHost?.id) {
+                    res = await api.get(`/agents/${currentHost.id}/images/${encodeURIComponent(imageId)}/vulnerabilities`, {
+                        params: imageTag ? { image: imageTag } : undefined
+                    });
+                } else {
+                    res = await api.get(`/docker/images/${encodeURIComponent(imageId)}/vulnerabilities`, {
+                        params: imageTag ? { image: imageTag } : undefined
+                    });
+                }
+            } catch (err) {
+                res = await api.get(`/docker/images/${encodeURIComponent(imageId)}/vulnerabilities`, {
+                    params: imageTag ? { image: imageTag } : undefined
+                });
+            }
+            setScanReport(res.data);
         } catch (error: any) {
             // If 404, simply no scan has been run yet
             if (error.response?.status !== 404) {
@@ -148,18 +182,32 @@ export const ImageDetailsPage = () => {
 
     const handleTriggerScan = async (force = false) => {
         if (!image || !id) return;
+        if (!trivySecurityEnabled) {
+            updateSettings({ trivySecurityEnabled: true });
+            toast.success("Enabled Trivy Security Scanner in Settings");
+        }
         setIsScanning(true);
         const primaryTag = image.RepoTags && image.RepoTags.length > 0 ? image.RepoTags[0] : id;
         
         try {
-            const { data } = await api.post(
-                `/docker/images/${encodeURIComponent(id)}/scan`,
-                null,
-                {
+            const url = currentHost?.id 
+                ? `/agents/${currentHost.id}/images/${encodeURIComponent(id)}/scan`
+                : `/docker/images/${encodeURIComponent(id)}/scan`;
+            
+            let data;
+            try {
+                const res = await api.post(url, null, {
                     params: { image: primaryTag, force: force ? 'true' : 'false' },
                     timeout: 120000 // Trivy scan can take a bit on first run
-                }
-            );
+                });
+                data = res.data;
+            } catch (e) {
+                const res = await api.post(`/docker/images/${encodeURIComponent(id)}/scan`, null, {
+                    params: { image: primaryTag, force: force ? 'true' : 'false' },
+                    timeout: 120000
+                });
+                data = res.data;
+            }
             setScanReport(data);
             if (data.total_count === 0) {
                 toast.success("Security scan clean! Zero vulnerabilities found.");
@@ -183,8 +231,13 @@ export const ImageDetailsPage = () => {
     };
 
     const executeRemove = async () => {
+        if (!id) return;
         try {
-            await api.delete(`/docker/images/${id}`);
+            if (currentHost?.id) {
+                await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
+            } else {
+                await api.delete(`/docker/images/${encodeURIComponent(id)}`);
+            }
             toast.success("Image removed successfully");
             navigate('/images');
         } catch (error: any) {
@@ -222,8 +275,35 @@ export const ImageDetailsPage = () => {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-full text-slate-500 animate-pulse">
-                Loading image details...
+            <div className="flex flex-col items-center justify-center min-h-[350px] text-slate-400 gap-3">
+                <div className="w-8 h-8 border-2 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" />
+                <span className="text-sm animate-pulse">Loading image specifications and security profile...</span>
+            </div>
+        );
+    }
+
+    if (fetchError && !image) {
+        return (
+            <div className="p-8 max-w-xl mx-auto text-center space-y-4 my-12">
+                <div className="p-4 rounded-2xl bg-rose-500/10 text-rose-500 w-16 h-16 mx-auto flex items-center justify-center ring-1 ring-rose-500/20">
+                    <ExclamationTriangleIcon className="w-8 h-8" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Failed to Load Image Details</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{fetchError}</p>
+                <div className="flex items-center justify-center gap-3 pt-2">
+                    <button
+                        onClick={() => navigate('/images')}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors"
+                    >
+                        Back to Images
+                    </button>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-sm font-medium shadow-md shadow-cyan-500/20 transition-all"
+                    >
+                        Retry Request
+                    </button>
+                </div>
             </div>
         );
     }
@@ -398,8 +478,36 @@ export const ImageDetailsPage = () => {
                     </div>
                 )}
 
-                {/* Body State: No Scan Report Yet */}
-                {!isScanning && !scanReport && !loadingReport && (
+                {/* Body State: Trivy Disabled in Settings */}
+                {!isScanning && !trivySecurityEnabled && (
+                    <div className="py-10 flex flex-col items-center justify-center text-center px-4">
+                        <div className="p-4 rounded-2xl bg-slate-100 dark:bg-white/5 text-slate-400 mb-4 ring-1 ring-slate-200 dark:ring-white/10">
+                            <ShieldCheckIcon className="w-10 h-10 text-slate-400" />
+                        </div>
+                        <h4 className="text-base font-semibold text-slate-800 dark:text-slate-200">Trivy Security Scanning is Disabled</h4>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-lg mb-6 leading-relaxed">
+                            Image vulnerability analysis is turned off by default to minimize host memory and network overhead. You can enable it in Settings or activate it now to inspect CVEs for this image.
+                        </p>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => handleTriggerScan(false)}
+                                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white transition-all shadow-lg shadow-cyan-500/20"
+                            >
+                                <ShieldCheckIcon className="w-4 h-4" />
+                                <span>Enable & Run Scan</span>
+                            </button>
+                            <button
+                                onClick={() => navigate('/settings')}
+                                className="px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition-colors border border-slate-200 dark:border-white/10"
+                            >
+                                Configure in Settings
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Body State: No Scan Report Yet (When enabled) */}
+                {!isScanning && trivySecurityEnabled && !scanReport && !loadingReport && (
                     <div className="py-10 flex flex-col items-center justify-center text-center">
                         <div className="p-4 rounded-full bg-slate-100 dark:bg-white/5 text-slate-400 mb-4">
                             <ShieldExclamationIcon className="w-10 h-10" />

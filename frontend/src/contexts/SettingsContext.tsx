@@ -6,6 +6,8 @@ interface Settings {
     density: 'compact' | 'comfortable';
     animationEnabled: boolean;
     themeMode: 'light' | 'dark' | 'system'; // syncing with ThemeContext conceptually
+    trivySecurityEnabled: boolean;
+    trivySeverityThreshold?: 'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
 interface SettingsContextType extends Settings {
@@ -17,7 +19,9 @@ const defaultSettings: Settings = {
     showTimestamps: true,
     density: 'comfortable',
     animationEnabled: true,
-    themeMode: 'system'
+    themeMode: 'system',
+    trivySecurityEnabled: false, // Default disabled per user requirement
+    trivySeverityThreshold: 'ALL'
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

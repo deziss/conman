@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Tab } from '@headlessui/react';
-import { Cog6ToothIcon, BellIcon, InformationCircleIcon, AdjustmentsHorizontalIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { Cog6ToothIcon, BellIcon, InformationCircleIcon, AdjustmentsHorizontalIcon, ShieldCheckIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { GeneralSettings } from '../components/settings/GeneralSettings';
+import { SecuritySettings } from '../components/settings/SecuritySettings';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { LicenseSettings } from '../components/settings/LicenseSettings';
 import { AboutTab } from '../components/settings/AboutTab';
@@ -10,8 +11,9 @@ import { PageTransition } from '../components/ui/PageTransition';
 export const Settings = () => {
     const categories = [
         { name: 'General', icon: AdjustmentsHorizontalIcon, component: GeneralSettings },
+        { name: 'Security', icon: ShieldCheckIcon, component: SecuritySettings },
         { name: 'Notifications', icon: BellIcon, component: NotificationSettings },
-        { name: 'License', icon: ShieldCheckIcon, component: LicenseSettings },
+        { name: 'License', icon: KeyIcon, component: LicenseSettings },
         { name: 'About', icon: InformationCircleIcon, component: AboutTab },
     ];
 
