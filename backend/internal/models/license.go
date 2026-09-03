@@ -39,7 +39,7 @@ func DefaultFeatures(tier LicenseTier) []string {
 	case TierPro:
 		return []string{"stacks", "alerts", "multi_host", "update_check"}
 	default:
-		return []string{}
+		return []string{"alerts"}
 	}
 }
 

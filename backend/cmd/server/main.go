@@ -322,9 +322,8 @@ func main() {
                 r.Get("/stats", activityHandler.GetStats)
             })
 
-            // Alert Management (Pro+)
+            // Alert Management (Standard)
             r.Group(func(r chi.Router) {
-                r.Use(middleware.RequireFeature("alerts"))
                 alertHandler := api.NewAlertHandler(db)
                 alertHandler.RegisterRoutes(r)
             })

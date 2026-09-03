@@ -43,6 +43,10 @@ export const HostProvider = ({ children }: { children: ReactNode }) => {
     const [loading, setLoading] = useState(true);
 
     const refreshHosts = async () => {
+        if (!localStorage.getItem('token')) {
+            setLoading(false);
+            return;
+        }
         try {
             const { data } = await api.get('/agents');
             setHosts(data || []);

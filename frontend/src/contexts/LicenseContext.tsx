@@ -22,6 +22,10 @@ export const LicenseProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const fetchLicense = useCallback(async () => {
+    if (!localStorage.getItem('token')) {
+      setLoading(false);
+      return;
+    }
     try {
       const { data } = await api.get('/license');
       setLicense(data);
