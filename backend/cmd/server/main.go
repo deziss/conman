@@ -211,13 +211,14 @@ func main() {
                 r.Delete("/{id}", environmentHandler.DeleteEnvironment)
             })
 
-            // Profile / API Keys (Self Service)
+            // Profile / API Keys (Self Service) — programmatic API access is a Pro+ feature
             r.Route("/profile", func(r chi.Router) {
-                // Any authenticated user should be able to manage their own keys?
-                // Or maybe permissions? Let's say basic auth is enough for self-profile
-                 r.Get("/keys", userHandler.ListAPIKeys)
-                 r.Post("/keys", userHandler.GenerateAPIKey)
-                 r.Delete("/keys/{id}", userHandler.RevokeAPIKey)
+                r.Route("/keys", func(r chi.Router) {
+                    r.Use(middleware.RequireFeature("api"))
+                    r.Get("/", userHandler.ListAPIKeys)
+                    r.Post("/", userHandler.GenerateAPIKey)
+                    r.Delete("/{id}", userHandler.RevokeAPIKey)
+                })
             })
 
 
@@ -311,14 +312,16 @@ func main() {
                 r.Put("/{id}", stackHandler.UpdateStack)
                 r.Post("/{id}/stop", stackHandler.StopStack)
                 r.Delete("/{id}", stackHandler.DeleteStack)
-                r.Post("/{id}/webhook", stackHandler.WebhookDeploy)
+                r.Post("/{id}/webhook", stackHandler.DeployStack)
+                r.Post("/{id}/webhook-secret", stackHandler.RegenerateWebhookSecret)
             })
 
             // Agent Management (Multi-Host)
-            agentHandler.RegisterRoutes(r)
+            agentHandler.RegisterRoutes(r, mw.RequirePermission)
 
-            // Activity Log (Full-System Events, OOM Kills, User Audit)
+            // Activity Log (Full-System Events, OOM Kills, User Audit) — Enterprise feature
             r.Route("/activities", func(r chi.Router) {
+                r.Use(middleware.RequireFeature("audit_logs"))
                 r.Get("/", activityHandler.ListActivities)
                 r.Get("/stats", activityHandler.GetStats)
             })

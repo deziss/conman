@@ -276,82 +276,124 @@ func (h *AgentHandler) updateGauges() {
 	observability.ContainersTotal.Set(float64(containers))
 }
 
-// RegisterRoutes registers agent API routes (protected - requires auth)
-func (h *AgentHandler) RegisterRoutes(r chi.Router) {
-	// Agent endpoints (protected)
-	r.Get("/agents", h.ListAgents)
-	r.Get("/agents/{id}", h.GetAgent)
-	r.Put("/agents/{id}/tags", h.UpdateAgentTags)
-	r.Delete("/agents/{id}", h.DeleteAgent)
-	r.Get("/agents/{id}/containers", h.GetAgentContainers)
-	r.Get("/agents/{id}/images", h.GetAgentImages)
-	r.Get("/agents/{id}/networks", h.GetAgentNetworks)
-	r.Get("/agents/{id}/volumes", h.GetAgentVolumes)
-	
-	// Remote Control Proxies
-	r.Get("/agents/{id}/containers/{containerId}/exec", h.ProxyStreamExec)
-	r.Get("/agents/{id}/containers/{containerId}/files", h.ProxyListContainerFiles)
-	r.Get("/agents/{id}/containers/{containerId}/logs", h.ProxyStreamLogs)
-	r.Get("/agents/{id}/containers/{containerId}/stats", h.ProxyStreamStats)
-    r.Get("/agents/{id}/containers/{containerId}/files/download", h.ProxyDownloadFile)
-    r.Post("/agents/{id}/containers/{containerId}/files/upload", h.ProxyUploadFile)
+// RegisterRoutes registers agent API routes (protected - requires auth).
+// requirePermission is injected from main.go (mw.RequirePermission) — the api
+// package cannot import the middleware package directly (import cycle: the
+// middleware package imports api for api.ErrorJSON).
+func (h *AgentHandler) RegisterRoutes(r chi.Router, requirePermission func(obj, act string) func(http.Handler) http.Handler) {
+	// Agent lifecycle
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("agents", "read"))
+		r.Get("/agents", h.ListAgents)
+		r.Get("/agents/{id}", h.GetAgent)
+		r.Get("/hosts", h.ListHosts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("agents", "write"))
+		r.Put("/agents/{id}/tags", h.UpdateAgentTags)
+		r.Delete("/agents/{id}", h.DeleteAgent)
+	})
 
-    // Container Management
-    r.Get("/agents/{id}/containers/{containerId}", h.ProxyInspectContainer)
-    r.Post("/agents/{id}/containers/{containerId}/update", h.ProxyUpdateContainer)
-	r.Get("/agents/{id}/containers/{containerId}/top", h.ProxyContainerTop)
-	r.Get("/agents/{id}/containers/{containerId}/processes", h.ProxyContainerTop)
-	r.Post("/agents/{id}/containers/{containerId}/start", h.ProxyStartContainer)
-	r.Post("/agents/{id}/containers/{containerId}/stop", h.ProxyStopContainer)
-	r.Post("/agents/{id}/containers/{containerId}/restart", h.ProxyRestartContainer)
-	r.Delete("/agents/{id}/containers/{containerId}", h.ProxyRemoveContainer)
-    
-	// Image Management
-    r.Get("/agents/{id}/images/check-update", h.ProxyCheckImageUpdate)
-    r.Get("/agents/{id}/images/{imageId}/check-update", h.ProxyCheckImageUpdate)
-    r.Get("/agents/{id}/images/{imageId}", h.ProxyInspectImage)
-    r.Post("/agents/{id}/images/{imageId}/scan", h.ProxyScanImage)
-    r.Get("/agents/{id}/images/{imageId}/vulnerabilities", h.ProxyGetImageVulnerabilities)
-	r.Post("/agents/{id}/images/pull", h.ProxyPullImage)
-	r.Delete("/agents/{id}/images", h.ProxyRemoveImage)
-	r.Delete("/agents/{id}/images/{imageId}", h.ProxyRemoveImage)
-    
-	// Volume Management
-    r.Get("/agents/{id}/volumes/{name}", h.ProxyInspectVolume)
-	r.Post("/agents/{id}/volumes", h.ProxyCreateVolume)
-	r.Delete("/agents/{id}/volumes/{name}", h.ProxyRemoveVolume)
-    r.Post("/agents/{id}/volumes/{name}/browse", h.ProxyBrowseVolume)
-    
-	// Network Management
-    r.Get("/agents/{id}/networks/{networkId}", h.ProxyInspectNetwork)
-	r.Post("/agents/{id}/networks", h.ProxyCreateNetwork)
-	r.Delete("/agents/{id}/networks/{networkId}", h.ProxyRemoveNetwork)
-    r.Post("/agents/{id}/networks/{networkId}/connect", h.ProxyConnectNetwork) 
-    r.Post("/agents/{id}/networks/{networkId}/duplicate", h.ProxyDuplicateNetwork)
-	
-	// Host-centric endpoints (aggregate from all agents)
-	r.Get("/hosts", h.ListHosts)
-	r.Get("/hosts/{id}/containers", h.GetHostContainers)
-	r.Get("/hosts/{id}/images", h.GetHostImages)
-	r.Get("/agents/{id}/system/df", h.ProxySystemDF)
+	// Containers (read): list/inspect/logs/stats/files/top/metrics
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("containers", "read"))
+		r.Get("/agents/{id}/containers", h.GetAgentContainers)
+		r.Get("/agents/{id}/containers/{containerId}", h.ProxyInspectContainer)
+		r.Get("/agents/{id}/containers/{containerId}/files", h.ProxyListContainerFiles)
+		r.Get("/agents/{id}/containers/{containerId}/files/download", h.ProxyDownloadFile)
+		r.Get("/agents/{id}/containers/{containerId}/logs", h.ProxyStreamLogs)
+		r.Get("/agents/{id}/containers/{containerId}/stats", h.ProxyStreamStats)
+		r.Get("/agents/{id}/containers/{containerId}/top", h.ProxyContainerTop)
+		r.Get("/agents/{id}/containers/{containerId}/processes", h.ProxyContainerTop)
+		r.Get("/hosts/{id}/containers", h.GetHostContainers)
+		r.Get("/metrics/containers/{containerId}", h.QueryContainerMetrics)
+		r.Get("/agents/{id}/metrics", h.QueryAgentMetrics)
+	})
 
-    // Stack Management
-    r.Get("/agents/{id}/stacks", h.ProxyListStacks)
-    r.Post("/agents/{id}/stacks", h.ProxyCreateStack)
-    r.Post("/agents/{id}/stacks/{stackName}/up", h.ProxyUpStack)
-    r.Post("/agents/{id}/stacks/{stackName}/restart", h.ProxyRestartStack)
-    r.Delete("/agents/{id}/stacks/{stackName}", h.ProxyRemoveStack)
+	// Containers (write): exec shell, uploads, lifecycle actions, prune
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("containers", "write"))
+		r.Get("/agents/{id}/containers/{containerId}/exec", h.ProxyStreamExec)
+		r.Post("/agents/{id}/containers/{containerId}/files/upload", h.ProxyUploadFile)
+		r.Post("/agents/{id}/containers/{containerId}/update", h.ProxyUpdateContainer)
+		r.Post("/agents/{id}/containers/{containerId}/start", h.ProxyStartContainer)
+		r.Post("/agents/{id}/containers/{containerId}/stop", h.ProxyStopContainer)
+		r.Post("/agents/{id}/containers/{containerId}/restart", h.ProxyRestartContainer)
+		r.Delete("/agents/{id}/containers/{containerId}", h.ProxyRemoveContainer)
+		r.Post("/agents/{id}/containers/prune", h.ProxyPruneContainers)
+	})
 
-    // Prune
-    r.Post("/agents/{id}/containers/prune", h.ProxyPruneContainers)
-    r.Post("/agents/{id}/images/prune", h.ProxyPruneImages)
-    r.Post("/agents/{id}/volumes/prune", h.ProxyPruneVolumes)
-    r.Post("/agents/{id}/networks/prune", h.ProxyPruneNetworks)
-    r.Post("/agents/{id}/system/prune", h.ProxySystemPrune)
+	// Images (read)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("images", "read"))
+		r.Get("/agents/{id}/images", h.GetAgentImages)
+		r.Get("/agents/{id}/images/check-update", h.ProxyCheckImageUpdate)
+		r.Get("/agents/{id}/images/{imageId}/check-update", h.ProxyCheckImageUpdate)
+		r.Get("/agents/{id}/images/{imageId}", h.ProxyInspectImage)
+		r.Get("/agents/{id}/images/{imageId}/vulnerabilities", h.ProxyGetImageVulnerabilities)
+		r.Get("/hosts/{id}/images", h.GetHostImages)
+		r.Get("/agents/{id}/system/df", h.ProxySystemDF)
+	})
+	// Images (write)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("images", "write"))
+		r.Post("/agents/{id}/images/{imageId}/scan", h.ProxyScanImage)
+		r.Post("/agents/{id}/images/pull", h.ProxyPullImage)
+		r.Delete("/agents/{id}/images", h.ProxyRemoveImage)
+		r.Delete("/agents/{id}/images/{imageId}", h.ProxyRemoveImage)
+		r.Post("/agents/{id}/images/prune", h.ProxyPruneImages)
+	})
 
-	// Historical Metrics
-	r.Get("/metrics/containers/{containerId}", h.QueryContainerMetrics)
-	r.Get("/agents/{id}/metrics", h.QueryAgentMetrics)
+	// Volumes (read)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("volumes", "read"))
+		r.Get("/agents/{id}/volumes", h.GetAgentVolumes)
+		r.Get("/agents/{id}/volumes/{name}", h.ProxyInspectVolume)
+		r.Post("/agents/{id}/volumes/{name}/browse", h.ProxyBrowseVolume)
+	})
+	// Volumes (write)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("volumes", "write"))
+		r.Post("/agents/{id}/volumes", h.ProxyCreateVolume)
+		r.Delete("/agents/{id}/volumes/{name}", h.ProxyRemoveVolume)
+		r.Post("/agents/{id}/volumes/prune", h.ProxyPruneVolumes)
+	})
+
+	// Networks (read)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("networks", "read"))
+		r.Get("/agents/{id}/networks", h.GetAgentNetworks)
+		r.Get("/agents/{id}/networks/{networkId}", h.ProxyInspectNetwork)
+	})
+	// Networks (write)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("networks", "write"))
+		r.Post("/agents/{id}/networks", h.ProxyCreateNetwork)
+		r.Delete("/agents/{id}/networks/{networkId}", h.ProxyRemoveNetwork)
+		r.Post("/agents/{id}/networks/{networkId}/connect", h.ProxyConnectNetwork)
+		r.Post("/agents/{id}/networks/{networkId}/duplicate", h.ProxyDuplicateNetwork)
+		r.Post("/agents/{id}/networks/prune", h.ProxyPruneNetworks)
+	})
+
+	// Stacks (per-host, proxied via agent) — read
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("stacks", "read"))
+		r.Get("/agents/{id}/stacks", h.ProxyListStacks)
+	})
+	// Stacks (write)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("stacks", "write"))
+		r.Post("/agents/{id}/stacks", h.ProxyCreateStack)
+		r.Post("/agents/{id}/stacks/{stackName}/up", h.ProxyUpStack)
+		r.Post("/agents/{id}/stacks/{stackName}/restart", h.ProxyRestartStack)
+		r.Delete("/agents/{id}/stacks/{stackName}", h.ProxyRemoveStack)
+	})
+
+	// System-wide destructive prune — gate on containers:write (coarsest bucket available)
+	r.Group(func(r chi.Router) {
+		r.Use(requirePermission("containers", "write"))
+		r.Post("/agents/{id}/system/prune", h.ProxySystemPrune)
+	})
 }
 
 // RegisterPublicRoutes registers agent API routes that don't require auth (for agent self-registration)
@@ -365,7 +407,7 @@ func (h *AgentHandler) RegisterPublicRoutes(r chi.Router) {
 // Register handles agent registration
 func (h *AgentHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var reg protocol.AgentRegistration
-	if err := json.NewDecoder(r.Body).Decode(&reg); err != nil {
+	if err := ReadJSONLimit(w, r, &reg, 1<<20); err != nil { // 1 MiB
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -635,7 +677,7 @@ func (h *AgentHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var heartbeat protocol.AgentHeartbeat
-	if err := json.NewDecoder(r.Body).Decode(&heartbeat); err != nil {
+	if err := ReadJSONLimit(w, r, &heartbeat, 1<<20); err != nil { // 1 MiB
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -696,7 +738,7 @@ func (h *AgentHandler) ReceiveReport(w http.ResponseWriter, r *http.Request) {
 	observability.ReportIngestTotal.Inc()
 
 	var report protocol.AgentReport
-	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+	if err := ReadJSONLimit(w, r, &report, 25<<20); err != nil { // 25 MiB — full container/image/volume/network inventory
 		observability.ReportIngestErrors.Inc()
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -782,7 +824,7 @@ func (h *AgentHandler) ReceiveEvent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var event protocol.ContainerEvent
-	if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+	if err := ReadJSONLimit(w, r, &event, 1<<20); err != nil { // 1 MiB
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
@@ -799,7 +841,7 @@ func (h *AgentHandler) ReceiveEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 
-	log.Printf("Event from %s: %s %s (attrs: %+v)", id[:8], event.Action, event.ContainerName, event.Attributes)
+	log.Printf("Event from %s: %s %s (attrs: %+v)", id[:min(len(id), 8)], event.Action, event.ContainerName, event.Attributes)
 
 	if h.Activity != nil {
 		go h.Activity.IngestSystemEvent(id, agentName, event)
@@ -1163,10 +1205,14 @@ func (h *AgentHandler) ProxyListContainerFiles(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Construct Agent HTTP URL
-	targetURL := agent.ScrapeURL + "/api/files?id=" + containerID + "&path=" + path
+	// Construct Agent HTTP URL (properly encoded — containerID/path are user input)
+	q := url.Values{}
+	q.Set("id", containerID)
+	q.Set("path", path)
+	targetURL := agent.ScrapeURL + "/api/files?" + q.Encode()
 
-	resp, err := http.Get(targetURL)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(targetURL)
 	if err != nil {
 		http.Error(w, "Failed to contact agent", http.StatusBadGateway)
 		return

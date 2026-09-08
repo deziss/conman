@@ -35,9 +35,9 @@ type LicenseCache struct {
 func DefaultFeatures(tier LicenseTier) []string {
 	switch tier {
 	case TierEnterprise:
-		return []string{"stacks", "alerts", "multi_host", "update_check", "rbac", "sso", "audit_logs"}
+		return []string{"stacks", "alerts", "multi_host", "update_check", "api", "rbac", "sso", "audit_logs"}
 	case TierPro:
-		return []string{"stacks", "alerts", "multi_host", "update_check"}
+		return []string{"stacks", "alerts", "multi_host", "update_check", "api"}
 	default:
 		return []string{"alerts"}
 	}

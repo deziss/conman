@@ -4,12 +4,14 @@ import (
 	"conman-backend/internal/api"
 	"conman-backend/internal/authz"
 	"conman-backend/internal/config"
+	"conman-backend/internal/license"
 	"conman-backend/internal/models"
 	"context"
 	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
@@ -42,6 +44,15 @@ func (m *Middleware) AuthMiddleware(next http.Handler) http.Handler {
 		if apiKey != "" {
 			var keyModel models.APIKey
 			if err := m.DB.Preload("User").Where("key = ?", apiKey).First(&keyModel).Error; err == nil {
+				if keyModel.ExpiresAt != 0 && keyModel.ExpiresAt < time.Now().Unix() {
+					api.ErrorJSON(w, http.StatusUnauthorized, "API key has expired")
+					return
+				}
+				// Best-effort last-used tracking — a stale timestamp is not
+				// worth failing or delaying the request over.
+				go m.DB.Model(&models.APIKey{}).Where("id = ?", keyModel.ID).
+					Update("last_used_at", time.Now().Unix())
+
 				// Access verified via API Key
 				ctx := context.WithValue(r.Context(), models.UserContextKey, &keyModel.User)
 				ctx = context.WithValue(ctx, models.RoleContextKey, keyModel.User.Role) // Inherit user role
@@ -131,13 +142,27 @@ func AgentAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// RequirePermission Middleware using Casbin
+// RequirePermission Middleware using Casbin.
+//
+// Multi-role RBAC (viewer/operator/custom roles with distinct permissions) is
+// an Enterprise license feature. Without a license granting "rbac", only the
+// admin role passes here regardless of Casbin policy — every other role is
+// denied, matching the Community/Pro tier having a single implicit admin role.
 func (m *Middleware) RequirePermission(obj, act string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			role, ok := r.Context().Value(models.RoleContextKey).(string)
 			if !ok {
                 role = "anonymous"
+			}
+
+			if state, ok := r.Context().Value(models.LicenseContextKey).(*license.LicenseState); !ok || state == nil || !state.HasFeature("rbac") {
+				if role != "admin" {
+					api.ErrorJSON(w, http.StatusForbidden, "Multi-role access control requires an Enterprise license — only the admin role is available on your current plan")
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
 			}
 
 			allowed, err := authz.CheckPermission(role, obj, act)
