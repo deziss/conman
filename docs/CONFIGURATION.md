@@ -16,8 +16,8 @@ For Docker Compose, set them in the `environment` section or a `.env` file.
 | `DATABASE_DRIVER` | `sqlite` | Database driver: `sqlite` or `postgres` |
 | `DATABASE_URL` | `app.db` | SQLite database file path |
 | `DATABASE_DSN` | *(see below)* | PostgreSQL connection string |
-| `SECRET_KEY` | `your-secret-key-here` | JWT signing key. **Change in production.** |
-| `MASTER_API_KEY` | `conman-master-secret-key` | System admin API key. **Change in production.** |
+| `SECRET_KEY` | *(none — required)* | JWT signing key. Server refuses to start if unset or a known placeholder (`your-secret-key-here`, `change-me-in-production`). Generate with `openssl rand -hex 32`. |
+| `MASTER_API_KEY` | *(none — required)* | System admin API key (`X-Master-Key` header). Server refuses to start if unset or a known placeholder. Generate with `openssl rand -hex 32`. |
 | `AGENT_TOKEN` | *(empty)* | Pre-shared key for agent authentication. Required for agents to connect. |
 | `ADMIN_EMAIL` | `admin@example.com` | Initial admin user email (created on first start) |
 | `ADMIN_PASSWORD` | `admin` | Initial admin password. Updated on every restart to match this value. |
@@ -33,7 +33,10 @@ host=localhost port=5432 user=conman password=secret dbname=conman sslmode=disab
 
 ### Security Notes
 
-- `SECRET_KEY`, `MASTER_API_KEY`, and `AGENT_TOKEN` ship with insecure defaults. Always change them before exposing the server to a network.
+- `SECRET_KEY` and `MASTER_API_KEY` have no usable default — the server calls `log.Fatal` at boot if either is unset or matches a known placeholder value. This is enforced regardless of how the server is started (compose, systemd package, bare binary).
+- The systemd package's postinstall script auto-generates random values for these into `/etc/conman/server.env` on first install (only if the shipped placeholder is still present, so upgrades never touch an admin's customized file).
+- `docker-compose.simple.yml` and `docker-compose.scaled.yml` require `SECRET_KEY`/`MASTER_API_KEY` via `${VAR:?...}` — compose itself refuses to start the container without them set in your shell or a `.env` file.
+- `AGENT_TOKEN` still defaults to empty, which is secure-by-default (agent endpoints reject every connection until it's set) — it does not need to be random-generated the way the two keys above do.
 - The admin password is re-applied from `ADMIN_PASSWORD` on every server restart. This serves as a recovery mechanism.
 - Agent endpoints require the `AGENT_TOKEN` to be set on the server. If empty, agent registration is rejected.
 
@@ -104,7 +107,7 @@ host=localhost port=5432 user=conman password=secret dbname=conman sslmode=disab
 |------|---------|
 | `/usr/bin/conman-server` | Server binary |
 | `/etc/conman/server.env` | Configuration file |
-| `/etc/conman/authz/model.conf` | Casbin RBAC policy |
+| `/etc/conman/authz/model.conf` | Casbin RBAC model — kept for reference only; the running server embeds this file into the binary at build time (`//go:embed`) and does not read it from disk |
 | `/usr/share/conman/static/` | Frontend web assets |
 | `/var/lib/conman/` | Database and data |
 | `/var/log/conman/` | Logs |

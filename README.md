@@ -35,7 +35,11 @@ Conman is a platform for managing and monitoring containers across multiple host
 ### Option 1: Docker Compose (quickest)
 
 ```bash
-docker compose -f docker-compose.simple.yml up -d
+# Required — the server refuses to start without these (no insecure defaults)
+export SECRET_KEY=$(openssl rand -hex 32)
+export MASTER_API_KEY=$(openssl rand -hex 32)
+
+docker compose -f docker-compose.simple.yml up -d --build
 ```
 
 Dashboard: http://localhost:5173 -- Login: `admin@example.com` / `admin`
@@ -168,14 +172,17 @@ conman/
 
 ```bash
 # Backend
-cd backend && go build ./... && go test ./...
+cd backend && go vet ./... && go build ./... && go test ./...
 
 # Agent
-cd agent && go build ./... && go test ./...
+cd agent && go vet ./... && go build ./... && go test ./...
 
 # Frontend
-cd frontend && npm install && npm run dev
+cd frontend && npm install --legacy-peer-deps && npm run dev
+cd frontend && npx tsc --noEmit && npx vitest run   # typecheck + unit tests
 ```
+
+CI (GitHub Actions, `.github/workflows/ci.yml`) runs all of the above on every push/PR to `main`.
 
 ## License
 

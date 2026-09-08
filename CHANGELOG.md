@@ -2,6 +2,45 @@
 
 All notable changes to the Conman project are documented in this file.
 
+## [Unreleased] - 2026-09-08
+
+### Security
+
+- **RBAC enforcement on all multi-host agent routes** (`internal/api/agents.go`) — ~45 routes (container/image/volume/network/stack management, exec shell, file upload/download) previously sat behind auth only, with zero permission checks. Now gated by `RequirePermission(obj, act)` grouped by resource (`agents`, `containers`, `images`, `volumes`, `networks`, `stacks`) × `read`/`write`, matching the pattern already used for single-host Docker routes.
+- **RBAC itself is now an Enterprise license feature.** `middleware.RequirePermission` checks the `rbac` feature — without it, only the `admin` role passes (any check, any resource), regardless of Casbin policy. Community/Pro effectively get one implicit admin role; multi-role RBAC (viewer/operator/custom) requires Enterprise.
+- **Webhook HMAC authentication** for `POST /webhooks/stacks/{id}` (public route, used by CI/CD). Previously accepted any request with a valid sequential integer ID — no secret. Now requires `X-Webhook-Signature: sha256=<hex HMAC-SHA256 of the raw body>` computed with a per-stack secret (`Stack.WebhookSecret`, generated on `CreateStack`, shown once, regenerable via new `POST /stacks/{id}/webhook-secret`). Split the old dual-purpose handler: `WebhookDeploy` (public, HMAC-required) vs `DeployStack` (authenticated dashboard "Deploy" button, no HMAC — already behind JWT + RBAC + the `stacks` feature).
+- **Server refuses to boot** with a default/placeholder `SECRET_KEY` or `MASTER_API_KEY` (`your-secret-key-here`, `change-me-in-production`, etc.) instead of only logging a warning. Compose files now require these via `${VAR:?...}`; the systemd packaging postinstall script auto-generates real random secrets into `/etc/conman/server.env` on first install.
+- **Stack name allowlist validation** (`^[a-z0-9][a-z0-9_-]{0,62}$`, `service.ValidateStackName`) closes a path-traversal hole — `stack.Name` was joined unvalidated into a filesystem path (`filepath.Join(dataDir, stack.Name)`) that a compose file then got written to and executed.
+- Bounded HTTP client timeouts on the agent reverse-proxy paths (30s shared client, 15s file-listing) — both previously used `http.Client{}`/`http.Get` with no timeout at all.
+- Request body size limits: `api.ReadJSON` now caps at 10 MiB by default; the 4 unauthenticated-by-PSK-only agent endpoints (`register`, `heartbeat`, `report`, `events`) use explicit per-endpoint limits (1 MiB, except `report` at 25 MiB for full host inventory payloads).
+- Fixed 3 unguarded `id[:8]` slices (agents.go event logging, alert evaluator's offline-agent message, agent's own ID-based name fallback) that panicked on any ID shorter than 8 characters — the alert evaluator one ran in an unrecovered goroutine, so it could permanently kill the alerting loop.
+- `RevokeAPIKey` was an empty function body (`TODO: Parse ID from URL and delete`) — implemented, scoped so a user can only revoke their own keys.
+- API key expiry (`ExpiresAt`) is now actually enforced in `AuthMiddleware` (was stored but never checked); added `LastUsedAt` tracking on successful auth.
+- `User.Password`, `APIKey.Key`, and `Stack.WebhookSecret` are no longer serialized in any API response (`json:"-"`) — each is shown in full exactly once, at creation, via a dedicated response wrapper; every other read only ever sees a short prefix or nothing.
+- Fixed `internal/authz.InitCasbin` loading `model.conf` via a relative path (`"internal/authz/model.conf"`) that only resolved when the process's cwd happened to be the repo root — broke under `go test` and would have broken any packaged binary launched from elsewhere. Now embedded into the binary at build time (`//go:embed`).
+
+### Added
+
+- New `api` license feature (Pro+Enterprise) gating `/profile/keys/*` (self-service API key management).
+- `/activities` (audit log) now gated behind the existing Enterprise-only `audit_logs` feature — previously ungated despite being sold as an Enterprise perk.
+- Unit tests for `internal/middleware`, `internal/authz`, and `internal/license` (previously zero coverage) — covers the RBAC license gate, Casbin bootstrap policy matrix, `AgentAuthMiddleware`, master key / API key (incl. expiry) / JWT auth paths, and tier → feature mapping.
+- `.github/workflows/ci.yml` — backend + agent (`go vet` + `go test`) and frontend (`tsc --noEmit` + `vitest run`) on every push/PR to `main`. Previously no CI existed at all.
+
+### Changed
+
+- Images and Containers pages are now full-width (previously capped at `max-w-[1600px]`); their Name/Actions columns stay fixed (`position: sticky`) while the rest of the table scrolls horizontally.
+
+### Removed
+
+- Root `Dockerfile`, `config.yaml`, `scripts/setup.sh` — leftovers from a pre-Go Python predecessor; `Dockerfile` referenced a `requirements.txt`/`src/` that no longer exist and could not build.
+- `docker-compose.yml` — stale and broken (wrong ports, agent had no auth token so it couldn't connect), and was what bare `docker compose up` picked with no `-f` flag. `docker-compose.simple.yml` is the only compose file now.
+- `zitadel-config.yaml` and the Zitadel/Kong-with-Postgres services in the removed `docker-compose.yml` — dead experiment with zero integration code anywhere in the repo (auth is JWT + Casbin, unrelated to Zitadel).
+- `frontend/src/modules/LogExplorer/` — ~550 lines with zero references from any route or import.
+
+### Fixed
+
+- Removed Claude AI co-authorship trailers from git history (16 commits) via `git filter-repo`.
+
 ## [Unreleased] - 2026-04-12
 
 ### Added (Licensing System — Keygen.sh)

@@ -18,12 +18,13 @@ Agent endpoints require:
 
 ### POST /auth/login
 
-Login with email and password.
+Login with email and password. Note: the request field is named `username`
+but holds the user's email address.
 
 **Request:**
 ```json
 {
-    "email": "admin@example.com",
+    "username": "admin@example.com",
     "password": "admin"
 }
 ```
@@ -31,15 +32,14 @@ Login with email and password.
 **Response (200):**
 ```json
 {
-    "token": "eyJhbGciOiJIUzI1NiIs...",
-    "user": {
-        "id": 1,
-        "email": "admin@example.com",
-        "full_name": "Admin User",
-        "role": "admin"
-    }
+    "access_token": "eyJhbGciOiJIUzI1NiIs...",
+    "token_type": "bearer"
 }
 ```
+
+The JWT payload carries `sub` (user ID), `email`, `name`, `role`, and `exp`
+(24h). There is no separate `user` object in the response and no refresh
+token — decode the JWT client-side if you need those fields.
 
 ---
 
@@ -325,6 +325,14 @@ Create and deploy a stack.
 }
 ```
 
+`POST /stacks` returns a `webhook_secret` field once, in this response only
+— it is never included in `GET /stacks`, `GET /stacks/{id}`, or any other
+read. Save it immediately; regenerate via `POST /stacks/{id}/webhook-secret`
+if lost (invalidates the old one).
+
+Stack names must match `^[a-z0-9][a-z0-9_-]{0,62}$` (used as a filesystem
+directory component) — anything else is rejected with 400.
+
 ### GET /stacks/{id}
 
 Get stack details.
@@ -340,6 +348,32 @@ Stop all services in a stack.
 ### DELETE /stacks/{id}
 
 Remove a stack and its services.
+
+### POST /stacks/{id}/webhook
+
+Trigger a redeploy from the authenticated dashboard. Requires the same
+auth/RBAC/license gate as the rest of `/stacks` — no signature needed.
+
+### POST /stacks/{id}/webhook-secret
+
+Regenerate this stack's webhook secret, invalidating the old one. Returns the
+new secret once: `{"webhook_secret": "..."}`.
+
+### POST /webhooks/stacks/{id}
+
+**Public route — no JWT/API key/master key.** For CI/CD pipelines. Requires
+an `X-Webhook-Signature: sha256=<hex>` header: HMAC-SHA256 of the raw request
+body, keyed with the stack's `webhook_secret`. Missing/malformed header, or a
+signature that doesn't match → `401`. A stack with no secret set (shouldn't
+happen for anything created after webhook secrets were introduced) → `403`.
+
+```bash
+SECRET="<webhook_secret from stack creation>"
+BODY=""
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
+curl -X POST -H "X-Webhook-Signature: sha256=$SIG" \
+  https://your-server/api/v1/webhooks/stacks/1
+```
 
 ---
 
@@ -472,17 +506,47 @@ Update a user.
 
 ## Profile (Self-Service)
 
+**Requires the `api` license feature (Pro+Enterprise)** — Community gets
+`403 {"license_required":true,"feature":"api"}` on all three routes.
+
 ### GET /profile/keys
 
-List your API keys.
+List your API keys. Each entry has a `key_prefix` (first 11 chars) for
+display — the full key is never returned here.
 
 ### POST /profile/keys
 
 Generate a new API key.
 
+**Request:**
+```json
+{
+    "name": "ci-pipeline",
+    "expires_in_days": 90
+}
+```
+
+`expires_in_days` is optional (0 or omitted = never expires). The response
+includes the full `key` exactly once — it is not recoverable after this call.
+
 ### DELETE /profile/keys/{id}
 
-Revoke an API key.
+Revoke (permanently delete) an API key. Scoped to your own keys only.
+
+---
+
+## Activities (Audit Log)
+
+**Requires the `audit_logs` license feature (Enterprise only)** — Pro/Community
+get `403 {"license_required":true,"feature":"audit_logs"}` on both routes.
+
+### GET /activities
+
+List system activity events (container lifecycle, OOM kills, user actions).
+
+### GET /activities/stats
+
+Aggregate activity counts.
 
 ---
 
