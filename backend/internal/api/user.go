@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -35,12 +37,29 @@ type UpdateUserRequest struct {
 }
 
 type CreateAPIKeyRequest struct {
-	Name string `json:"name"`
+	Name          string `json:"name"`
+	ExpiresInDays int    `json:"expires_in_days"` // 0 = never expires
+}
+
+// apiKeyResponse masks the stored key: models.APIKey.Key is json:"-", and this
+// wrapper exposes the full Key only once, right after generation, plus a
+// short KeyPrefix for display everywhere else (list views, etc.).
+type apiKeyResponse struct {
+	models.APIKey
+	Key       string `json:"key,omitempty"`
+	KeyPrefix string `json:"key_prefix"`
+}
+
+func keyPrefix(key string) string {
+	if len(key) > 11 {
+		return key[:11]
+	}
+	return key
 }
 
 func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req CreateUserRequest
-	if err := ReadJSON(r, &req); err != nil {
+	if err := ReadJSON(w, r, &req); err != nil {
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request")
 		return
 	}
@@ -75,7 +94,7 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateUserRequest
-	if err := ReadJSON(r, &req); err != nil {
+	if err := ReadJSON(w, r, &req); err != nil {
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request")
 		return
 	}
@@ -130,8 +149,16 @@ func (h *UserHandler) GenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateAPIKeyRequest
-	if err := ReadJSON(r, &req); err != nil {
+	if err := ReadJSON(w, r, &req); err != nil {
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		ErrorJSON(w, http.StatusBadRequest, "Name is required")
+		return
+	}
+	if req.ExpiresInDays < 0 {
+		ErrorJSON(w, http.StatusBadRequest, "expires_in_days must be 0 (never) or positive")
 		return
 	}
 
@@ -141,14 +168,19 @@ func (h *UserHandler) GenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 		ErrorJSON(w, http.StatusInternalServerError, "Error generating key")
 		return
 	}
-	keyString := hex.EncodeToString(bytes)
+	keyString := "cm_" + hex.EncodeToString(bytes) // prefix for identification
+
+	var expiresAt int64
+	if req.ExpiresInDays > 0 {
+		expiresAt = time.Now().AddDate(0, 0, req.ExpiresInDays).Unix()
+	}
 
 	apiKey := models.APIKey{
-		Key:    "cm_" + keyString, // Prefix for identification
-		Name:   req.Name,
-		UserID: user.ID,
-		Role:   user.Role, // Inherit current role
-        ExpiresAt: 0, // No expiry for now
+		Key:       keyString,
+		Name:      req.Name,
+		UserID:    user.ID,
+		Role:      user.Role, // Inherit current role
+		ExpiresAt: expiresAt,
 	}
 
 	if err := h.DB.Create(&apiKey).Error; err != nil {
@@ -156,7 +188,11 @@ func (h *UserHandler) GenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteJSON(w, http.StatusCreated, apiKey)
+	WriteJSON(w, http.StatusCreated, apiKeyResponse{
+		APIKey:    apiKey,
+		Key:       keyString, // shown once, right now
+		KeyPrefix: keyPrefix(keyString),
+	})
 }
 
 func (h *UserHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
@@ -171,10 +207,39 @@ func (h *UserHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		ErrorJSON(w, http.StatusInternalServerError, "Error fetching keys")
 		return
 	}
-	WriteJSON(w, http.StatusOK, keys)
+
+	resp := make([]apiKeyResponse, 0, len(keys))
+	for _, k := range keys {
+		resp = append(resp, apiKeyResponse{APIKey: k, KeyPrefix: keyPrefix(k.Key)}) // Key omitted (omitempty)
+	}
+	WriteJSON(w, http.StatusOK, resp)
 }
 
+// RevokeAPIKey permanently deletes an API key. Scoped to the current user —
+// a user can only revoke their own keys, never another user's.
 func (h *UserHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
-	// Implementation for deleting/revoking key
-    // TODO: Parse ID from URL and delete
+	user, ok := r.Context().Value(models.UserContextKey).(*models.User)
+	if !ok {
+		ErrorJSON(w, http.StatusUnauthorized, "User context not found")
+		return
+	}
+
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ErrorJSON(w, http.StatusBadRequest, "Invalid key ID")
+		return
+	}
+
+	result := h.DB.Where("id = ? AND user_id = ?", id, user.ID).Delete(&models.APIKey{})
+	if result.Error != nil {
+		ErrorJSON(w, http.StatusInternalServerError, "Error revoking key")
+		return
+	}
+	if result.RowsAffected == 0 {
+		ErrorJSON(w, http.StatusNotFound, "API key not found")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]string{"message": "API key revoked"})
 }

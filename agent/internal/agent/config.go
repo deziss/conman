@@ -119,7 +119,7 @@ func LoadConfig() (*Config, error) {
 	if cfg.AgentName == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
-			cfg.AgentName = cfg.AgentID[:8]
+			cfg.AgentName = cfg.AgentID[:min(len(cfg.AgentID), 8)]
 		} else {
 			cfg.AgentName = hostname
 		}

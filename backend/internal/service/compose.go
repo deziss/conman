@@ -7,8 +7,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
     "strings"
 )
+
+// stackNameRe allowlists stack names used as filesystem directory components.
+// Deploy/Down join this directly into a path via filepath.Join — without this
+// check a name like "../../etc/cron.d" would let a stack write and execute
+// a compose file anywhere on disk the server process can reach.
+var stackNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
+// ValidateStackName reports whether name is safe to use as a stack directory
+// component. Exported so handlers can validate before the model even hits the DB.
+func ValidateStackName(name string) error {
+	if !stackNameRe.MatchString(name) {
+		return fmt.Errorf("invalid stack name %q: must match ^[a-z0-9][a-z0-9_-]{0,62}$", name)
+	}
+	return nil
+}
 
 type ComposeService struct {
     DataDir string
@@ -26,6 +42,9 @@ func NewComposeService() *ComposeService {
 }
 
 func (s *ComposeService) Deploy(stack *models.Stack) error {
+    if err := ValidateStackName(stack.Name); err != nil {
+        return err
+    }
     stackDir := filepath.Join(s.DataDir, stack.Name)
     if err := os.MkdirAll(stackDir, 0755); err != nil {
         return fmt.Errorf("failed to create stack dir: %w", err)
@@ -57,6 +76,9 @@ func (s *ComposeService) Deploy(stack *models.Stack) error {
 }
 
 func (s *ComposeService) Down(stack *models.Stack) error {
+    if err := ValidateStackName(stack.Name); err != nil {
+        return err
+    }
     stackDir := filepath.Join(s.DataDir, stack.Name)
     composePath := filepath.Join(stackDir, "docker-compose.yml")
     envPath := filepath.Join(stackDir, ".env")
@@ -71,6 +93,9 @@ func (s *ComposeService) Down(stack *models.Stack) error {
 }
 
 func (s *ComposeService) GetStatus(stack *models.Stack) (string, error) {
+    if err := ValidateStackName(stack.Name); err != nil {
+        return "error", err
+    }
     stackDir := filepath.Join(s.DataDir, stack.Name)
     composePath := filepath.Join(stackDir, "docker-compose.yml")
     
@@ -104,6 +129,9 @@ type ContainerInfo struct {
 }
 
 func (s *ComposeService) GetContainers(stack *models.Stack) ([]ContainerInfo, error) {
+    if err := ValidateStackName(stack.Name); err != nil {
+        return nil, err
+    }
     stackDir := filepath.Join(s.DataDir, stack.Name)
     composePath := filepath.Join(stackDir, "docker-compose.yml")
 

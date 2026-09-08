@@ -94,7 +94,7 @@ func (h *VolumeHandler) CreateVolume(w http.ResponseWriter, r *http.Request) {
         Name   string `json:"name"`
         Driver string `json:"driver"`
     }
-    if err := ReadJSON(r, &req); err != nil {
+    if err := ReadJSON(w, r, &req); err != nil {
         ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
         return
     }

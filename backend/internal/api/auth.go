@@ -26,7 +26,7 @@ func NewAuthHandler(db *gorm.DB) *AuthHandler {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
-	if err := ReadJSON(r, &req); err != nil {
+	if err := ReadJSON(w, r, &req); err != nil {
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}

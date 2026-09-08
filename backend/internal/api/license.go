@@ -39,7 +39,7 @@ func (h *LicenseHandler) ActivateLicense(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		LicenseKey string `json:"license_key"`
 	}
-	if err := ReadJSON(r, &req); err != nil {
+	if err := ReadJSON(w, r, &req); err != nil {
 		ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}

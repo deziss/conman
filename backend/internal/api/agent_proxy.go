@@ -66,7 +66,7 @@ func (h *AgentHandler) proxyRequest(w http.ResponseWriter, r *http.Request, meth
 		req.Header.Set(k, v[0])
 	}
 	
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Proxy error to %s: %v", targetURL, err)

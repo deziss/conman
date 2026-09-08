@@ -33,7 +33,7 @@ func (h *EnvironmentHandler) CreateEnvironment(w http.ResponseWriter, r *http.Re
         IsLocal   bool   `json:"is_local"`
     }
 
-    if err := ReadJSON(r, &req); err != nil {
+    if err := ReadJSON(w, r, &req); err != nil {
         ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
         return
     }

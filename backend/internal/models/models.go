@@ -17,14 +17,14 @@ const (
 type User struct {
 	gorm.Model
 	Email    string `gorm:"uniqueIndex"`
-	Password string
+	Password string `json:"-"` // bcrypt hash — never serialized
 	FullName string
 	Role     string // "admin", "operator", "viewer"
 }
 
 type APIKey struct {
 	gorm.Model
-	Key         string `gorm:"uniqueIndex"`
+	Key         string `gorm:"uniqueIndex" json:"-"` // full secret — never serialized (see api.apiKeyResponse)
 	Name        string
 	UserID      uint
 	User        User
@@ -113,6 +113,12 @@ type Stack struct {
 	EnvContent     string // content of .env
 	Status         string // "active", "stopped", "error"
 	Message        string // Last error or status message
+	// WebhookSecret authenticates POST /webhooks/stacks/{id} (unauthenticated
+	// route, used by CI/CD). Callers must send an
+	// X-Webhook-Signature: sha256=<hex HMAC-SHA256 of the raw request body>
+	// header computed with this secret. Never serialized except once, right
+	// after CreateStack generates it.
+	WebhookSecret string `json:"-"`
 }
 
 // AlertRule defines an alert condition that is periodically evaluated.

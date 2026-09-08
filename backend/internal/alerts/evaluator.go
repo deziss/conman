@@ -128,7 +128,7 @@ func (e *Evaluator) evaluateAgentOffline(rule models.AlertRule, states map[strin
 			}
 
 			msg := fmt.Sprintf("Agent %q (%s) has been offline for >%d minutes (last heartbeat: %s)",
-				agent.Name, agent.ID[:8], cfg.TimeoutMinutes, agent.LastHeartbeat.Format(time.RFC3339))
+				agent.Name, agent.ID[:min(len(agent.ID), 8)], cfg.TimeoutMinutes, agent.LastHeartbeat.Format(time.RFC3339))
 
 			// Record the alert event
 			event := models.AlertEvent{

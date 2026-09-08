@@ -48,7 +48,7 @@ func (h *NetworkHandler) CreateNetwork(w http.ResponseWriter, r *http.Request) {
         Name   string `json:"name"`
         Driver string `json:"driver"`
     }
-    if err := ReadJSON(r, &req); err != nil {
+    if err := ReadJSON(w, r, &req); err != nil {
         ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
         return
     }
@@ -86,7 +86,7 @@ func (h *NetworkHandler) ConnectContainer(w http.ResponseWriter, r *http.Request
     var req struct {
         ContainerID string `json:"containerId"`
     }
-    if err := ReadJSON(r, &req); err != nil {
+    if err := ReadJSON(w, r, &req); err != nil {
         ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
         return
     }
@@ -105,7 +105,7 @@ func (h *NetworkHandler) DisconnectContainer(w http.ResponseWriter, r *http.Requ
         ContainerID string `json:"containerId"`
         Force       bool   `json:"force"`
     }
-    if err := ReadJSON(r, &req); err != nil {
+    if err := ReadJSON(w, r, &req); err != nil {
         ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
         return
     }
