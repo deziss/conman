@@ -24,9 +24,10 @@ services:
       - DATABASE_DRIVER=${DATABASE_DRIVER:-sqlite}
       - DATABASE_URL=/app/data/app.db
       - DATABASE_DSN=host=conman-db port=5432 user=conman password=${POSTGRES_PASSWORD:-conman} dbname=conman sslmode=disable
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a random secret, e.g. openssl rand -hex 32}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - MASTER_API_KEY=${MASTER_API_KEY:?Set MASTER_API_KEY to a random secret, e.g. openssl rand -hex 32}
       - AGENT_TOKEN=${AGENT_TOKEN:-conman-dev-token}
       - STATIC_DIR=/app/static
       - CORS_ORIGINS=http://localhost:5173

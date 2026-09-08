@@ -54,7 +54,32 @@ func LoadConfig() {
 	if config.AgentToken == "" {
 		log.Println("WARNING: AGENT_TOKEN not set. Agent endpoints will reject all connections.")
 	}
-	if config.SecretKey == "your-secret-key-here" {
-		log.Println("WARNING: Using default SECRET_KEY. Change it before running in production.")
+	if config.AdminPassword == "admin" {
+		log.Println("WARNING: ADMIN_PASSWORD is set to the default 'admin'. Change it before running in production.")
+	}
+
+	// Known-insecure placeholder values shipped in this repo's own compose files
+	// and Go defaults. Booting with any of these grants trivial admin bypass
+	// (MASTER_API_KEY) or forgeable JWTs (SECRET_KEY), so refuse to start
+	// rather than only warn.
+	insecureSecretKeys := map[string]bool{
+		"your-secret-key-here":                 true, // config.go default
+		"your-secret-key-change-in-production": true, // docker-compose.simple.yml / .scaled.yml default
+		"change-me-in-production":              true, // packaging/server.env default
+		"":                                      true,
+	}
+	insecureMasterKeys := map[string]bool{
+		"conman-master-secret-key": true, // config.go default
+		"change-me-in-production":  true, // packaging/server.env default
+		"":                         true,
+	}
+
+	if insecureSecretKeys[config.SecretKey] {
+		log.Fatal("FATAL: SECRET_KEY is unset or a known placeholder value. Set it to a random secret " +
+			"(e.g. `openssl rand -hex 32`) before starting the server — refusing to boot with a forgeable JWT signing key.")
+	}
+	if insecureMasterKeys[config.MasterAPIKey] {
+		log.Fatal("FATAL: MASTER_API_KEY is unset or the default placeholder value. Set it to a random secret " +
+			"(e.g. `openssl rand -hex 32`) before starting the server — refusing to boot with a known admin bypass key.")
 	}
 }
