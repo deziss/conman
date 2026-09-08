@@ -433,7 +433,7 @@ export const Images = () => {
   useEffect(() => { setPage(1); }, [sortOrder, statusFilter]);
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+    <div className="space-y-6 w-full pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -571,13 +571,13 @@ export const Images = () => {
             <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
               <thead className="bg-slate-100/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-white/10 uppercase font-semibold tracking-wider text-[11px] sticky top-0 backdrop-blur-sm z-10">
                 <tr>
-                  <th className="px-4 py-3 min-w-[220px]">Repository & Tag</th>
+                  <th className="px-4 py-3 min-w-[220px] sticky left-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]">Repository & Tag</th>
                   <th className="px-4 py-3 min-w-[130px]">Image ID</th>
                   <th className="px-4 py-3">Size</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3 min-w-[140px]">Update Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-right sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.15)]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-white/5 font-sans">
@@ -604,7 +604,7 @@ export const Images = () => {
                         )}
                       >
                         {/* Repository & Tag */}
-                        <td className="px-4 py-3 align-middle">
+                        <td className="px-4 py-3 align-middle sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-white/[0.03] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                           <div className="flex items-center gap-2 flex-wrap min-w-0">
                             <Link
                               to={`/images/${encodeURIComponent(img.id)}`}
@@ -666,7 +666,7 @@ export const Images = () => {
                         </td>
 
                         {/* Actions */}
-                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap sticky right-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-white/[0.03] shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                           <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100">
                             {/* Check Update */}
                             <button

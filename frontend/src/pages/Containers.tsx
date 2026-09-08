@@ -319,7 +319,7 @@ export const Containers = () => {
 
   return (
     <PageTransition>
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
+    <div className="space-y-6 w-full pb-12">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -451,7 +451,7 @@ export const Containers = () => {
             <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
               <thead className="bg-slate-100/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-b border-slate-200 dark:border-white/10 uppercase font-semibold tracking-wider text-[11px] sticky top-0 backdrop-blur-sm z-10">
                 <tr>
-                  <th className="px-4 py-3 min-w-[200px]">Name</th>
+                  <th className="px-4 py-3 min-w-[200px] sticky left-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]">Name</th>
                   <th className="px-4 py-3 min-w-[160px]">Image</th>
                   <th className="px-4 py-3">State</th>
                   <th className="px-4 py-3 min-w-[110px]">Uptime</th>
@@ -462,7 +462,7 @@ export const Containers = () => {
                   <th className="px-4 py-3">IP Address</th>
                   <th className="px-4 py-3 min-w-[140px]">Ports</th>
                   <th className="px-4 py-3">Stack</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-right sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.15)]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-white/5 font-sans">
@@ -488,7 +488,7 @@ export const Containers = () => {
                         )}
                       >
                         {/* Name */}
-                        <td className="px-4 py-3 align-middle">
+                        <td className="px-4 py-3 align-middle sticky left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-white/[0.03] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                           <div className="flex items-center space-x-2.5 min-w-0">
                             <span className={clsx("w-2.5 h-2.5 rounded-full shrink-0", getStatusColor(container.state))} />
                             <div className="min-w-0">
@@ -614,7 +614,7 @@ export const Containers = () => {
                         </td>
 
                         {/* Actions */}
-                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap sticky right-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-white/[0.03] shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.1)]">
                           <div className="flex items-center justify-end space-x-1 opacity-90 group-hover:opacity-100">
                             {/* Start/Stop */}
                             <button 
