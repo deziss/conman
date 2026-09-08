@@ -48,12 +48,39 @@ interface UpdateCheckStatus {
   checkedAt?: Date;
 }
 
+type ImageSortField = 'size' | 'status' | 'created' | 'update_status';
+interface ImageColumnSort { field: ImageSortField; direction: 'asc' | 'desc'; }
+
+// Ranks update-check state for sorting: update available > checked, up to date > error > not checked yet.
+const updateStatusRank = (s: UpdateCheckStatus | undefined): number => {
+  if (!s) return 0;
+  if (s.available === true) return 3;
+  if (s.available === false) return 2;
+  if (s.error) return 1;
+  return 0;
+};
+
 export const Images = () => {
   const [images, setImages] = useState<Image[]>([]);
   const [loading, setLoading] = useState(true);
   const [pulling, setPulling] = useState(false);
   const [pullImageName, setPullImageName] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'used' | 'unused'>('all');
+  const [columnSort, setColumnSort] = useState<ImageColumnSort | null>(null);
+
+  const toggleColumnSort = (field: ImageSortField) => {
+    setColumnSort(prev => {
+      if (prev?.field === field) {
+        return prev.direction === 'asc' ? { field, direction: 'desc' } : null; // asc -> desc -> off
+      }
+      return { field, direction: 'asc' };
+    });
+  };
+
+  const sortIndicator = (field: ImageSortField) => {
+    if (columnSort?.field !== field) return null;
+    return columnSort.direction === 'asc' ? ' ▲' : ' ▼';
+  };
   const [sortOrder, setSortOrder] = useState<'created' | 'name' | 'size' | 'status'>('created');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
     return (localStorage.getItem('conman_images_view') as 'table' | 'grid') || 'table';
@@ -410,7 +437,29 @@ export const Images = () => {
       ? images
       : images.filter(img => img.status === statusFilter);
 
-  const sortedImages = [...filteredImages].sort((a, b) => {
+  const sortedImages = columnSort
+    ? [...filteredImages].sort((a, b) => {
+        const dir = columnSort.direction === 'asc' ? 1 : -1;
+        let av = 0, bv = 0;
+        switch (columnSort.field) {
+          case 'size':
+            av = a.size; bv = b.size;
+            break;
+          case 'created':
+            av = a.created; bv = b.created;
+            break;
+          case 'status':
+            av = a.status === 'used' ? 1 : 0;
+            bv = b.status === 'used' ? 1 : 0;
+            break;
+          case 'update_status':
+            av = updateStatusRank(updateStatuses[a.id]);
+            bv = updateStatusRank(updateStatuses[b.id]);
+            break;
+        }
+        return (av - bv) * dir;
+      })
+    : [...filteredImages].sort((a, b) => {
       if (sortOrder === 'name') {
           const nameA = a.repo_tags && a.repo_tags.length > 0 ? a.repo_tags[0] : a.id;
           const nameB = b.repo_tags && b.repo_tags.length > 0 ? b.repo_tags[0] : b.id;
@@ -430,7 +479,7 @@ export const Images = () => {
   const [pageSize, setPageSize] = useState(24);
   const paginatedImages = sortedImages.slice((page - 1) * pageSize, page * pageSize);
 
-  useEffect(() => { setPage(1); }, [sortOrder, statusFilter]);
+  useEffect(() => { setPage(1); }, [sortOrder, statusFilter, columnSort]);
 
   return (
     <div className="space-y-6 w-full pb-12">
@@ -573,10 +622,10 @@ export const Images = () => {
                 <tr>
                   <th className="px-4 py-3 min-w-[220px] sticky left-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]">Repository & Tag</th>
                   <th className="px-4 py-3 min-w-[130px]">Image ID</th>
-                  <th className="px-4 py-3">Size</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3 min-w-[140px]">Update Status</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('size')}>Size{sortIndicator('size')}</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('status')}>Status{sortIndicator('status')}</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('created')}>Created{sortIndicator('created')}</th>
+                  <th className="px-4 py-3 min-w-[140px] cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('update_status')}>Update Status{sortIndicator('update_status')}</th>
                   <th className="px-4 py-3 text-right sticky right-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.15)]">Actions</th>
                 </tr>
               </thead>

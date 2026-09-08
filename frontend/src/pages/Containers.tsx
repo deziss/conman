@@ -62,6 +62,25 @@ const formatNetBytes = (bytes: number): string => {
   return `${bytes} B`;
 };
 
+// Parses a single formatted size like "21.58 MB" / "512 B" into raw bytes for sorting.
+const parseByteValue = (s: string): number => {
+  const match = /([\d.]+)\s*(B|KB|MB|GB|TB)/i.exec(s);
+  if (!match) return 0;
+  const value = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
+  const multiplier = unit === 'TB' ? 1024 ** 4 : unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : unit === 'KB' ? 1024 : 1;
+  return value * multiplier;
+};
+
+// Disk I/O renders as "<read> / <write>" (e.g. "1.2 MB / 512 KB") — sum both sides for sorting.
+const parseDiskIOTotal = (s: string): number => {
+  if (!s) return 0;
+  return s.split('/').reduce((sum, part) => sum + parseByteValue(part.trim()), 0);
+};
+
+type ContainerSortField = 'uptime' | 'cpu' | 'memory' | 'net_io' | 'disk_io';
+interface ColumnSort { field: ContainerSortField; direction: 'asc' | 'desc'; }
+
 export const Containers = () => {
   const [containers, setContainers] = useState<Container[]>([]);
   const { refreshInterval } = useSettings();
@@ -69,6 +88,21 @@ export const Containers = () => {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'running' | 'exited' | 'paused'>('all');
   const [sortOrder, setSortOrder] = useState<'name' | 'status' | 'state'>('state');
+  const [columnSort, setColumnSort] = useState<ColumnSort | null>(null);
+
+  const toggleColumnSort = (field: ContainerSortField) => {
+    setColumnSort(prev => {
+      if (prev?.field === field) {
+        return prev.direction === 'asc' ? { field, direction: 'desc' } : null; // asc -> desc -> off
+      }
+      return { field, direction: 'asc' };
+    });
+  };
+
+  const sortIndicator = (field: ContainerSortField) => {
+    if (columnSort?.field !== field) return null;
+    return columnSort.direction === 'asc' ? ' ▲' : ' ▼';
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>(() => {
     return (localStorage.getItem('conman_containers_view') as 'table' | 'grid') || 'table';
@@ -298,6 +332,37 @@ export const Containers = () => {
       );
     }
 
+    if (columnSort) {
+      const { field, direction } = columnSort;
+      const dir = direction === 'asc' ? 1 : -1;
+      return [...list].sort((a, b) => {
+        let av = 0, bv = 0;
+        switch (field) {
+          case 'uptime':
+            // Lower `created` timestamp = existed longer = more uptime.
+            av = -a.created; bv = -b.created;
+            break;
+          case 'cpu':
+            av = parseFloat(a.cpu_usage || '0') || 0;
+            bv = parseFloat(b.cpu_usage || '0') || 0;
+            break;
+          case 'memory':
+            av = parseByteValue(a.memory_usage || '0 B');
+            bv = parseByteValue(b.memory_usage || '0 B');
+            break;
+          case 'net_io':
+            av = (a.network_rx || 0) + (a.network_tx || 0);
+            bv = (b.network_rx || 0) + (b.network_tx || 0);
+            break;
+          case 'disk_io':
+            av = parseDiskIOTotal(a.disk_io || '0 B / 0 B');
+            bv = parseDiskIOTotal(b.disk_io || '0 B / 0 B');
+            break;
+        }
+        return (av - bv) * dir;
+      });
+    }
+
     return [...list].sort((a, b) => {
       if (sortOrder === 'name') return a.name.localeCompare(b.name);
       if (sortOrder === 'status') return a.status.localeCompare(b.status);
@@ -308,14 +373,14 @@ export const Containers = () => {
       }
       return 0;
     });
-  }, [containers, filterStatus, searchQuery, sortOrder]);
+  }, [containers, filterStatus, searchQuery, sortOrder, columnSort]);
 
   // Pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const paginatedContainers = filteredContainers.slice((page - 1) * pageSize, page * pageSize);
 
-  useEffect(() => { setPage(1); }, [sortOrder, filterStatus, searchQuery]);
+  useEffect(() => { setPage(1); }, [sortOrder, filterStatus, searchQuery, columnSort]);
 
   return (
     <PageTransition>
@@ -454,11 +519,11 @@ export const Containers = () => {
                   <th className="px-4 py-3 min-w-[200px] sticky left-0 z-20 bg-slate-100 dark:bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]">Name</th>
                   <th className="px-4 py-3 min-w-[160px]">Image</th>
                   <th className="px-4 py-3">State</th>
-                  <th className="px-4 py-3 min-w-[110px]">Uptime</th>
-                  <th className="px-4 py-3">CPU</th>
-                  <th className="px-4 py-3">Memory</th>
-                  <th className="px-4 py-3">Net I/O</th>
-                  <th className="px-4 py-3">Disk I/O</th>
+                  <th className="px-4 py-3 min-w-[110px] cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('uptime')}>Uptime{sortIndicator('uptime')}</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('cpu')}>CPU{sortIndicator('cpu')}</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('memory')}>Memory{sortIndicator('memory')}</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('net_io')}>Net I/O{sortIndicator('net_io')}</th>
+                  <th className="px-4 py-3 cursor-pointer select-none hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => toggleColumnSort('disk_io')}>Disk I/O{sortIndicator('disk_io')}</th>
                   <th className="px-4 py-3">IP Address</th>
                   <th className="px-4 py-3 min-w-[140px]">Ports</th>
                   <th className="px-4 py-3">Stack</th>
