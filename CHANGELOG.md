@@ -2,6 +2,14 @@
 
 All notable changes to the Conman project are documented in this file.
 
+## [1.2.1] - 2026-09-21
+
+### Fixed
+
+- **The frontend CI job had never actually run.** The root `.gitignore` carried a bare `package-lock.json` rule, so `frontend/package-lock.json` was untracked. `actions/setup-node` failed at its cache step (`Some specified paths were not resolved, unable to cache dependencies`) before installing anything, and `npm ci --legacy-peer-deps` had no lockfile to install from either. Every CI run since the workflow was added was green on backend and agent only, with the frontend job failing in under 10 seconds. The lockfile is now tracked (`yarn.lock` and `pnpm-lock.yaml` stay ignored — this repo uses npm), and CI passes end to end for the first time.
+
+  This landed one commit after the `v1.2.0` tag, so a checkout of `v1.2.0` has no lockfile and cannot `npm ci`. Use `v1.2.1` or later.
+
 ## [1.2.0] - 2026-09-21
 
 ### Changed

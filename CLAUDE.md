@@ -167,11 +167,13 @@ cd backend && go vet ./... && go test ./...
 cd agent && go vet ./... && go test ./...
 
 # Frontend
-cd frontend && npx tsc --noEmit && npm test   # npm test runs `vitest run`
+cd frontend && npx tsc -b && npm test   # npm test runs `vitest run`
 
 # API smoke test
 curl -s http://localhost:5173/api/v1/health
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of the above — backend/agent (`go vet` + `go test`) and frontend (`tsc --noEmit` + `vitest run`) — on every push/PR to `main`.
+
+**Use `tsc -b`, never `tsc --noEmit`.** The root `tsconfig.json` is solution-style (`"files": []` plus `references`), and `--noEmit` does not follow project references — it type-checks nothing and always exits 0. Only `tsc -b` actually builds `tsconfig.app.json`. CI's "Type check" step and the `build` script (`tsc && vite build`) both still use the `--noEmit` form, so they pass unconditionally; that is how a set of type-only imports that blanked the app in dev reached `main` (fixed in 1.2.0). `tsc -b` currently reports 132 errors (77 × TS6133 unused locals under `noUnusedLocals`, plus ~13 genuine type errors) — clear those before switching CI over.
 

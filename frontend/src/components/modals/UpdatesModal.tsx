@@ -19,9 +19,21 @@ interface UpdatesModalProps {
 export const UpdatesModal: React.FC<UpdatesModalProps> = ({ isOpen, onClose }) => {
     const releases = [
         {
-            version: 'v1.2.0',
+            version: 'v1.2.1',
             date: 'September 2026',
             badge: 'Current Version',
+            features: [
+                {
+                    icon: SparklesIcon,
+                    title: 'Working Frontend CI',
+                    desc: 'The dashboard lockfile is now tracked, so the frontend install, type check, and unit test job actually runs on every push instead of failing before it starts.'
+                }
+            ]
+        },
+        {
+            version: 'v1.2.0',
+            date: 'September 2026',
+            badge: 'Previous Release',
             features: [
                 {
                     icon: ShieldCheckIcon,

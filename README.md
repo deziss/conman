@@ -87,7 +87,7 @@ Install the agent on any machine you want to monitor and point it at the server:
 
 ```bash
 # On the host you want to add
-sudo dpkg -i conman-agent_1.2.0_amd64.deb      # or: rpm -i conman-agent-1.2.0-1.x86_64.rpm
+sudo dpkg -i conman-agent_1.2.1_amd64.deb      # or: rpm -i conman-agent-1.2.1-1.x86_64.rpm
 sudo vi /etc/conman-agent/agent.env            # set CONMAN_SERVER_URL and CONMAN_SERVER_TOKEN
 sudo systemctl enable --now conman-agent
 ```
@@ -101,12 +101,12 @@ sudo systemctl enable --now conman-agent
 
 ```bash
 # Debian / Ubuntu
-sudo dpkg -i conman-server_1.2.0_amd64.deb
+sudo dpkg -i conman-server_1.2.1_amd64.deb
 sudo vi /etc/conman/server.env        # SECRET_KEY and MASTER_API_KEY are auto-generated on first install
 sudo systemctl enable --now conman-server
 
 # RHEL / Fedora
-sudo rpm -i conman-server-1.2.0-1.x86_64.rpm
+sudo rpm -i conman-server-1.2.1-1.x86_64.rpm
 sudo vi /etc/conman/server.env
 sudo systemctl enable --now conman-server
 ```
