@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useHost } from '../../contexts/HostContext';
 import { GlassCard } from '../ui/GlassCard';
-import { ServerStackIcon, TrashIcon, PlusIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ServerStackIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 import { AddHostModal } from '../AddHostModal';
 import { ConfirmModal } from '../ui/ConfirmModal';
 import api from '../../services/api';

@@ -1,5 +1,5 @@
 import { isConmanSystemContainer } from '../utils/systemProtection';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Terminal } from '../components/Terminal';
 import { FileBrowser } from '../components/FileBrowser';
@@ -14,23 +14,16 @@ import {
     StopIcon, 
     ArrowPathIcon, 
     TrashIcon, 
-    CommandLineIcon, 
-    DocumentTextIcon,
     InformationCircleIcon,
-    ChartBarIcon,
-    Cog6ToothIcon,
     FolderIcon,
 
     GlobeAltIcon,
 
-    ClockIcon,
-    CubeIcon,
     ShieldCheckIcon,
     CpuChipIcon,
     TagIcon,
     ServerStackIcon,
     KeyIcon,
-    LockClosedIcon,
     CircleStackIcon,
     WrenchScrewdriverIcon
 } from '@heroicons/react/24/solid';
@@ -39,7 +32,6 @@ import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { useHost } from '../contexts/HostContext';
-import { mapAgentContainerToDetails } from '../utils/containerMapper';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ResourceTuningModal } from '../components/ResourceTuningModal';
 
@@ -124,21 +116,28 @@ interface StatPoint {
     value: number;
 }
 
-type TabType = 'overview' | 'metrics' | 'logs' | 'shell' | 'files' | 'config' | 'networks' | 'resources';
+/**
+ * The detail tabs, in render order. `TabType` is derived from this list so the
+ * tab bar and the panels below it cannot drift apart — previously the type was
+ * maintained by hand and had lost `processes`/`activity` while still carrying a
+ * `metrics` tab that no panel rendered.
+ */
+const CONTAINER_TABS = [
+    'overview',
+    'logs',
+    'processes',
+    'activity',
+    'shell',
+    'files',
+    'config',
+    'networks',
+    'resources',
+] as const;
+
+type TabType = (typeof CONTAINER_TABS)[number];
 
 
 // Helper to format time ago
-const timeAgo = (dateString: string) => {
-    if (!dateString || dateString === '0001-01-01T00:00:00Z') return 'Never';
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (seconds < 60) return 'just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-    if (seconds < 86400) return `about ${Math.floor(seconds / 3600)} hours ago`;
-    return `${Math.floor(seconds / 86400)} days ago`;
-};
 
 declare global {
     interface Window {
@@ -150,10 +149,6 @@ declare global {
     }
 }
 
-const formatDate = (dateString: string) => {
-    if (!dateString || dateString === '0001-01-01T00:00:00Z') return '-';
-    return new Date(dateString).toLocaleString();
-};
 
 const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
@@ -191,78 +186,12 @@ const EnvVarCard = ({ name, value }: { name: string; value: string }) => (
     </div>
 );
 
-// Badge for port mappings
-const PortBadge = ({ mapping }: { mapping: string }) => (
-    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-mono bg-purple-500/20 text-purple-400 border border-purple-500/30">
-        {mapping}
-        <span className="ml-1.5 text-[10px] bg-purple-500/30 px-1 rounded">TCP</span>
-    </span>
-);
 
-// Storage Mount Card
-const MountCard = ({ mount }: { mount: ContainerDetails['Mounts'][0] }) => (
-    <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-5 border border-slate-200 dark:border-white/5">
-        <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-                <div className={clsx(
-                    "p-2 rounded-lg",
-                    mount.Type === 'bind' ? "bg-cyan-500/20" : "bg-purple-500/20"
-                )}>
-                    {mount.Type === 'bind' ? (
-                        <FolderIcon className="w-4 h-4 text-cyan-400" />
-                    ) : (
-                        <CircleStackIcon className="w-4 h-4 text-purple-400" />
-                    )}
-                </div>
-                <div>
-                    <div className="text-sm font-medium text-slate-900 dark:text-white">{mount.Name || 'Host directory'}</div>
-                    <div className="text-xs text-slate-500">{mount.Type} mount</div>
-                </div>
-            </div>
-            <span className={clsx(
-                "text-xs px-2 py-0.5 rounded font-mono",
-                mount.RW ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/20 text-slate-400"
-            )}>
-                {mount.RW ? 'RW' : 'RO'}
-            </span>
-        </div>
-        
-        <div className="space-y-3">
-            <div>
-                <div className="text-xs text-slate-500 mb-1">Container</div>
-                <div className="text-sm text-cyan-400 font-mono">{mount.Destination}</div>
-            </div>
-            {mount.Type === 'bind' ? (
-                <div>
-                    <div className="text-xs text-slate-500 mb-1">Host</div>
-                    <div className="text-sm text-slate-300 font-mono">{mount.Source}</div>
-                </div>
-            ) : (
-                <div>
-                    <div className="text-xs text-slate-500 mb-1">Volume</div>
-                    <div className="text-sm text-slate-300 font-mono">{mount.Source}</div>
-                </div>
-            )}
-            {mount.Propagation && (
-                <div>
-                    <div className="text-xs text-slate-500 mb-1">Propagation</div>
-                    <div className="text-sm text-slate-300">{mount.Propagation}</div>
-                </div>
-            )}
-            {mount.Driver && (
-                <div>
-                    <div className="text-xs text-slate-500 mb-1">Driver</div>
-                    <div className="text-sm text-slate-300">{mount.Driver}</div>
-                </div>
-            )}
-        </div>
-    </div>
-);
 
 // Network Card
 const NetworkCard = ({ name, network }: { 
     name: string; 
-    network: NonNullable<ContainerDetails['NetworkSettings']>['Networks'][string] 
+    network: NonNullable<NonNullable<ContainerDetails['NetworkSettings']>['Networks']>[string];
 }) => (
     <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-5 border border-slate-200 dark:border-white/5">
         <div className="flex items-center space-x-3 mb-5">
@@ -326,7 +255,7 @@ export const ContainerDetails = () => {
     const [cpuData, setCpuData] = useState<StatPoint[]>([]);
     const [memData, setMemData] = useState<StatPoint[]>([]);
     const [netData, setNetData] = useState<StatPoint[]>([]);
-    const [diskData, setDiskData] = useState<StatPoint[]>([]);
+    const [, setDiskData] = useState<StatPoint[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [isTuningModalOpen, setIsTuningModalOpen] = useState<boolean>(false);
     const wsRef = useRef<WebSocket | null>(null);
@@ -583,7 +512,7 @@ export const ContainerDetails = () => {
 
             {/* Tabs */}
             <div className="flex space-x-1 bg-slate-200/60 dark:bg-white/5 p-1 rounded-lg w-fit border border-slate-200 dark:border-white/5">
-                {(['overview', 'logs', 'processes', 'activity', 'shell', 'files', 'config', 'networks', 'resources'] as const).map((tab) => (
+                {CONTAINER_TABS.map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}

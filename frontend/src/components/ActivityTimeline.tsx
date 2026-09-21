@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BoltIcon, 
   ArrowPathIcon, 
   MagnifyingGlassIcon, 
-  FunnelIcon,
   ExclamationTriangleIcon,
   XCircleIcon,
   CheckCircleIcon,
-  InformationCircleIcon,
   UserIcon,
   CommandLineIcon,
   CpuChipIcon,
@@ -48,7 +46,7 @@ export const ActivityTimeline: React.FC<ActivityTimelineProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
-  const [selectedType, setSelectedType] = useState<string>('all');
+  const [selectedType] = useState<string>('all');
   const [selectedAction, setSelectedAction] = useState<string>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [page, setPage] = useState(1);

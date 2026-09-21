@@ -1,15 +1,11 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { PlusIcon, PlayIcon, ArrowPathIcon, TrashIcon, DocumentTextIcon, CodeBracketIcon, EyeIcon } from '@heroicons/react/24/solid';
-import { useTheme } from '../contexts/ThemeContext';
-import { useNavigate } from 'react-router-dom';
+import { PlusIcon, PlayIcon, ArrowPathIcon, TrashIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { useLicense } from '../contexts/LicenseContext';
 import { UpgradePrompt } from '../components/ui/UpgradePrompt';
-import { LoadingState } from '../components/ui/LoadingState';
-import { SituationalBanner } from '../components/ui/SituationalBanner';
 
 interface Stack {
     Name: string;
@@ -29,7 +25,6 @@ export const Stacks = () => {
     const [stacks, setStacks] = useState<Stack[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const navigate = useNavigate();
     
     // Form State
     const [newName, setNewName] = useState('');

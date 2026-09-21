@@ -1,8 +1,10 @@
-import '@testing-library/jest-dom';
+// The /vitest entrypoint registers the matchers on vitest's `expect`,
+// which the bare import does not do.
+import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
 // Mock ResizeObserver which is used by Recharts/ResponsiveContainer
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
+globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
     observe: vi.fn(),
     unobserve: vi.fn(),
     disconnect: vi.fn(),

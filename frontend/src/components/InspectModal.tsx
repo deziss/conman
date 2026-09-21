@@ -1,7 +1,6 @@
 import { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, CodeBracketIcon } from '@heroicons/react/24/solid';
-import { GlassCard } from './ui/GlassCard';
 
 interface InspectModalProps {
   isOpen: boolean;

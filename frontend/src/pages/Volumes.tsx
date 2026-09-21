@@ -18,8 +18,6 @@ import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { useTask } from '../contexts/TaskContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import { LoadingState } from '../components/ui/LoadingState';
-import { SituationalBanner } from '../components/ui/SituationalBanner';
 import { Pagination } from '../components/ui/Pagination';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
@@ -62,7 +60,7 @@ export const Volumes = () => {
   const [newVolumeName, setNewVolumeName] = useState('');
   const newVolumeDriver = 'local';
 
-  const { cache, setCache, getCache } = useCache();
+  const { setCache, getCache } = useCache();
   const cacheKey = `volumes-${currentHost?.id || 'local'}`;
 
   const fetchVolumes = async (forceRefresh = false) => {
@@ -152,7 +150,7 @@ export const Volumes = () => {
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
   const [deletingVolumeIds, setDeletingVolumeIds] = useState<Record<string, boolean>>({});
-  const [isPruningVolumes, setIsPruningVolumes] = useState(false);
+  const [, setIsPruningVolumes] = useState(false);
 
   const handleRemoveVolume = (name: string) => {
       setConfirmDelete({ isOpen: true, id: name });

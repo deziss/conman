@@ -42,7 +42,13 @@ export const StatsChart = ({ data, color = '#22d3ee', unit = '', label = '' }: S
             <Tooltip
               contentStyle={{ backgroundColor: '#0f172a', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px' }}
               itemStyle={{ color: '#e2e8f0', fontSize: '12px', fontFamily: 'monospace' }}
-              formatter={(val: number) => [`${val.toFixed(2)}${unit ? ' ' + unit : ''}`, label || 'Value']}
+              // Recharts types the value as number | string | (number | string)[],
+              // so narrow rather than asserting it is always a number.
+              formatter={(val) => {
+                const num = typeof val === 'number' ? val : Number(val);
+                const text = Number.isFinite(num) ? num.toFixed(2) : String(val);
+                return [`${text}${unit ? ' ' + unit : ''}`, label || 'Value'];
+              }}
               labelStyle={{ display: 'none' }}
             />
             <Area

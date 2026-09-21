@@ -87,7 +87,7 @@ Install the agent on any machine you want to monitor and point it at the server:
 
 ```bash
 # On the host you want to add
-sudo dpkg -i conman-agent_1.2.1_amd64.deb      # or: rpm -i conman-agent-1.2.1-1.x86_64.rpm
+sudo dpkg -i conman-agent_1.2.2_amd64.deb      # or: rpm -i conman-agent-1.2.2-1.x86_64.rpm
 sudo vi /etc/conman-agent/agent.env            # set CONMAN_SERVER_URL and CONMAN_SERVER_TOKEN
 sudo systemctl enable --now conman-agent
 ```
@@ -101,12 +101,12 @@ sudo systemctl enable --now conman-agent
 
 ```bash
 # Debian / Ubuntu
-sudo dpkg -i conman-server_1.2.1_amd64.deb
+sudo dpkg -i conman-server_1.2.2_amd64.deb
 sudo vi /etc/conman/server.env        # SECRET_KEY and MASTER_API_KEY are auto-generated on first install
 sudo systemctl enable --now conman-server
 
 # RHEL / Fedora
-sudo rpm -i conman-server-1.2.1-1.x86_64.rpm
+sudo rpm -i conman-server-1.2.2-1.x86_64.rpm
 sudo vi /etc/conman/server.env
 sudo systemctl enable --now conman-server
 ```
@@ -259,7 +259,7 @@ npx tsc -b && npx vitest run     # typecheck + unit tests
 ```
 
 > [!NOTE]
-> Use `tsc -b`, not `tsc --noEmit`. The root `tsconfig.json` is solution-style (`"files": []`), so a plain `tsc --noEmit` type-checks nothing and silently passes.
+> Use `tsc -b`, not `tsc --noEmit`. The root `tsconfig.json` is solution-style (`"files": []` plus `references`), and `--noEmit` does not follow project references — it type-checks nothing and always exits 0. CI and `npm run build` both use `tsc -b`.
 
 CI (`.github/workflows/ci.yml`) runs the backend, agent, and frontend checks on every push and pull request to `main`.
 

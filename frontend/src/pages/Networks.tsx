@@ -20,8 +20,6 @@ import { InspectModal } from '../components/InspectModal';
 import { useHost } from '../contexts/HostContext';
 import { useTask } from '../contexts/TaskContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
-import { LoadingState } from '../components/ui/LoadingState';
-import { SituationalBanner } from '../components/ui/SituationalBanner';
 import { Pagination } from '../components/ui/Pagination';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
@@ -165,8 +163,8 @@ export const Networks = () => {
 
   const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
   const [confirmPrune, setConfirmPrune] = useState(false);
-  const [isPruningNetworks, setIsPruningNetworks] = useState(false);
-  const [deletingNetworkIds, setDeletingNetworkIds] = useState<Record<string, boolean>>({});
+  const [, setIsPruningNetworks] = useState(false);
+  const [, setDeletingNetworkIds] = useState<Record<string, boolean>>({});
 
   const handleRemoveNetwork = (id: string) => {
       const net = networks.find(n => n.id === id);

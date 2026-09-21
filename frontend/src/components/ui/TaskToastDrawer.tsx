@@ -5,7 +5,6 @@ import {
     TrashIcon, 
     ArrowPathIcon, 
     StopIcon, 
-    PlayIcon, 
     PlusCircleIcon, 
     RocketLaunchIcon,
     ChevronDownIcon,

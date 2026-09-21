@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Tab } from '@headlessui/react';
 import { Cog6ToothIcon, BellIcon, InformationCircleIcon, AdjustmentsHorizontalIcon, ShieldCheckIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { GeneralSettings } from '../components/settings/GeneralSettings';

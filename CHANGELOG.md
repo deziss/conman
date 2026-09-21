@@ -2,6 +2,28 @@
 
 All notable changes to the Conman project are documented in this file.
 
+## [1.2.2] - 2026-09-21
+
+### Fixed
+
+- **The type check now actually runs.** CI's "Type check" step and the `build` script used `tsc --noEmit`, which does not follow project references and so type-checked nothing against the solution-style root `tsconfig.json`. Both now use `tsc -b`. Clearing the 132 errors this had been hiding surfaced several real defects:
+  - `ContainerDetails`: `TabType` had drifted from the rendered tab list — it was missing `processes` and `activity` (so `setActiveTab` on those tabs was untyped) while still declaring a `metrics` tab that no panel rendered. The type is now derived from the tab list itself (`CONTAINER_TABS`), so the two cannot diverge again.
+  - `Containers`: the container inspect dialog rendered with no heading — every other page passes `title` to `InspectModal`, this one did not.
+  - `StackDetails`: the `Publishers` type omitted `TargetPort` and `Protocol`, both of which `service.ContainerInfo` in `backend/internal/service/compose.go` sends and the table already tried to render.
+  - `ErrorBoundary` accepted no `name` prop although `ContainerLogsPage` passed one; it is now declared and included in the console output so you can tell which boundary tripped.
+  - `MountCard`, `PortBadge`, `timeAgo`, and `formatDate` in `ContainerDetails` were unreferenced — the Mounts panel renders inline and had superseded them.
+  - `StatsChart`'s tooltip formatter assumed Recharts always hands it a `number`; it now narrows the documented `number | string | (number | string)[]`.
+- **Removed two dead components**, `frontend/src/components/ContainerList.tsx` and `frontend/src/components/Login.tsx` (311 lines). Nothing imported either, and both referenced `containerService` / `authService` exports that `services/api.ts` has not had for some time — so neither could compile. The live login page is `pages/Login.tsx`.
+- Cleared 76 unused imports and locals. Write-only React state (setter still called, value never read) kept its setter and dropped only the unused binding, so render behaviour is unchanged.
+
+### Changed
+
+- Upgraded **vitest 1.6.1 → 5.0.1**. vitest 1.x bundled its own nested `vite` 5, which collided with the project's `vite` 7 and made `vite.config.ts` untypeable (`Plugin<any>[]` is not assignable to `PluginOption`). The nested copy is gone. `src/test/setup.ts` now imports `@testing-library/jest-dom/vitest`, which is what registers the matchers on vitest's `expect`.
+
+### Known issues
+
+- ESLint reports 177 problems (mostly `@typescript-eslint/no-explicit-any`). ESLint is not part of CI and this release does not address it.
+
 ## [1.2.1] - 2026-09-21
 
 ### Fixed

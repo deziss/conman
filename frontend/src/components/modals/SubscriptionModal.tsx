@@ -4,20 +4,14 @@ import {
     XMarkIcon, 
     CheckIcon, 
     SparklesIcon, 
-    RocketLaunchIcon, 
-    BuildingOffice2Icon,
     KeyIcon, 
     ArrowTopRightOnSquareIcon,
     ArrowPathIcon,
     ShieldCheckIcon,
     ServerStackIcon,
-    BellAlertIcon,
-    ArrowPathRoundedSquareIcon
 } from '@heroicons/react/24/outline';
 import { useLicense } from '../../contexts/LicenseContext';
-import { TIER_LABELS } from '../../types/license';
 import { toast } from 'react-hot-toast';
-import api from '../../services/api';
 
 interface SubscriptionModalProps {
     isOpen: boolean;
@@ -30,7 +24,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     onClose,
     initialTab = 'plans'
 }) => {
-    const { license, activateLicense, refreshLicense } = useLicense();
+    const { license, activateLicense } = useLicense();
     const currentTier = license?.tier || 'community';
 
     const [billingCycle, setBillingCycle] = useState<'monthly' | 'annually'>('annually');

@@ -1,16 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { 
     CpuChipIcon, 
     ServerIcon, 
     CircleStackIcon, 
-    PlayIcon, 
-    StopIcon, 
     TrashIcon, 
-    ArrowPathIcon, 
     CubeIcon,
     PhotoIcon,
-    InformationCircleIcon,
     GlobeAltIcon
 } from '@heroicons/react/24/outline';
 import api from '../services/api';
@@ -180,11 +176,9 @@ export const Dashboard = () => {
     const navigate = useNavigate();
     const { refreshInterval } = useSettings();
     const { currentHost } = useHost();
-    const [loading, setLoading] = useState(true);
-    const [systemInfo, setSystemInfo] = useState<any>(null);
-    const [systemStats, setSystemStats] = useState<any>(null); 
-    const [localStats, setLocalStats] = useState<any>(null); // Kept for now if we want real usage of machine where dashboard runs? 
-                                                             // Actually "Local Agent" usage is what we want.
+    const [, setLoading] = useState(true);
+    const [, setSystemInfo] = useState<any>(null);
+    const [, setSystemStats] = useState<any>(null); 
     
     // View state
     const [containers, setContainers] = useState<any[]>([]);
@@ -232,8 +226,6 @@ export const Dashboard = () => {
     }, [refreshInterval, currentHost]);
 
     // Derived States
-    const runningContainers = containers.filter(c => c.state === 'running');
-    const stoppedContainers = containers.filter(c => c.state !== 'running');
     const recentContainers = [...containers].slice(0, 5); 
     const largestImages = [...images].sort((a, b) => b.size - a.size).slice(0, 5);
 
@@ -256,16 +248,6 @@ export const Dashboard = () => {
         } catch { toast.error('Failed to system prune'); }
     };
 
-    // Current Environment Card Data
-    const currentEnvData = {
-        id: currentHost?.id,
-        name: currentHost?.name || 'Loading...',
-        host: currentHost?.host_info?.hostname || 'localhost',
-        running_containers: runningContainers.length, 
-        total_containers: containers.length,
-        images: images.length,
-        host_info: systemInfo
-    };
 
     return (
         <div className="space-y-8 pb-20">

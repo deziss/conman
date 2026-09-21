@@ -1,4 +1,4 @@
-import { CubeIcon, CommandLineIcon, ChevronUpDownIcon, ServerStackIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
+import { ChevronUpDownIcon, ServerStackIcon } from '@heroicons/react/24/outline';
 import { NavLink } from 'react-router-dom';
 import { HomeIcon,
   BoltIcon, Square3Stack3DIcon, PhotoIcon, SignalIcon, ArchiveBoxIcon, Cog6ToothIcon, SunIcon, MoonIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon, KeyIcon, QuestionMarkCircleIcon, LifebuoyIcon, LockClosedIcon } from '@heroicons/react/24/solid';

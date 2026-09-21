@@ -2,16 +2,19 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { CubeIcon, ArrowLeftIcon, PlayIcon, StopIcon, DocumentTextIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
+import { CubeIcon, ArrowLeftIcon, StopIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 import { ClipboardDocumentIcon, CheckIcon, BoltIcon } from '@heroicons/react/24/outline';
 
 interface ContainerInfo {
     Name: string;
     State: string;
     Service: string;
+    // Mirrors service.ContainerInfo.Publishers in backend/internal/service/compose.go
     Publishers: {
         URL: string;
+        TargetPort: number;
         PublishedPort: number;
+        Protocol: string;
     }[];
 }
 

@@ -8,9 +8,7 @@ import {
     BellAlertIcon, 
     PaperAirplaneIcon,
     XMarkIcon,
-    ExclamationCircleIcon,
     GlobeAltIcon,
-    CheckCircleIcon,
     ClockIcon
 } from '@heroicons/react/24/outline';
 import { ConfirmModal } from '../ui/ConfirmModal';

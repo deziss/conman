@@ -19,9 +19,31 @@ interface UpdatesModalProps {
 export const UpdatesModal: React.FC<UpdatesModalProps> = ({ isOpen, onClose }) => {
     const releases = [
         {
-            version: 'v1.2.1',
+            version: 'v1.2.2',
             date: 'September 2026',
             badge: 'Current Version',
+            features: [
+                {
+                    icon: ShieldCheckIcon,
+                    title: 'Type Checking Actually Enforced',
+                    desc: 'The build and CI now run a type check that reads the project, clearing 132 previously invisible errors and stopping broken code from reaching main.'
+                },
+                {
+                    icon: Squares2X2Icon,
+                    title: 'Container Detail Tabs Fixed',
+                    desc: 'The Processes and Activity tabs are now part of the tab contract instead of drifting from it, and the container inspect dialog shows its heading.'
+                },
+                {
+                    icon: ServerStackIcon,
+                    title: 'Stack Port Details',
+                    desc: 'Published stack ports now carry their target port and protocol through to the UI, matching what the server already sends.'
+                }
+            ]
+        },
+        {
+            version: 'v1.2.1',
+            date: 'September 2026',
+            badge: 'Previous Release',
             features: [
                 {
                     icon: SparklesIcon,

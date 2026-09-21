@@ -22,7 +22,7 @@ export const AddHostModal = ({ isOpen, onClose, onHostAdded }: AddHostModalProps
     const [name, setName] = useState('');
     const [url, setUrl] = useState('');
     const [runtime, setRuntime] = useState<RuntimeType>('docker');
-    const [mode, setMode] = useState<'agent' | 'manual'>('agent');
+    const [, setMode] = useState<'agent' | 'manual'>('agent');
     const [loading, setLoading] = useState(false);
 
     const serverUrl = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;

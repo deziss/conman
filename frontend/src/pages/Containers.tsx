@@ -1,12 +1,11 @@
 import { isConmanSystemContainer } from '../utils/systemProtection';
-import { parseContainerPorts, type FormattedPort } from '../utils/ports';
+import { parseContainerPorts } from '../utils/ports';
 import { useState, useEffect, useMemo } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { 
   PlayIcon, 
   StopIcon, 
   ArrowPathIcon, 
-  CpuChipIcon, 
   TrashIcon, 
   EyeIcon, 
   ServerStackIcon, 
@@ -20,7 +19,7 @@ import {
 import { EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area } from 'recharts';
 import api from '../services/api';
 import { toast } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
@@ -31,7 +30,7 @@ import { useTask } from '../contexts/TaskContext';
 import { PageTransition } from '../components/ui/PageTransition';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
-import { SituationalBanner, type ActionType } from '../components/ui/SituationalBanner';
+import { type ActionType } from '../components/ui/SituationalBanner';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSettings } from '../contexts/SettingsContext';
 import { Pagination } from '../components/ui/Pagination';
@@ -118,9 +117,9 @@ export const Containers = () => {
     localStorage.setItem('conman_containers_view', mode);
   };
 
-  const [operatingContainers, setOperatingContainers] = useState<Record<string, string>>({});
-  const [isPruningContainers, setIsPruningContainers] = useState(false);
-  const [activeBanner, setActiveBanner] = useState<{ action: ActionType; title: string; description: string; isVisible: boolean }>({
+  const [, setOperatingContainers] = useState<Record<string, string>>({});
+  const [, setIsPruningContainers] = useState(false);
+  const [, setActiveBanner] = useState<{ action: ActionType; title: string; description: string; isVisible: boolean }>({
     action: 'generic',
     title: '',
     description: '',
@@ -768,7 +767,6 @@ export const Containers = () => {
             const isSystem = isConmanSystemContainer(container.name, container.image);
             const isRunning = container.state === 'running';
             const parsedPorts = parseContainerPorts(container.ports, currentHost);
-            const hasNetworkInfo = container.ip_address || parsedPorts.length > 0;
 
             return (
               <motion.div
@@ -1040,10 +1038,11 @@ export const Containers = () => {
         onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
       />
 
-      <InspectModal 
-        isOpen={inspectModalOpen} 
-        onClose={() => setInspectModalOpen(false)} 
-        data={inspectData} 
+      <InspectModal
+        isOpen={inspectModalOpen}
+        onClose={() => setInspectModalOpen(false)}
+        title="Container Details"
+        data={inspectData}
       />
 
       <ConfirmModal 

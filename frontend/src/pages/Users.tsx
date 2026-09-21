@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import { UserIcon, PlusIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface User {

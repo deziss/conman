@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { AddHostModal } from '../components/AddHostModal';

@@ -1,8 +1,10 @@
-import React, { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { isChunkLoadError } from "../utils/lazyRetry";
 
 interface Props {
   children?: ReactNode;
+  /** Identifies which boundary tripped in the console log. */
+  name?: string;
 }
 
 interface State {
@@ -33,7 +35,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error caught by ErrorBoundary:", error, errorInfo);
+    console.error(
+      `Uncaught error caught by ErrorBoundary${this.props.name ? ` (${this.props.name})` : ""}:`,
+      error,
+      errorInfo,
+    );
 
     if (isChunkLoadError(error)) {
       // Auto-reload to fetch the newest deployment bundle
