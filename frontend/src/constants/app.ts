@@ -2,9 +2,9 @@
 export const APP_CONFIG = {
   // Application Info
   NAME: 'CONMAN',
-  VERSION: '1.1.0',
-  BUILD: 'v1.0.1',
-  FULL_VERSION: 'CONMAN v1.1.0',
+  VERSION: '1.2.0',
+  BUILD: 'v1.2.0',
+  FULL_VERSION: 'CONMAN v1.2.0',
   
   // Official Links & Support
   GITHUB_URL: 'https://github.com/deziss/conman',

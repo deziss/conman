@@ -2,7 +2,22 @@
 
 All notable changes to the Conman project are documented in this file.
 
-## [Unreleased] - 2026-09-08
+## [1.2.0] - 2026-09-21
+
+### Changed
+
+- **Relicensed from MIT to AGPL-3.0-or-later.** Full license text added as `LICENSE`; `packaging/nfpm-server.yaml` and `packaging/nfpm-agent.yaml` now declare `AGPL-3.0-or-later`. The network clause applies: running a modified Conman as a network service obliges you to offer that modified source to its users.
+- README rewritten for people evaluating the project rather than people already using it — what Conman is for and who it is not for, a feature table, dashboard/containers/hosts screenshots (`docs/images/`), an edition comparison matching `models.DefaultFeatures`, collapsible production install paths, and badges for CI, release, license, and toolchain versions.
+
+### Fixed
+
+- **The frontend did not boot in dev mode.** 20 type-only imports (`ReactNode`, `LicenseInfo`, `Activity`, `ErrorInfo`, `LogEntry`, `BackgroundTask`, `ComponentType`, and others) were written as value imports. With `verbatimModuleSyntax: true` they are emitted as real runtime imports, so Vite failed with `The requested module '/src/types/license.ts' does not provide an export named 'LicenseInfo'` and the app rendered a blank page. All 20 now use the `type` modifier.
+
+### Known issues
+
+- `npx tsc --noEmit` type-checks nothing. The root `tsconfig.json` is solution-style (`"files": []` plus `references`), and `tsc --noEmit` does not follow project references — only `tsc -b` does. Both the CI "Type check" step and the `build` script (`tsc && vite build`) therefore pass unconditionally, which is how the type-import breakage above reached `main`. `tsc -b` currently reports 132 remaining errors (77 × TS6133 unused locals, plus ~13 genuine type errors); switching CI over is deferred until those are cleared.
+
+## [1.1.0] - 2026-09-08
 
 ### Security
 

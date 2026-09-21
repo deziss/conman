@@ -19,9 +19,36 @@ interface UpdatesModalProps {
 export const UpdatesModal: React.FC<UpdatesModalProps> = ({ isOpen, onClose }) => {
     const releases = [
         {
-            version: 'v1.1.0',
+            version: 'v1.2.0',
             date: 'September 2026',
             badge: 'Current Version',
+            features: [
+                {
+                    icon: ShieldCheckIcon,
+                    title: 'Hardened Authorization & Secrets',
+                    desc: 'RBAC enforced on every multi-host route, HMAC-signed deploy webhooks, enforced API key expiry, and a server that refuses to boot on placeholder secrets.'
+                },
+                {
+                    icon: ServerStackIcon,
+                    title: 'Podman & containerd Runtimes',
+                    desc: 'Agents auto-detect Docker, Podman, or containerd at startup, with rootless Podman and namespace-aware containerd support.'
+                },
+                {
+                    icon: Squares2X2Icon,
+                    title: 'Sortable Full-Width Inventory',
+                    desc: 'Containers and Images pages use the full viewport with sortable columns and sticky Name/Actions while the table scrolls.'
+                },
+                {
+                    icon: SparklesIcon,
+                    title: 'Continuous Integration',
+                    desc: 'GitHub Actions runs backend, agent, and frontend checks on every push and pull request to main.'
+                }
+            ]
+        },
+        {
+            version: 'v1.1.0',
+            date: 'September 2026',
+            badge: 'Previous Release',
             features: [
                 {
                     icon: ShieldCheckIcon,
