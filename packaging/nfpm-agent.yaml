@@ -6,7 +6,7 @@ version_schema: semver
 maintainer: "Conman Team"
 description: "Conman Agent - Lightweight container monitoring agent (Docker, Podman, containerd)"
 homepage: "https://github.com/deziss/conman"
-license: "MIT"
+license: "AGPL-3.0-or-later"
 
 depends:
   - ca-certificates
