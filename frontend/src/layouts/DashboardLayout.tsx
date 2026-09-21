@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect, createContext, useContext } from 'react';
+import { type ReactNode, useState, useEffect, createContext, useContext } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { useLicense } from '../contexts/LicenseContext';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';

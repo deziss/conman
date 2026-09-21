@@ -1,5 +1,5 @@
 import { isConmanSystemContainer } from '../utils/systemProtection';
-import { parseContainerPorts, FormattedPort } from '../utils/ports';
+import { parseContainerPorts, type FormattedPort } from '../utils/ports';
 import { useState, useEffect, useMemo } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { 
@@ -31,7 +31,7 @@ import { useTask } from '../contexts/TaskContext';
 import { PageTransition } from '../components/ui/PageTransition';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
-import { SituationalBanner, ActionType } from '../components/ui/SituationalBanner';
+import { SituationalBanner, type ActionType } from '../components/ui/SituationalBanner';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSettings } from '../contexts/SettingsContext';
 import { Pagination } from '../components/ui/Pagination';

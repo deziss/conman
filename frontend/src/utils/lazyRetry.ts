@@ -1,4 +1,4 @@
-import { ComponentType, lazy } from 'react';
+import { type ComponentType, lazy } from 'react';
 
 const RELOAD_KEY = 'conman_chunk_reload_ts';
 const RELOAD_COOLDOWN_MS = 10000; // 10 seconds cooldown to prevent infinite loops

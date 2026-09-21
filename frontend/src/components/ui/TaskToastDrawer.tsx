@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useTask, BackgroundTask, TaskType } from '../../contexts/TaskContext';
+import { useTask, type BackgroundTask, type TaskType } from '../../contexts/TaskContext';
 import { 
     ArrowDownTrayIcon, 
     TrashIcon, 

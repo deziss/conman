@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
-import { parseLogLine, LogEntry } from '../utils/logParser';
+import { parseLogLine, type LogEntry } from '../utils/logParser';
 import { 
     ClipboardDocumentListIcon 
 } from '@heroicons/react/24/outline';

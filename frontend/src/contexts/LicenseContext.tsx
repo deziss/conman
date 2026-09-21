@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import api from '../services/api';
-import { LicenseInfo, LicenseTier } from '../types/license';
+import type { LicenseInfo, LicenseTier } from '../types/license';
 
 interface LicenseContextType {
   license: LicenseInfo | null;

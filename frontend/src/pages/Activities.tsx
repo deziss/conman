@@ -10,7 +10,7 @@ import api from '../services/api';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { useHost } from '../contexts/HostContext';
-import { ActivityStats } from '../types/activity';
+import type { ActivityStats } from '../types/activity';
 
 export const Activities = () => {
   const { currentHost, hosts } = useHost();

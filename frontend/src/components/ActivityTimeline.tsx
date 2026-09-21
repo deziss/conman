@@ -17,7 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 import api from '../services/api';
 import { GlassCard } from './ui/GlassCard';
-import { Activity } from '../types/activity';
+import type { Activity } from '../types/activity';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
 
