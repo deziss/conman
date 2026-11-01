@@ -104,6 +104,7 @@ export const ImageDetailsPage = () => {
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [isRemoving, setIsRemoving] = useState(false);
 
     // Security Scanner State
     const [scanReport, setScanReport] = useState<VulnerabilityReport | null>(null);
@@ -232,6 +233,7 @@ export const ImageDetailsPage = () => {
 
     const executeRemove = async () => {
         if (!id) return;
+        setIsRemoving(true);
         try {
             if (currentHost?.id) {
                 await api.delete(`/agents/${currentHost.id}/images/${encodeURIComponent(id)}`);
@@ -242,6 +244,9 @@ export const ImageDetailsPage = () => {
             navigate('/images');
         } catch (error: any) {
             toast.error(error.response?.data?.error || "Failed to remove image");
+        } finally {
+            setIsRemoving(false);
+            setShowConfirm(false);
         }
     };
 
@@ -867,6 +872,8 @@ export const ImageDetailsPage = () => {
                 title="Remove Image"
                 message="Are you sure? This image will be permanently deleted."
                 confirmText="Remove"
+                loadingText="Removing..."
+                isLoading={isRemoving}
                 isDestructive
             />
         </div>

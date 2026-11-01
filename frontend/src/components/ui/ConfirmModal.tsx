@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
@@ -6,7 +6,7 @@ import clsx from 'clsx';
 interface ConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   confirmText?: string;
@@ -28,9 +28,22 @@ export const ConfirmModal = ({
   isDestructive = false,
   isLoading = false,
 }: ConfirmModalProps) => {
+  const [internalLoading, setInternalLoading] = useState(false);
+  const effectiveLoading = isLoading || internalLoading;
+
+  const handleConfirm = async () => {
+    try {
+      setInternalLoading(true);
+      await onConfirm();
+    } finally {
+      setInternalLoading(false);
+      onClose();
+    }
+  };
+
   return (
     <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={() => { if (!isLoading) onClose(); }}>
+      <Dialog as="div" className="relative z-50" onClose={() => { if (!effectiveLoading) onClose(); }}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -78,7 +91,7 @@ export const ConfirmModal = ({
                     </div>
                   </div>
 
-                  {isLoading && (
+                  {effectiveLoading && (
                     <div className="mt-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 flex items-center space-x-3">
                       <div className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-cyan-500 animate-spin flex-shrink-0" />
                       <div className="text-xs text-slate-600 dark:text-slate-300 font-medium">
@@ -90,23 +103,23 @@ export const ConfirmModal = ({
                   <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
                     <button
                       type="button"
-                      disabled={isLoading}
+                      disabled={effectiveLoading}
                       className={clsx(
                         "inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm sm:w-auto transition-all disabled:opacity-60 disabled:cursor-not-allowed",
                         isDestructive 
                           ? "bg-rose-600 hover:bg-rose-500 shadow-rose-500/20" 
                           : "bg-cyan-600 hover:bg-cyan-500 shadow-cyan-500/20"
                       )}
-                      onClick={onConfirm}
+                      onClick={handleConfirm}
                     >
-                      {isLoading && (
+                      {effectiveLoading && (
                         <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-2" />
                       )}
-                      {isLoading ? loadingText : confirmText}
+                      {effectiveLoading ? loadingText : confirmText}
                     </button>
                     <button
                       type="button"
-                      disabled={isLoading}
+                      disabled={effectiveLoading}
                       className="mt-3 inline-flex w-full justify-center rounded-xl bg-slate-100 dark:bg-white/5 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-white/10 hover:bg-slate-200 dark:hover:bg-white/10 sm:mt-0 sm:w-auto transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={onClose}
                     >

@@ -396,9 +396,11 @@ export const ContainerDetails = () => {
     const labels = container?.Config?.Labels || {};
 
     const [confirmAction, setConfirmAction] = useState<{ isOpen: boolean; action: string }>({ isOpen: false, action: '' });
+    const [isActionLoading, setIsActionLoading] = useState(false);
 
     const executeAction = async (action: string) => {
         if (!container || !currentHost) return;
+        setIsActionLoading(true);
         try {
             if (action === 'remove') {
                 await api.delete(`/agents/${currentHost.id}/containers/${container.Id}`);
@@ -411,6 +413,9 @@ export const ContainerDetails = () => {
             setTimeout(fetchDetails, 1000);
         } catch (error) {
              toast.error(`Failed to ${action} container`);
+        } finally {
+             setIsActionLoading(false);
+             setConfirmAction({ isOpen: false, action: '' });
         }
     };
 
@@ -964,7 +969,7 @@ export const ContainerDetails = () => {
 
       <ConfirmModal
         isOpen={confirmAction.isOpen}
-        onClose={() => setConfirmAction({ isOpen: false, action: '' })}
+        onClose={() => { if (!isActionLoading) setConfirmAction({ isOpen: false, action: '' }); }}
         onConfirm={() => executeAction(confirmAction.action)}
         title={confirmAction.action === 'remove' ? 'Remove Container' : confirmAction.action === 'restart' ? 'Restart Container' : 'Stop Container'}
         message={
@@ -976,6 +981,8 @@ export const ContainerDetails = () => {
         }
         confirmText={confirmAction.action === 'remove' ? 'Remove' : confirmAction.action === 'restart' ? 'Restart' : 'Stop'}
         isDestructive={confirmAction.action !== 'restart'}
+        isLoading={isActionLoading}
+        loadingText="Processing..."
       />
 
       {container && (

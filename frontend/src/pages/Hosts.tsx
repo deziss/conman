@@ -75,6 +75,7 @@ export const Hosts = () => {
     }, []);
 
     const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+    const [isDeleting, setIsDeleting] = useState(false);
     const [showAddHost, setShowAddHost] = useState(false);
 
     const handleDelete = (id: string) => {
@@ -82,12 +83,16 @@ export const Hosts = () => {
     };
 
     const executeDelete = async () => {
+        setIsDeleting(true);
         try {
             await api.delete(`/agents/${confirmDelete.id}`);
             toast.success("Host removed");
-            fetchHosts();
-        } catch (error) {
-            toast.error("Failed to remove host");
+            await fetchHosts();
+        } catch (error: any) {
+            toast.error(error.response?.data?.error || "Failed to remove host");
+        } finally {
+            setIsDeleting(false);
+            setConfirmDelete({ isOpen: false, id: '' });
         }
     };
 
@@ -333,12 +338,14 @@ export const Hosts = () => {
 
             <ConfirmModal
                 isOpen={confirmDelete.isOpen}
-                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onClose={() => { if (!isDeleting) setConfirmDelete({ isOpen: false, id: '' }); }}
                 onConfirm={executeDelete}
                 title="Remove Host"
                 message="Are you sure you want to remove this host? All associated data (snapshots, metrics, alerts) will be deleted."
                 confirmText="Remove"
                 isDestructive={true}
+                isLoading={isDeleting}
+                loadingText="Removing..."
             />
 
             <AddHostModal

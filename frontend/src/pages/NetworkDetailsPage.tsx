@@ -71,6 +71,7 @@ export const NetworkDetailsPage = () => {
     }, [id, navigate, currentHost]);
 
     const [showConfirm, setShowConfirm] = useState(false);
+    const [isRemoving, setIsRemoving] = useState(false);
 
     const handleRemove = () => {
         setShowConfirm(true);
@@ -78,12 +79,16 @@ export const NetworkDetailsPage = () => {
 
     const executeRemove = async () => {
         if (!currentHost) return;
+        setIsRemoving(true);
         try {
             await api.delete(`/agents/${currentHost.id}/networks/${id}`);
             toast.success("Network removed successfully");
             navigate('/networks');
         } catch (error: any) {
             toast.error(error.response?.data?.error || "Failed to remove network");
+        } finally {
+            setIsRemoving(false);
+            setShowConfirm(false);
         }
     };
 
@@ -218,6 +223,8 @@ export const NetworkDetailsPage = () => {
                 title="Remove Network"
                 message="Are you sure you want to remove this network?"
                 confirmText="Remove"
+                loadingText="Removing..."
+                isLoading={isRemoving}
                 isDestructive
             />
         </div>

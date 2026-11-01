@@ -238,14 +238,21 @@ export const Dashboard = () => {
     };
 
     const [confirmPrune, setConfirmPrune] = useState(false);
+    const [isPruning, setIsPruning] = useState(false);
 
     const handleSystemPrune = async () => {
         if (!currentHost) return;
+        setIsPruning(true);
         try {
             const { data } = await api.post(`/agents/${currentHost.id}/system/prune`);
             const space = ((data?.containers_space || 0) + (data?.images_space || 0) + (data?.volumes_space || 0)) / 1024 / 1024;
             toast.success(`System pruned, reclaimed ${space.toFixed(1)} MB`);
-        } catch { toast.error('Failed to system prune'); }
+        } catch { 
+            toast.error('Failed to system prune'); 
+        } finally {
+            setIsPruning(false);
+            setConfirmPrune(false);
+        }
     };
 
 
@@ -435,12 +442,14 @@ export const Dashboard = () => {
             />
             <ConfirmModal
                 isOpen={confirmPrune}
-                onClose={() => setConfirmPrune(false)}
+                onClose={() => { if (!isPruning) setConfirmPrune(false); }}
                 onConfirm={handleSystemPrune}
                 title="System Prune"
                 message="Remove all unused containers, images, networks, and volumes? This cannot be undone and may reclaim significant disk space."
                 confirmText="Prune All"
                 isDestructive={true}
+                isLoading={isPruning}
+                loadingText="Pruning System..."
             />
         </div>
     );

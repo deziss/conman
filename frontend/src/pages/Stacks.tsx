@@ -80,6 +80,7 @@ export const Stacks = () => {
     // I will implement handleDelete calling Remove. I will hide Stop for now as technically `down` stops and removes containers.
 
     const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; id: string }>({ isOpen: false, id: '' });
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const handleDelete = (name: string) => {
         setConfirmDelete({ isOpen: true, id: name });
@@ -87,12 +88,16 @@ export const Stacks = () => {
 
     const executeDelete = async () => {
         if (!currentHost) return;
+        setIsDeleting(true);
         try {
             await api.delete(`/agents/${currentHost.id}/stacks/${encodeURIComponent(confirmDelete.id)}`);
             toast.success('Stack removed');
-            fetchStacks();
+            await fetchStacks();
         } catch (error: any) {
             toast.error(`Failed to delete stack: ${error.response?.data || error.message}`);
+        } finally {
+            setIsDeleting(false);
+            setConfirmDelete({ isOpen: false, id: '' });
         }
     };
 
@@ -246,12 +251,14 @@ export const Stacks = () => {
 
             <ConfirmModal
                 isOpen={confirmDelete.isOpen}
-                onClose={() => setConfirmDelete({ isOpen: false, id: '' })}
+                onClose={() => { if (!isDeleting) setConfirmDelete({ isOpen: false, id: '' }); }}
                 onConfirm={executeDelete}
                 title="Remove Stack"
                 message="This will run compose down, removing all containers and networks for this stack."
                 confirmText="Remove Stack"
                 isDestructive
+                isLoading={isDeleting}
+                loadingText="Removing Stack..."
             />
         </div>
     );
