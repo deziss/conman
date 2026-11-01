@@ -15,6 +15,7 @@ import { SupportModal } from './modals/SupportModal';
 import { ContactModal } from './modals/ContactModal';
 import { SubscriptionModal } from './modals/SubscriptionModal';
 import { SparklesIcon } from '@heroicons/react/24/outline';
+import { ConmanLogo } from './ConmanLogo';
 import { useState, useRef, useEffect } from 'react';
 
 interface SidebarProps {
@@ -54,15 +55,14 @@ export const Sidebar = ({ isCollapsed, toggle }: SidebarProps) => {
     >
       <div className={`p-6 flex items-center ${isCollapsed ? 'justify-center flex-col gap-4' : 'justify-between'}`}>
          {/* Logo Section */}
-         <div className={`flex items-center transition-all duration-300 ${isCollapsed ? 'scale-100' : 'scale-100'}`}>
-            <h1 className="font-bold font-mono tracking-tighter whitespace-nowrap flex items-center">
-              <span className={`text-cyan-600 dark:text-cyan-400 transition-all duration-300 ${isCollapsed ? 'text-2xl' : 'text-2xl'}`}>
-                {isCollapsed ? 'C' : 'CON'}
-              </span>
-              <span className={`text-purple-600 dark:text-purple-400 transition-all duration-300 ${isCollapsed ? 'text-2xl' : 'text-2xl'}`}>
-                {isCollapsed ? 'M' : 'MAN'}
-              </span>
-            </h1>
+         <div className={`flex items-center gap-2.5 transition-all duration-300 ${isCollapsed ? 'justify-center' : ''}`}>
+            <ConmanLogo size={32} />
+            {!isCollapsed && (
+              <h1 className="font-bold font-mono tracking-tighter whitespace-nowrap flex items-center">
+                <span className="text-cyan-600 dark:text-cyan-400 text-2xl">CON</span>
+                <span className="text-purple-600 dark:text-purple-400 text-2xl">MAN</span>
+              </h1>
+            )}
          </div>
          
 

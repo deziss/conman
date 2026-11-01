@@ -83,3 +83,4 @@ conman-agent
 go.work
 backend/app.db
 backend/cookies.txt
+docs/plans/*

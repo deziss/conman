@@ -120,14 +120,39 @@ export const resolveHostAddress = (host?: any): string => {
   return 'localhost';
 };
 
-export const parseContainerPorts = (ports: any[], hostObjOrIp?: any): FormattedPort[] => {
-  if (!ports || !Array.isArray(ports)) return [];
+export const parseContainerPorts = (ports: any, hostObjOrIp?: any): FormattedPort[] => {
+  if (!ports) return [];
+
+  let portList: any[] = [];
+  if (Array.isArray(ports)) {
+    portList = ports;
+  } else if (typeof ports === 'object') {
+    // Docker inspect NetworkSettings.Ports format: { "80/tcp": [{ HostIp: "...", HostPort: "8080" }] }
+    Object.entries(ports).forEach(([privKey, bindings]) => {
+      const [priv, proto = 'tcp'] = privKey.split('/');
+      if (Array.isArray(bindings) && bindings.length > 0) {
+        bindings.forEach((b: any) => {
+          portList.push({
+            PublicPort: b.HostPort,
+            PrivatePort: priv,
+            Type: proto,
+            IP: b.HostIp,
+          });
+        });
+      } else {
+        portList.push({
+          PrivatePort: priv,
+          Type: proto,
+        });
+      }
+    });
+  }
 
   const targetHost = resolveHostAddress(hostObjOrIp);
   const results: FormattedPort[] = [];
   const seenKeys = new Set<string>();
 
-  ports.forEach((p) => {
+  portList.forEach((p) => {
     let portObj: FormattedPort | null = null;
     let key = '';
 
@@ -200,3 +225,126 @@ export const parseContainerPorts = (ports: any[], hostObjOrIp?: any): FormattedP
 
   return results;
 };
+
+export interface PortRangeGroup {
+  id: string;
+  isRange: boolean;
+  type: string;
+  display: string;
+  publicDisplay?: string;
+  privateDisplay?: string;
+  startPublic?: number;
+  endPublic?: number;
+  startPrivate?: number;
+  endPrivate?: number;
+  count: number;
+  ports: FormattedPort[];
+  url?: string;
+}
+
+export const groupPortRanges = (ports: FormattedPort[]): PortRangeGroup[] => {
+  if (!ports || ports.length === 0) return [];
+
+  const groups: PortRangeGroup[] = [];
+  const mapped: FormattedPort[] = [];
+  const unmapped: FormattedPort[] = [];
+
+  ports.forEach((p) => {
+    const pubNum = typeof p.publicPort === 'number' ? p.publicPort : parseInt(String(p.publicPort ?? ''), 10);
+    const privNum = typeof p.privatePort === 'number' ? p.privatePort : parseInt(String(p.privatePort ?? ''), 10);
+    if (!isNaN(pubNum) && !isNaN(privNum)) {
+      mapped.push({ ...p, publicPort: pubNum, privatePort: privNum });
+    } else {
+      unmapped.push(p);
+    }
+  });
+
+  // Sort mapped ports by protocol, then publicPort, then privatePort
+  mapped.sort((a, b) => {
+    const protoCmp = (a.type || 'tcp').localeCompare(b.type || 'tcp');
+    if (protoCmp !== 0) return protoCmp;
+    return (Number(a.publicPort) - Number(b.publicPort)) || (Number(a.privatePort) - Number(b.privatePort));
+  });
+
+  let currentRange: FormattedPort[] = [];
+
+  const flushRange = () => {
+    if (currentRange.length === 0) return;
+    if (currentRange.length === 1) {
+      const p = currentRange[0];
+      groups.push({
+        id: `port-${p.publicPort}-${p.privatePort}-${p.type}`,
+        isRange: false,
+        type: p.type || 'tcp',
+        display: p.display,
+        ports: [p],
+        count: 1,
+        url: p.url
+      });
+    } else {
+      const first = currentRange[0];
+      const last = currentRange[currentRange.length - 1];
+      const pubStart = Number(first.publicPort);
+      const pubEnd = Number(last.publicPort);
+      const privStart = Number(first.privatePort);
+      const privEnd = Number(last.privatePort);
+      const proto = (first.type || 'tcp').toLowerCase();
+
+      const samePort = pubStart === privStart && pubEnd === privEnd;
+      const display = samePort ? `${pubStart}-${pubEnd}` : `${pubStart}-${pubEnd}:${privStart}-${privEnd}`;
+
+      groups.push({
+        id: `range-${pubStart}-${pubEnd}-${privStart}-${privEnd}-${proto}`,
+        isRange: true,
+        type: proto,
+        display,
+        publicDisplay: `${pubStart}-${pubEnd}`,
+        privateDisplay: `${privStart}-${privEnd}`,
+        startPublic: pubStart,
+        endPublic: pubEnd,
+        startPrivate: privStart,
+        endPrivate: privEnd,
+        count: currentRange.length,
+        ports: [...currentRange],
+        url: first.url
+      });
+    }
+    currentRange = [];
+  };
+
+  for (let i = 0; i < mapped.length; i++) {
+    const p = mapped[i];
+    if (currentRange.length === 0) {
+      currentRange.push(p);
+    } else {
+      const prev = currentRange[currentRange.length - 1];
+      const sameProto = (prev.type || 'tcp').toLowerCase() === (p.type || 'tcp').toLowerCase();
+      const isConsecutivePub = Number(p.publicPort) === Number(prev.publicPort) + 1;
+      const isConsecutivePriv = Number(p.privatePort) === Number(prev.privatePort) + 1;
+
+      if (sameProto && isConsecutivePub && isConsecutivePriv) {
+        currentRange.push(p);
+      } else {
+        flushRange();
+        currentRange.push(p);
+      }
+    }
+  }
+  flushRange();
+
+  // Add unmapped ports
+  unmapped.forEach((p, idx) => {
+    groups.push({
+      id: `unmapped-${idx}-${p.display}`,
+      isRange: false,
+      type: p.type || 'tcp',
+      display: p.display,
+      ports: [p],
+      count: 1,
+      url: p.url
+    });
+  });
+
+  return groups;
+};
+

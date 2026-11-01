@@ -36,6 +36,25 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
         localStorage.setItem('conman_settings', JSON.stringify(settings));
     }, [settings]);
 
+    useEffect(() => {
+        const root = document.documentElement;
+        if (!settings.animationEnabled) {
+            root.classList.add('no-animations');
+            root.setAttribute('data-animations', 'false');
+        } else {
+            root.classList.remove('no-animations');
+            root.setAttribute('data-animations', 'true');
+        }
+
+        if (settings.density === 'compact') {
+            root.classList.add('density-compact');
+            root.setAttribute('data-density', 'compact');
+        } else {
+            root.classList.remove('density-compact');
+            root.setAttribute('data-density', 'comfortable');
+        }
+    }, [settings.animationEnabled, settings.density]);
+
     const updateSettings = (newSettings: Partial<Settings>) => {
         setSettings(prev => ({ ...prev, ...newSettings }));
     };

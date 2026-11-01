@@ -1,7 +1,8 @@
 import { isConmanSystemContainer } from '../utils/systemProtection';
-import { parseContainerPorts } from '../utils/ports';
 import { useState, useEffect, useMemo } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
+import { PortBadgeList } from '../components/ui/PortBadgeList';
+import { useSettings } from '../contexts/SettingsContext';
 import { 
   PlayIcon, 
   StopIcon, 
@@ -13,7 +14,6 @@ import {
   ShieldCheckIcon,
   Squares2X2Icon,
   TableCellsIcon,
-  ArrowTopRightOnSquareIcon,
   CommandLineIcon
 } from '@heroicons/react/24/solid';
 import { EllipsisVerticalIcon } from '@heroicons/react/24/outline';
@@ -32,7 +32,6 @@ import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { LoadingState } from '../components/ui/LoadingState';
 import { type ActionType } from '../components/ui/SituationalBanner';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useSettings } from '../contexts/SettingsContext';
 import { Pagination } from '../components/ui/Pagination';
 import clsx from 'clsx';
 
@@ -540,7 +539,6 @@ export const Containers = () => {
                   paginatedContainers.map((container) => {
                     const isSystem = isConmanSystemContainer(container.name, container.image);
                     const isRunning = container.state === 'running';
-                    const parsedPorts = parseContainerPorts(container.ports, currentHost);
                     const stackName = container.labels?.['com.docker.compose.project'] || container.labels?.['com.docker.stack.namespace'] || '';
 
                     return (
@@ -635,35 +633,13 @@ export const Containers = () => {
                         </td>
 
                         {/* Ports with Clickable External Link */}
+                        {/* Ports with Clickable External Link & Compact Range Grouping */}
                         <td className="px-4 py-3 align-middle whitespace-nowrap">
-                          {parsedPorts.length > 0 ? (
-                            <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
-                              {parsedPorts.map((port, pIdx) => (
-                                port.url ? (
-                                  <a
-                                    key={pIdx}
-                                    href={port.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 hover:underline transition-colors"
-                                    title={`Open http://${window.location.hostname}:${port.publicPort} in new tab`}
-                                  >
-                                    <span>{port.display}</span>
-                                    <ArrowTopRightOnSquareIcon className="w-3 h-3 text-indigo-500" />
-                                  </a>
-                                ) : (
-                                  <span
-                                    key={pIdx}
-                                    className="inline-block px-1.5 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
-                                  >
-                                    {port.display}
-                                  </span>
-                                )
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
+                          <PortBadgeList
+                            ports={container.ports}
+                            host={currentHost}
+                            maxVisible={2}
+                          />
                         </td>
 
                         {/* Stack */}
@@ -766,7 +742,6 @@ export const Containers = () => {
           {paginatedContainers.map((container) => {
             const isSystem = isConmanSystemContainer(container.name, container.image);
             const isRunning = container.state === 'running';
-            const parsedPorts = parseContainerPorts(container.ports, currentHost);
 
             return (
               <motion.div
@@ -951,31 +926,12 @@ export const Containers = () => {
                       </div>
                     )}
 
-                    {parsedPorts.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        {parsedPorts.map((port, pIdx) => (
-                          port.url ? (
-                            <a
-                              key={pIdx}
-                              href={port.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-500/20 hover:underline"
-                              title={`Open ${port.url}`}
-                            >
-                              <span>{port.display}</span>
-                              <ArrowTopRightOnSquareIcon className="w-2.5 h-2.5" />
-                            </a>
-                          ) : (
-                            <span key={pIdx} className="text-[10px] font-mono text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                              {port.display}
-                            </span>
-                          )
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="text-[10px] font-mono text-slate-400 italic">No exposed ports</span>
-                    )}
+                    <PortBadgeList
+                      ports={container.ports}
+                      host={currentHost}
+                      maxVisible={3}
+                      isCompact
+                    />
                   </div>
                 </div>
                 

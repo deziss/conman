@@ -34,6 +34,8 @@ import { clsx } from 'clsx';
 import { useHost } from '../contexts/HostContext';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { ResourceTuningModal } from '../components/ResourceTuningModal';
+import { PortBadgeList } from '../components/ui/PortBadgeList';
+import { StackConfigEditorModal } from '../components/stacks/StackConfigEditorModal';
 
 interface ContainerDetails {
     Id: string;
@@ -258,9 +260,29 @@ export const ContainerDetails = () => {
     const [, setDiskData] = useState<StatPoint[]>([]);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [isTuningModalOpen, setIsTuningModalOpen] = useState<boolean>(false);
+    const [adoptedStackModal, setAdoptedStackModal] = useState<string | null>(null);
+    const [adopting, setAdopting] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     const { currentHost } = useHost();
+
+    const handleAdoptStack = async () => {
+        if (!currentHost || !container) return;
+        setAdopting(true);
+        try {
+            const { data } = await api.post(`/agents/${currentHost.id}/containers/${container.Id}/adopt-stack`, {
+                container_id: container.Id,
+            });
+            toast.success(`Container adopted into persistent stack "${data.stack_name}"!`);
+            setAdoptedStackModal(data.stack_name);
+        } catch (err: any) {
+            console.error('Failed to adopt container as stack', err);
+            const msg = err.response?.data?.error || err.message;
+            toast.error(`Adoption failed: ${msg}`);
+        } finally {
+            setAdopting(false);
+        }
+    };
 
     const fetchDetails = async () => {
         if (!id || !currentHost) return;
@@ -500,6 +522,24 @@ export const ContainerDetails = () => {
                         </button>
                     )}
                     <button 
+                        onClick={handleAdoptStack} 
+                        disabled={adopting || isSystem}
+                        className={clsx(
+                            "flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                            adopting 
+                                ? "bg-indigo-950/40 text-indigo-400 border-indigo-700/50 cursor-wait" 
+                                : "bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 hover:text-indigo-300 border-indigo-500/30"
+                        )}
+                        title="Reverse-engineer into Compose manifest & live reconfigure environment variables"
+                    >
+                        {adopting ? (
+                            <ArrowPathIcon className="w-4 h-4 animate-spin text-indigo-400" />
+                        ) : (
+                            <ServerStackIcon className="w-4 h-4 text-indigo-400" />
+                        )}
+                        <span className="hidden sm:inline">Adopt as Stack / Live Config</span>
+                    </button>
+                    <button 
                         onClick={() => handleAction('remove')} 
                         disabled={isConmanSystemContainer(container.Name, container.Image)}
                         className={clsx(
@@ -578,6 +618,18 @@ export const ContainerDetails = () => {
                                      <InfoCard label="Command" value={container.Config?.Cmd?.join(' ') || '-'} mono />
                                      <InfoCard label="State" value={container.State.Status} />
                                      <InfoCard label="Created" value={new Date(container.Created).toLocaleString()} />
+                                     <div className="md:col-span-2">
+                                         <InfoCard
+                                             label="Port Mappings"
+                                             value={
+                                                 <PortBadgeList
+                                                     ports={container.NetworkSettings?.Ports || []}
+                                                     host={currentHost}
+                                                     maxVisible={8}
+                                                 />
+                                             }
+                                         />
+                                     </div>
                                  </div>
                              </GlassCard>
 
@@ -994,6 +1046,17 @@ export const ContainerDetails = () => {
           containerName={container.Name}
           currentHostId={currentHost?.id}
           currentHostConfig={container.HostConfig}
+        />
+      )}
+
+      {/* Live Stack Reconfiguration Studio for Adopted Container */}
+      {adoptedStackModal && currentHost && (
+        <StackConfigEditorModal
+          isOpen={!!adoptedStackModal}
+          hostId={currentHost.id}
+          stackName={adoptedStackModal}
+          onClose={() => setAdoptedStackModal(null)}
+          onReconciled={fetchDetails}
         />
       )}
     </div>

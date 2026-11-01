@@ -2,6 +2,31 @@
 
 All notable changes to the Conman project are documented in this file.
 
+## [1.3.0] - 2026-11-02
+
+### Added
+
+- **Live Stack & Container Reconfiguration with State Convergence:**
+  - In-place editing of compose YAML manifests and environment variable files (`.env`) for running stacks directly from the web studio.
+  - Automatic atomic state convergence: performs YAML syntax validation, pre-flight checks, and rolling service updates via Docker Compose (`docker compose up -d --remove-orphans --no-build`).
+  - Automatic backup and rollback mechanism (`.bak` snapshots) preserving system state if a configuration change fails during convergence.
+  - Convergence guarantees persistence across raw `docker restart` commands and host reboots by updating the Docker daemon's internal state.
+- **Persistent Stack State Storage (PSS):**
+  - Migrated stack configuration persistence from volatile ephemeral directories (`/tmp/conman-stacks`) to dedicated host directories (`/var/lib/conman/stacks/<name>` or rootless fallback `~/.config/conman/stacks/<name>`).
+  - Added `.conman.spec.json` metadata manifests preserving stack provenance, source tracking, and configuration hashes.
+- **Container Blueprint Synthesizer (Reverse-Adoption Engine):**
+  - Added capability to reverse-engineer running standalone Docker containers into clean, reproducible compose specs and environment maps without unmounting volumes or disconnecting networks.
+- **Interactive Port Management UI (`PortBadgeList`):**
+  - Added new high-performance `PortBadgeList` component capable of intelligently collapsing and grouping high-density and contiguous port ranges (e.g., `8000-8020/tcp`).
+  - Added click-to-copy, hover tooltips, and interactive status badges.
+- **Brand Identity & Favicon Overhaul:**
+  - Added dedicated `ConmanLogo` vector brand asset and matching high-definition SVG browser favicon.
+
+### Changed
+
+- Enhanced Stack studio navigation and editor tabs with side-by-side YAML and `.env` configuration views.
+- Updated license proxy and simulation parameters for air-gapped and local testing configurations.
+
 ## [1.2.2] - 2026-09-21
 
 ### Fixed

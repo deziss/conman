@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"conman-agent/internal/stack"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -1231,13 +1233,28 @@ func (a *Agent) handlePullImage(w http.ResponseWriter, r *http.Request) {
 // handleListStacks uses "docker compose ls --format json" but since that requires project name awareness,
 // we will instead list containers and group them by "com.docker.compose.project" label.
 // This is more robust for "discovery" of existing stacks.
-// stackRegistryPath is the JSON file that persists known stack paths across restarts.
-const stackRegistryPath = "/tmp/conman-stacks/.registry.json"
+func (a *Agent) getStackStorage() *stack.Storage {
+	if a.stackStore == nil {
+		a.stackStore = stack.NewStorage("")
+	}
+	return a.stackStore
+}
+
+func (a *Agent) stackRegistryPath() string {
+	return filepath.Join(a.getStackStorage().BaseDir, ".registry.json")
+}
 
 // loadStackRegistry reads the persisted map of stack name → config file path.
-func loadStackRegistry() map[string]string {
-	data, err := os.ReadFile(stackRegistryPath)
+func (a *Agent) loadStackRegistry() map[string]string {
+	data, err := os.ReadFile(a.stackRegistryPath())
 	if err != nil {
+		// Fallback to legacy /tmp/conman-stacks/.registry.json if present
+		if legacyData, err := os.ReadFile("/tmp/conman-stacks/.registry.json"); err == nil {
+			var reg map[string]string
+			if json.Unmarshal(legacyData, &reg) == nil {
+				return reg
+			}
+		}
 		return make(map[string]string)
 	}
 	var reg map[string]string
@@ -1248,10 +1265,10 @@ func loadStackRegistry() map[string]string {
 }
 
 // saveStackRegistry persists the registry to disk.
-func saveStackRegistry(reg map[string]string) {
-	os.MkdirAll("/tmp/conman-stacks", 0755)
+func (a *Agent) saveStackRegistry(reg map[string]string) {
+	os.MkdirAll(a.getStackStorage().BaseDir, 0755)
 	data, _ := json.Marshal(reg)
-	os.WriteFile(stackRegistryPath, data, 0644)
+	os.WriteFile(a.stackRegistryPath(), data, 0644)
 }
 
 // stackDirForConfig returns the directory containing a compose config file.
@@ -1312,7 +1329,7 @@ func (a *Agent) handleListStacks(w http.ResponseWriter, r *http.Request) {
 
 	// Persist any newly discovered config paths into the registry.
 	// Prune entries whose directories no longer exist on disk.
-	reg := loadStackRegistry()
+	reg := a.loadStackRegistry()
 	changed := false
 
 	// Add newly discovered stacks
@@ -1334,12 +1351,13 @@ func (a *Agent) handleListStacks(w http.ResponseWriter, r *http.Request) {
 			delete(reg, name)
 			changed = true
 			// Also remove conman-managed copy if it existed
+			a.getStackStorage().DeleteStackDir(name)
 			os.RemoveAll(fmt.Sprintf("/tmp/conman-stacks/%s", name))
 		}
 	}
 
 	if changed {
-		saveStackRegistry(reg)
+		a.saveStackRegistry(reg)
 	}
 
 	// Include stopped stacks from registry that have no running containers
@@ -1367,16 +1385,21 @@ func (a *Agent) handleListStacks(w http.ResponseWriter, r *http.Request) {
 // conman-managed path, and falling back to the config label from containers.
 func (a *Agent) resolveStackDir(name string) string {
 	// 1. Check registry
-	reg := loadStackRegistry()
+	reg := a.loadStackRegistry()
 	if dir, ok := reg[name]; ok {
 		if _, err := os.Stat(dir); err == nil {
 			return dir
 		}
 	}
-	// 2. Check conman-managed path
-	managed := fmt.Sprintf("/tmp/conman-stacks/%s", name)
+	// 2. Check conman-managed persistent path
+	managed := a.getStackStorage().GetStackDir(name)
 	if _, err := os.Stat(managed); err == nil {
 		return managed
+	}
+	// 3. Fallback to legacy /tmp/conman-stacks path
+	legacy := fmt.Sprintf("/tmp/conman-stacks/%s", name)
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
 	}
 	return ""
 }
@@ -1398,23 +1421,12 @@ func (a *Agent) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stackDir := fmt.Sprintf("/tmp/conman-stacks/%s", req.Name)
-	if err := os.MkdirAll(stackDir, 0755); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create stack dir: %v", err), http.StatusInternalServerError)
+	spec, err := a.getStackStorage().WriteStackFiles(req.Name, req.ComposeContent, req.EnvContent, "managed")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write stack files: %v", err), http.StatusInternalServerError)
 		return
 	}
-
-	if err := os.WriteFile(stackDir+"/docker-compose.yml", []byte(req.ComposeContent), 0644); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to write compose file: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if req.EnvContent != "" {
-		if err := os.WriteFile(stackDir+"/.env", []byte(req.EnvContent), 0644); err != nil {
-			http.Error(w, fmt.Sprintf("Failed to write .env file: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
+	stackDir := spec.Directory
 
 	cmd := exec.Command("docker", "compose", "up", "-d")
 	cmd.Dir = stackDir
@@ -1425,9 +1437,9 @@ func (a *Agent) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Register the stack
-	reg := loadStackRegistry()
+	reg := a.loadStackRegistry()
 	reg[req.Name] = stackDir
-	saveStackRegistry(reg)
+	a.saveStackRegistry(reg)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "deployed", "output": string(output)})
@@ -1502,9 +1514,11 @@ func (a *Agent) handleRemoveStack(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Clean up conman-managed dir (but not external dirs)
-		managed := fmt.Sprintf("/tmp/conman-stacks/%s", name)
-		if stackDir == managed {
-			os.RemoveAll(managed)
+		managed := a.getStackStorage().GetStackDir(name)
+		legacyManaged := fmt.Sprintf("/tmp/conman-stacks/%s", name)
+		if stackDir == managed || stackDir == legacyManaged {
+			a.getStackStorage().DeleteStackDir(name)
+			os.RemoveAll(legacyManaged)
 		}
 	} else {
 		// Fallback: try project-name-based down
@@ -1516,9 +1530,9 @@ func (a *Agent) handleRemoveStack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remove from registry
-	reg := loadStackRegistry()
+	reg := a.loadStackRegistry()
 	delete(reg, name)
-	saveStackRegistry(reg)
+	a.saveStackRegistry(reg)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -1590,4 +1604,159 @@ func (a *Agent) handleScanImage(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(stdout.Bytes())
+}
+
+// handleStackConfig handles GET and POST/PUT for reading and live-reconciling stack configs
+func (a *Agent) handleStackConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "Missing 'name' query parameter", http.StatusBadRequest)
+			return
+		}
+
+		// Try reading from Conman managed storage first
+		composeContent, envContent, spec, err := a.getStackStorage().ReadStackFiles(name)
+		stackDir := a.getStackStorage().GetStackDir(name)
+
+		// If not found in managed storage, check external resolved directory
+		if err != nil {
+			resolvedDir := a.resolveStackDir(name)
+			if resolvedDir == "" {
+				http.Error(w, fmt.Sprintf("Stack %q configuration not found: %v", name, err), http.StatusNotFound)
+				return
+			}
+			stackDir = resolvedDir
+
+			// Look for compose manifest in resolved directory
+			candidates := []string{"docker-compose.yml", "compose.yaml", "compose.yml", "docker-compose.yaml"}
+			var composeBytes []byte
+			for _, c := range candidates {
+				p := filepath.Join(resolvedDir, c)
+				if b, readErr := os.ReadFile(p); readErr == nil {
+					composeBytes = b
+					break
+				}
+			}
+			if len(composeBytes) == 0 {
+				http.Error(w, fmt.Sprintf("No compose file found in %s", resolvedDir), http.StatusNotFound)
+				return
+			}
+			composeContent = string(composeBytes)
+
+			// Try reading .env
+			if envBytes, readErr := os.ReadFile(filepath.Join(resolvedDir, ".env")); readErr == nil {
+				envContent = string(envBytes)
+			}
+		}
+
+		resp := map[string]interface{}{
+			"name":            name,
+			"compose_content": composeContent,
+			"env_content":     envContent,
+			"parsed_env":      stack.ParseEnvContent(envContent),
+			"directory":       stackDir,
+			"spec":            spec,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+
+	case http.MethodPost, http.MethodPut:
+		var req stack.ReconcileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		if req.Name == "" {
+			http.Error(w, "Field 'name' is required", http.StatusBadRequest)
+			return
+		}
+
+		result, err := stack.ReconcileStack(r.Context(), a.getStackStorage(), req)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error":  err.Error(),
+				"result": result,
+			})
+			return
+		}
+
+		// Update registry with persistent stack directory
+		reg := a.loadStackRegistry()
+		reg[req.Name] = a.getStackStorage().GetStackDir(req.Name)
+		a.saveStackRegistry(reg)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAdoptContainerToStack reverse-engineers a running container into a persistent stack
+func (a *Agent) handleAdoptContainerToStack(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ContainerID string `json:"container_id"`
+		StackName   string `json:"stack_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.ContainerID == "" {
+		http.Error(w, "Missing 'container_id' field", http.StatusBadRequest)
+		return
+	}
+
+	inspect, err := a.dockerClient().ContainerInspect(r.Context(), req.ContainerID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to inspect container: %v", err), http.StatusNotFound)
+		return
+	}
+
+	stackName := strings.TrimSpace(req.StackName)
+	if stackName == "" {
+		stackName = strings.TrimPrefix(inspect.Name, "/")
+	}
+
+	composeContent, envContent, err := stack.SynthesizeComposeFromInspect(stackName, &inspect)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to synthesize compose from container: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	spec, err := a.getStackStorage().WriteStackFiles(stackName, composeContent, envContent, "adopted")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to persist adopted stack files: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	reg := a.loadStackRegistry()
+	reg[stackName] = spec.Directory
+	a.saveStackRegistry(reg)
+
+	resp := map[string]interface{}{
+		"success":         true,
+		"stack_name":      stackName,
+		"compose_content": composeContent,
+		"env_content":     envContent,
+		"parsed_env":      stack.ParseEnvContent(envContent),
+		"spec":            spec,
+		"directory":       spec.Directory,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

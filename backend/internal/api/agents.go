@@ -320,6 +320,7 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router, requirePermission func(obj, 
 		r.Post("/agents/{id}/containers/{containerId}/stop", h.ProxyStopContainer)
 		r.Post("/agents/{id}/containers/{containerId}/restart", h.ProxyRestartContainer)
 		r.Delete("/agents/{id}/containers/{containerId}", h.ProxyRemoveContainer)
+		r.Post("/agents/{id}/containers/{containerId}/adopt-stack", h.ProxyAdoptContainerToStack)
 		r.Post("/agents/{id}/containers/prune", h.ProxyPruneContainers)
 	})
 
@@ -379,6 +380,7 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router, requirePermission func(obj, 
 	r.Group(func(r chi.Router) {
 		r.Use(requirePermission("stacks", "read"))
 		r.Get("/agents/{id}/stacks", h.ProxyListStacks)
+		r.Get("/agents/{id}/stacks/{stackName}/config", h.ProxyGetStackConfig)
 	})
 	// Stacks (write)
 	r.Group(func(r chi.Router) {
@@ -387,6 +389,9 @@ func (h *AgentHandler) RegisterRoutes(r chi.Router, requirePermission func(obj, 
 		r.Post("/agents/{id}/stacks/{stackName}/up", h.ProxyUpStack)
 		r.Post("/agents/{id}/stacks/{stackName}/restart", h.ProxyRestartStack)
 		r.Delete("/agents/{id}/stacks/{stackName}", h.ProxyRemoveStack)
+		r.Get("/agents/{id}/stacks/{stackName}/config", h.ProxyGetStackConfig)
+		r.Post("/agents/{id}/stacks/{stackName}/config", h.ProxyUpdateStackConfig)
+		r.Put("/agents/{id}/stacks/{stackName}/config", h.ProxyUpdateStackConfig)
 	})
 
 	// System-wide destructive prune — gate on containers:write (coarsest bucket available)

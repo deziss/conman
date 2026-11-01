@@ -5,7 +5,8 @@ import { DashboardLayout } from './layouts/DashboardLayout';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { HostProvider } from './contexts/HostContext';
 import { LicenseProvider } from './contexts/LicenseContext';
-import { SettingsProvider } from './contexts/SettingsContext';
+import { MotionConfig } from 'framer-motion';
+import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { TaskProvider } from './contexts/TaskContext';
@@ -39,14 +40,24 @@ const ProtectedRoute = ({ children }: { children: ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 };
 
+const GlobalSettingsMotionWrapper = ({ children }: { children: ReactNode }) => {
+  const { animationEnabled } = useSettings();
+  return (
+    <MotionConfig reducedMotion={animationEnabled ? "never" : "always"}>
+      {children}
+    </MotionConfig>
+  );
+};
+
 function App() {
   return (
     <ThemeProvider>
       <SettingsProvider>
-        <CacheProvider>
-          <AuthProvider>
-            <BrowserRouter>
-              <TaskProvider>
+        <GlobalSettingsMotionWrapper>
+          <CacheProvider>
+            <AuthProvider>
+              <BrowserRouter>
+                <TaskProvider>
                 <Toaster 
                   position="top-right" 
                   toastOptions={{
@@ -102,9 +113,10 @@ function App() {
             </BrowserRouter>
           </AuthProvider>
         </CacheProvider>
-      </SettingsProvider>
-    </ThemeProvider>
-  );
+      </GlobalSettingsMotionWrapper>
+    </SettingsProvider>
+  </ThemeProvider>
+);
 }
 
 export default App;

@@ -211,6 +211,38 @@ func (h *AgentHandler) ProxyRemoveStack(w http.ResponseWriter, r *http.Request) 
     h.proxyRequest(w, r, "DELETE", path)
 }
 
+func (h *AgentHandler) ProxyGetStackConfig(w http.ResponseWriter, r *http.Request) {
+    stackName := chi.URLParam(r, "stackName")
+    path := fmt.Sprintf("/api/stacks/config?name=%s", url.QueryEscape(stackName))
+    h.proxyRequest(w, r, "GET", path)
+}
+
+func (h *AgentHandler) ProxyUpdateStackConfig(w http.ResponseWriter, r *http.Request) {
+    stackName := chi.URLParam(r, "stackName")
+    agentID := chi.URLParam(r, "id")
+    user := getUserEmail(r)
+
+    h.proxyRequest(w, r, "POST", "/api/stacks/config")
+
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, "", stackName, "stack.reconfigure")
+        go h.Activity.RecordActivity(agentID, "", "stack", "reconfigured", "info", "", stackName, "user:"+user, "user", fmt.Sprintf("User %s reconfigured live stack %s", user, stackName), "", "", nil, time.Now())
+    }
+}
+
+func (h *AgentHandler) ProxyAdoptContainerToStack(w http.ResponseWriter, r *http.Request) {
+    containerID := chi.URLParam(r, "containerId")
+    agentID := chi.URLParam(r, "id")
+    user := getUserEmail(r)
+
+    h.proxyRequest(w, r, "POST", "/api/containers/adopt-stack")
+
+    if h.Activity != nil {
+        h.Activity.RecordUserAction(user, agentID, containerID, "", "container.adopt_stack")
+        go h.Activity.RecordActivity(agentID, "", "container", "adopted", "info", containerID, "", "user:"+user, "user", fmt.Sprintf("User %s adopted container %s into a declarative stack", user, containerID), "", "", nil, time.Now())
+    }
+}
+
 func (h *AgentHandler) ProxyCreateVolume(w http.ResponseWriter, r *http.Request) {
     h.proxyRequest(w, r, "POST", "/api/volumes/create")
 }

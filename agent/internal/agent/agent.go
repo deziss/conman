@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"conman-agent/internal/runtime"
+	"conman-agent/internal/stack"
 	"conman-agent/pkg/protocol"
 
 	"github.com/docker/docker/client"
@@ -20,6 +21,7 @@ type Agent struct {
 	cfg        *Config
 	runtime    runtime.ContainerRuntime
 	httpServer *http.Server
+	stackStore *stack.Storage
 
 	// State
 	mu           sync.RWMutex
@@ -66,11 +68,12 @@ func New(cfg *Config) (*Agent, error) {
 	}
 
 	return &Agent{
-		cfg:      cfg,
-		runtime:  runtimeProvider,
-		eventsCh: make(chan protocol.ContainerEvent, 100),
-		stopCh:   make(chan struct{}),
-		buffer:   NewReportBuffer(),
+		cfg:        cfg,
+		runtime:    runtimeProvider,
+		eventsCh:   make(chan protocol.ContainerEvent, 100),
+		stopCh:     make(chan struct{}),
+		buffer:     NewReportBuffer(),
+		stackStore: stack.NewStorage(""),
 	}, nil
 }
 
@@ -278,6 +281,7 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
     mux.HandleFunc("/api/stacks/up", a.handleUpStack)
     mux.HandleFunc("/api/stacks/restart", a.handleRestartStack)
     mux.HandleFunc("/api/stacks/remove", a.handleRemoveStack)
+    mux.HandleFunc("/api/stacks/config", a.handleStackConfig)
 
 	mux.HandleFunc("/api/system/df", a.handleSystemDF)
 	mux.HandleFunc("/api/system/prune", a.handleSystemPrune)
@@ -296,6 +300,7 @@ func (a *Agent) runScrapeServer(ctx context.Context) {
     mux.HandleFunc("/api/containers/top", a.handleContainerTop)
     mux.HandleFunc("/api/containers/processes", a.handleContainerTop)
     mux.HandleFunc("/api/containers/remove", a.handleRemoveContainer)
+    mux.HandleFunc("/api/containers/adopt-stack", a.handleAdoptContainerToStack)
     mux.HandleFunc("/api/images/remove", a.handleRemoveImage)
     mux.HandleFunc("/api/networks/remove", a.handleRemoveNetwork)
     mux.HandleFunc("/api/volumes/remove", a.handleRemoveVolume)

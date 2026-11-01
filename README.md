@@ -42,7 +42,7 @@ A lightweight agent runs on each host and pushes its inventory and metrics to a 
 | **Full container lifecycle** | Start, stop, restart, kill, remove, and prune. Inspect config, browse the filesystem, and upload or download files. |
 | **Live logs and terminal** | Streaming logs with search and structured parsing, plus a real `xterm.js` shell into any running container. |
 | **Images, networks, volumes** | Pull, tag, and prune images; inspect networks and IPAM config; see volume sizes and what references them. |
-| **Compose stacks** | Deploy, update, and roll back Docker Compose v2 stacks, with HMAC-signed webhooks for CI/CD. |
+| **Compose stacks & live reconfiguration** | Deploy, live-edit YAML manifests and .env files with atomic state convergence and rollback, persistent stack storage, and HMAC-signed webhooks. |
 | **Alerting** | Rules on agent heartbeat, container state, and resource thresholds, dispatched to Slack, Discord, or any webhook. |
 | **Vulnerability scanning** | On-demand and scheduled Trivy scans with CVE breakdown and severity filtering. |
 | **RBAC and audit log** | Casbin-backed roles across every resource, plus an activity log of who did what. |
@@ -87,7 +87,7 @@ Install the agent on any machine you want to monitor and point it at the server:
 
 ```bash
 # On the host you want to add
-sudo dpkg -i conman-agent_1.2.2_amd64.deb      # or: rpm -i conman-agent-1.2.2-1.x86_64.rpm
+sudo dpkg -i conman-agent_1.3.0_amd64.deb      # or: rpm -i conman-agent-1.3.0-1.x86_64.rpm
 sudo vi /etc/conman-agent/agent.env            # set CONMAN_SERVER_URL and CONMAN_SERVER_TOKEN
 sudo systemctl enable --now conman-agent
 ```
@@ -101,12 +101,12 @@ sudo systemctl enable --now conman-agent
 
 ```bash
 # Debian / Ubuntu
-sudo dpkg -i conman-server_1.2.2_amd64.deb
+sudo dpkg -i conman-server_1.3.0_amd64.deb
 sudo vi /etc/conman/server.env        # SECRET_KEY and MASTER_API_KEY are auto-generated on first install
 sudo systemctl enable --now conman-server
 
 # RHEL / Fedora
-sudo rpm -i conman-server-1.2.2-1.x86_64.rpm
+sudo rpm -i conman-server-1.3.0-1.x86_64.rpm
 sudo vi /etc/conman/server.env
 sudo systemctl enable --now conman-server
 ```

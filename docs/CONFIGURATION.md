@@ -51,6 +51,7 @@ host=localhost port=5432 user=conman password=secret dbname=conman sslmode=disab
 | `CONMAN_SERVER_URL` | `http://localhost:8080` | URL of the Conman server |
 | `CONMAN_SERVER_TOKEN` | *(empty)* | Must match the server's `AGENT_TOKEN` |
 | `AGENT_MODE` | `hybrid` | Communication mode: `push`, `scrape`, or `hybrid` |
+| `CONMAN_DATA_DIR` | `/var/lib/conman` (or `~/.config/conman`) | Persistent host directory for stacks, specs, and state storage |
 
 ### Runtime Settings
 

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="cm-border" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22D3EE" />
+      <stop offset="50%" stop-color="#0891B2" />
+      <stop offset="100%" stop-color="#3B82F6" />
+    </linearGradient>
+    <linearGradient id="cm-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#080E1A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="cm-cube-top" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <linearGradient id="cm-cube-left" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0EA5E9" />
+      <stop offset="100%" stop-color="#0369A1" />
+    </linearGradient>
+    <linearGradient id="cm-cube-right" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#075985" />
+    </linearGradient>
+    <linearGradient id="cm-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22D3EE" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+    <filter id="cm-neon" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Container Base Badge -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#cm-bg)" />
+  <rect x="2" y="2" width="60" height="60" rx="16" stroke="url(#cm-border)" stroke-width="2" stroke-opacity="0.9" />
+
+  <!-- Stylized Container Isometric Cubes -->
+  <!-- Top Center Cube -->
+  <g transform="translate(0, -2)">
+    <!-- Top Face -->
+    <path d="M 32 14 L 44 20 L 32 26 L 20 20 Z" fill="url(#cm-cube-top)" />
+    <!-- Left Face -->
+    <path d="M 20 20 L 32 26 L 32 37 L 20 31 Z" fill="url(#cm-cube-left)" stroke="#0284C7" stroke-width="0.7" />
+    <!-- Right Face -->
+    <path d="M 32 26 L 44 20 L 44 31 L 32 37 Z" fill="url(#cm-cube-right)" stroke="#0369A1" stroke-width="0.7" />
+  </g>
+
+  <!-- Lower Left Container -->
+  <g transform="translate(-10, 11)">
+    <path d="M 32 14 L 40 18 L 32 22 L 24 18 Z" fill="url(#cm-cube-top)" fill-opacity="0.9" />
+    <path d="M 24 18 L 32 22 L 32 30 L 24 26 Z" fill="url(#cm-cube-left)" />
+    <path d="M 32 22 L 40 18 L 40 26 L 32 30 Z" fill="url(#cm-cube-right)" />
+  </g>
+
+  <!-- Lower Right Container -->
+  <g transform="translate(10, 11)">
+    <path d="M 32 14 L 40 18 L 32 22 L 24 18 Z" fill="url(#cm-cube-top)" fill-opacity="0.9" />
+    <path d="M 24 18 L 32 22 L 32 30 L 24 26 Z" fill="url(#cm-cube-left)" />
+    <path d="M 32 22 L 40 18 L 40 26 L 32 30 Z" fill="url(#cm-cube-right)" />
+  </g>
+
+  <!-- Cybernetic Arc / C Loop -->
+  <path d="M 48 24 C 52 28 54 34 52 41 C 49 48 41 53 32 53 C 22 53 14 46 13 37" 
+        stroke="url(#cm-border)" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 0" />
+
+  <!-- Active Hub Nodes -->
+  <circle cx="32" cy="24" r="2.5" fill="#22D3EE" filter="url(#cm-neon)" />
+  <circle cx="32" cy="24" r="1.2" fill="#FFFFFF" />
+  <circle cx="51" cy="40" r="2" fill="#10B981" />
+</svg>

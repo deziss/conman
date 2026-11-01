@@ -161,6 +161,10 @@ WebSocket endpoint. Proxied real-time stats from a container on a remote agent.
 
 Container lifecycle operations proxied to a remote agent.
 
+### POST /agents/{id}/containers/{containerId}/adopt-stack
+
+Reverse-engineers a running standalone container into an idiomatic Compose manifest (`docker-compose.yml`) and environment map (`.env`), persisting it to host storage (`/var/lib/conman/stacks/<name>`).
+
 ### DELETE /agents/{id}/containers/{containerId}
 
 Remove a container on a remote agent.
@@ -336,6 +340,25 @@ directory component) — anything else is rejected with 400.
 ### GET /stacks/{id}
 
 Get stack details.
+
+### GET /agents/{id}/stacks/{stackName}/config
+
+Get live Compose manifest, `.env` file content, and parsed key-value variables from the agent host.
+
+### POST /agents/{id}/stacks/{stackName}/config
+
+Atomically converges running stack configuration.
+Validates Compose YAML syntax, writes timestamped `.bak` file backups, atomically saves updated `docker-compose.yml` and `.env` to persistent storage (`/var/lib/conman/stacks/{stackName}`), and triggers zero-downtime rolling convergence (`docker compose up -d`). Automatically rolls back to the backup if Docker Compose reports a runtime failure.
+
+**Request:**
+```json
+{
+    "name": "my-stack",
+    "compose_content": "version: '3.8'\nservices:\n  web:\n    image: nginx:alpine",
+    "env_content": "PORT=80\n",
+    "target_service": "web"
+}
+```
 
 ### PUT /stacks/{id}
 

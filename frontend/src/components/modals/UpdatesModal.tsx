@@ -7,7 +7,8 @@ import {
     ShieldCheckIcon,
     ServerStackIcon,
     BellAlertIcon,
-    Squares2X2Icon
+    Squares2X2Icon,
+    ServerIcon
 } from '@heroicons/react/24/outline';
 import { APP_CONFIG } from '../../constants/app';
 
@@ -19,9 +20,36 @@ interface UpdatesModalProps {
 export const UpdatesModal: React.FC<UpdatesModalProps> = ({ isOpen, onClose }) => {
     const releases = [
         {
+            version: 'v1.3.0',
+            date: 'November 2026',
+            badge: 'Current Version',
+            features: [
+                {
+                    icon: ServerStackIcon,
+                    title: 'Live Stack Reconfiguration & State Convergence',
+                    desc: 'Edit compose YAML manifests and .env variables live. Reconciles running services with atomic rollbacks, persisting state across raw container restarts and host reboots.'
+                },
+                {
+                    icon: ServerIcon,
+                    title: 'Persistent Stack State Storage',
+                    desc: 'Migrated stack configuration persistence from ephemeral directories to /var/lib/conman/stacks with metadata specs (.conman.spec.json).'
+                },
+                {
+                    icon: Squares2X2Icon,
+                    title: 'Interactive Port Range Management',
+                    desc: 'New PortBadgeList component groups high-density and contiguous port allocations into interactive, selectable badges with click-to-copy.'
+                },
+                {
+                    icon: SparklesIcon,
+                    title: 'Brand Identity & Container Adoption',
+                    desc: 'New vector Conman brand identity and favicon, plus reverse-adoption synthesis of standalone containers into compose stacks.'
+                }
+            ]
+        },
+        {
             version: 'v1.2.2',
             date: 'September 2026',
-            badge: 'Current Version',
+            badge: 'Previous',
             features: [
                 {
                     icon: ShieldCheckIcon,
