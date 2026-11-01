@@ -31,6 +31,11 @@ services:
       - AGENT_TOKEN=${AGENT_TOKEN:-conman-dev-token}
       - STATIC_DIR=/app/static
       - CORS_ORIGINS=http://localhost:5173
+      - LICENSE_KEY=${LICENSE_KEY:-LIC-CE59FC1F-10A7D142-580CC51A-940F50DA}
+      - LICENCIA_URL=${LICENCIA_URL:-http://licencia-api:3000}
+      - LICENCIA_API_KEY=${LICENCIA_API_KEY:-lic_live_799066d72598994537339b8dcd3b3e02c0a591ad6a81e6eb0801aa8679881e56}
+      - COM0_API_URL=${COM0_API_URL:-http://control-plane:4000}
+      - PAYMENT_SIMULATE=${PAYMENT_SIMULATE:-true}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5173/api/v1/health"]
       interval: 30s
@@ -39,6 +44,7 @@ services:
       start_period: 10s
     networks:
       - cm-net
+      - local_stack_backend
 
   # Local Agent (manages the local docker socket)
   local-agent:
@@ -98,3 +104,5 @@ volumes:
 
 networks:
   cm-net:
+  local_stack_backend:
+    external: true

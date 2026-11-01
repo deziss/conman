@@ -60,7 +60,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     };
 
     const handleBuyClick = (planSlug: string) => {
-        const url = `https://licencia.deziss.com/checkout/conman?plan=${planSlug}&cycle=${billingCycle}`;
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const base = isLocal ? 'http://localhost:3002' : 'https://licencia.deziss.com';
+        const url = `${base}/checkout/conman?plan=${planSlug}&cycle=${billingCycle}`;
         window.open(url, '_blank', 'noopener,noreferrer');
         toast('Redirecting to secure Licencia checkout...', { icon: '💳' });
     };

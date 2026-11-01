@@ -1,8 +1,10 @@
 package api
 
 import (
+	"conman-backend/internal/config"
 	"conman-backend/internal/license"
 	"net/http"
+	"strings"
 )
 
 type LicenseHandler struct {
@@ -136,9 +138,12 @@ type PlanInfo struct {
 // GET /api/v1/license/plans
 func (h *LicenseHandler) GetPlans(w http.ResponseWriter, r *http.Request) {
 	licenciaURL := "https://licencia.deziss.com"
-	// AppConfig check if available
-	// If custom Licencia URL is configured, use that
-	// e.g. from config.AppConfig.LicenciaURL
+	if config.AppConfig != nil && config.AppConfig.LicenciaURL != "" {
+		licenciaURL = config.AppConfig.LicenciaURL
+		if strings.Contains(licenciaURL, "licencia-api") {
+			licenciaURL = "http://localhost:3002"
+		}
+	}
 
 	plans := []PlanInfo{
 		{
